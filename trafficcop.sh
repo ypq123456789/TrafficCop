@@ -80,7 +80,6 @@ get_main_interface() {
     fi
 }
 
-
 # 函数：获取 SSH 端口
 get_ssh_port() {
     local ssh_port=$(grep "^Port" /etc/ssh/sshd_config | awk '{print \$2}')
@@ -95,7 +94,8 @@ read_config() {
     if [ -f "$CONFIG_FILE" ]; then
         source "$CONFIG_FILE"
     else
-        log_message "配置文件不存在，将使用默认值"
+        log_message "配置文件不存在，将开始配置"
+        return 1
     fi
 }
 
@@ -111,27 +111,38 @@ write_config() {
 
 # 设置 crontab 函数
 setup_crontab() {
-    read -p "请输入脚本执行的间隔分钟数（1-59）: " interval
+    read -p "请输入脚本执行的间隔分钟数（1-59，默认为5）: " interval
     if [[ ! $interval =~ ^[1-9]$|^[1-5][0-9]$ ]]; then
-        interval=1
-        log_message "无效输入，设置为默认值1分钟"
+        interval=5
+        log_message "无效输入或未输入，设置为默认值5分钟"
     fi
     CRON_INTERVAL=$interval
     (crontab -l 2>/dev/null | grep -v "$SCRIPT_PATH"; echo "*/$interval * * * * $SCRIPT_PATH --run") | crontab -
     log_message "已设置 crontab 每 $interval 分钟执行一次脚本"
 }
 
+# 初始配置函数
+initial_config() {
+    log_message "开始初始配置"
+    read -p "每日流量限制 (GB): " DAILY_LIMIT
+    read -p "每月流量限制 (GB): " MONTHLY_LIMIT
+    setup_crontab
+    write_config
+}
+
 # 更新配置函数（带超时）
 update_config_with_timeout() {
-    read -t 3 -p "是否需要更新配置？(y/n) " answer
+    read -p "是否需要更新配置？(y/n) " answer
     if [[ $answer == "y" ]]; then
         log_message "用户选择更新配置"
-        read -t 3 -p "每日流量限制 (GB): " DAILY_LIMIT
-        read -t 3 -p "每月流量限制 (GB): " MONTHLY_LIMIT
+        read -t 10 -p "每日流量限制 (GB) (10秒后超时): " -e -i "$DAILY_LIMIT" new_daily
+        DAILY_LIMIT=${new_daily:-$DAILY_LIMIT}
+        read -t 10 -p "每月流量限制 (GB) (10秒后超时): " -e -i "$MONTHLY_LIMIT" new_monthly
+        MONTHLY_LIMIT=${new_monthly:-$MONTHLY_LIMIT}
         setup_crontab
         write_config
     else
-        log_message "用户未选择更新配置或超时"
+        log_message "用户未选择更新配置"
     fi
 }
 
@@ -169,16 +180,22 @@ check_and_limit_traffic() {
 # 主函数
 main() {
     if [[ "\$1" == "--run" ]]; then
-        read_config
-        check_and_limit_traffic
+        if read_config; then
+            check_and_limit_traffic
+        else
+            log_message "配置文件为空或不存在，请先运行脚本进行配置"
+        fi
     else
         check_and_install_vnstat
         check_and_update
         MAIN_INTERFACE=$(get_main_interface)
         SSH_PORT=$(get_ssh_port)
-        read_config
-        update_config_with_timeout
-        log_message "初始设置完成，脚本将通过 crontab 自动运行"
+        if ! read_config; then
+            initial_config
+        else
+            update_config_with_timeout
+        fi
+        log_message "设置完成，脚本将通过 crontab 自动运行"
     fi
 }
 
