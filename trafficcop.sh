@@ -130,12 +130,14 @@ initial_config() {
     read -p "请输入流量限制 (GB): " TRAFFIC_LIMIT
     read -p "请输入周期起始日 (1-31): " PERIOD_START_DAY
     read -p "请输入限速 (kbit/s): " LIMIT_SPEED
+    echo "正在检测主要网络接口..."
     MAIN_INTERFACE=$(get_main_interface)
     read -p "请输入检查间隔 (分钟，默认为5): " CHECK_INTERVAL
     CHECK_INTERVAL=${CHECK_INTERVAL:-5}
 
     write_config
 }
+
 
 # 设置crontab
 setup_crontab() {
