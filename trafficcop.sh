@@ -70,8 +70,13 @@ handle_config() {
 
 # 更新配置函数
 update_config() {
-    read -p "流量统计周期 (monthly/quarterly/yearly, 当前: $TRAFFIC_PERIOD): " new_period
-    TRAFFIC_PERIOD=${new_period:-$TRAFFIC_PERIOD}
+    read -p "流量统计周期 (m/q/y, 当前: $TRAFFIC_PERIOD): " new_period
+    case $new_period in
+        m) TRAFFIC_PERIOD="monthly" ;;
+        q) TRAFFIC_PERIOD="quarterly" ;;
+        y) TRAFFIC_PERIOD="yearly" ;;
+        *) TRAFFIC_PERIOD=${TRAFFIC_PERIOD} ;;
+    esac
 
     read -p "流量限制 (GB, 当前: $TRAFFIC_LIMIT): " new_limit
     TRAFFIC_LIMIT=${new_limit:-$TRAFFIC_LIMIT}
@@ -92,9 +97,9 @@ update_config() {
 
 # 获取主要网络接口
 get_main_interface() {
-    local main_interface=$(ip route | grep default | awk '{print \$5}' | head -n1)
+    local main_interface=$(ip route | grep default | cut -d ' ' -f 5 | head -n1)
     if [ -z "$main_interface" ]; then
-        main_interface=$(ip link show | grep 'state UP' | awk -F': ' '{print \$2}' | head -n1)
+        main_interface=$(ip link show | grep 'state UP' | cut -d ':' -f 2 | cut -d ' ' -f 2 | head -n1)
     fi
     
     if [ -z "$main_interface" ]; then
@@ -114,7 +119,14 @@ get_main_interface() {
 
 # 初始配置函数
 initial_config() {
-    read -p "请选择流量统计周期 (monthly/quarterly/yearly): " TRAFFIC_PERIOD
+    read -p "请选择流量统计周期 (m/q/y): " period_choice
+    case $period_choice in
+        m) TRAFFIC_PERIOD="monthly" ;;
+        q) TRAFFIC_PERIOD="quarterly" ;;
+        y) TRAFFIC_PERIOD="yearly" ;;
+        *) TRAFFIC_PERIOD="monthly" ;;
+    esac
+
     read -p "请输入流量限制 (GB): " TRAFFIC_LIMIT
     read -p "请输入周期起始日 (1-31): " PERIOD_START_DAY
     read -p "请输入限速 (kbit/s): " LIMIT_SPEED
