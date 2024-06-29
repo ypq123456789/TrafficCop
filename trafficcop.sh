@@ -61,8 +61,7 @@ get_main_interface() {
         ip -o link show | sed -n 's/^[0-9]*: \([^:]*\):.*/\1/p'
         read -p "请从上面的列表中选择一个网络接口: " main_interface
     else
-        echo "检测到的主要网络接口是: $main_interface"
-        read -p "是否使用此接口？(y/n) " confirm
+        read -p "检测到的主要网络接口是: $main_interface,是否使用此接口？(y/n) " confirm
         if [[ $confirm != "y" ]]; then
             echo "可用的网络接口有："
             ip -o link show | sed -n 's/^[0-9]*: \([^:]*\):.*/\1/p'
