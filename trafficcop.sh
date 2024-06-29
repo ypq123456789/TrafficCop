@@ -1,21 +1,13 @@
 #!/bin/bash
 
-CONFIG_FILE="/etc/vps_traffic_limit.conf"
-LOG_FILE="/var/log/vps_traffic_limit.log"
+# 配置文件路径
+CONFIG_FILE="/root/traffic_monitor_config.txt"
+LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH=$(realpath "\$0")
 
 # 日志函数
 log_message() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - \$1" >> "$LOG_FILE"
-}
-
-# 检查并安装 vnstat
-check_and_install_vnstat() {
-    if ! command -v vnstat &> /dev/null; then
-        log_message "vnstat 未安装，正在安装..."
-        sudo apt-get update && sudo apt-get install -y vnstat
-        log_message "vnstat 安装完成"
-    fi
 }
 
 # 检查并更新脚本
@@ -54,29 +46,14 @@ check_and_update() {
         log_message "错误：下载更新失败。"
     fi
 }
+#!/bin/bash
 
-# 函数：获取主要网卡名称
-get_main_interface() {
-    local detected_interface=$(ip route | grep default | cut -d ' ' -f 5 | head -n1)
-    local all_interfaces=($(ip -o link show | cut -d': ' -f2 | tr -d ' '))
-
-    echo "检测到的默认网卡: $detected_interface"
-    echo "系统上的所有网卡:"
-    for i in "${!all_interfaces[@]}"; do
-        echo "$((i+1)). ${all_interfaces[i]}"
-    done
-
-    read -p "请确认是否使用 $detected_interface 作为主要网卡？(y/n) " confirm
-    if [[ $confirm == "y" || $confirm == "Y" ]]; then
-        echo $detected_interface
-    else
-        read -p "请输入要使用的网卡编号: " choice
-        if [[ $choice -ge 1 && $choice -le ${#all_interfaces[@]} ]]; then
-            echo ${all_interfaces[$((choice-1))]}
-        else
-            echo "无效选择，使用默认网卡 $detected_interface"
-            echo $detected_interface
-        fi
+# 检查并安装 vnstat
+check_and_install_vnstat() {
+    if ! command -v vnstat &> /dev/null; then
+        log_message "vnstat 未安装，正在安装..."
+        sudo apt-get update && sudo apt-get install -y vnstat
+        log_message "vnstat 安装完成"
     fi
 }
 
@@ -89,43 +66,57 @@ get_ssh_port() {
     echo $ssh_port
 }
 
+# 日志函数
+log_message() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - \$1" >> "$LOG_FILE"
+}
+
 # 读取配置
 read_config() {
     if [ -f "$CONFIG_FILE" ]; then
         source "$CONFIG_FILE"
     else
-        log_message "配置文件不存在，将开始配置"
-        return 1
+        initial_config
     fi
 }
 
 # 写入配置
 write_config() {
-    echo "MAIN_INTERFACE=$MAIN_INTERFACE" > "$CONFIG_FILE"
-    echo "SSH_PORT=$SSH_PORT" >> "$CONFIG_FILE"
-    echo "DAILY_LIMIT=$DAILY_LIMIT" >> "$CONFIG_FILE"
-    echo "MONTHLY_LIMIT=$MONTHLY_LIMIT" >> "$CONFIG_FILE"
-    echo "CRON_INTERVAL=$CRON_INTERVAL" >> "$CONFIG_FILE"
+    echo "TRAFFIC_PERIOD=$TRAFFIC_PERIOD" > "$CONFIG_FILE"
+    echo "TRAFFIC_LIMIT=$TRAFFIC_LIMIT" >> "$CONFIG_FILE"
+    echo "PERIOD_START_DAY=$PERIOD_START_DAY" >> "$CONFIG_FILE"
     log_message "配置已更新"
 }
 
-# 设置 crontab 函数
+# 设置crontab
 setup_crontab() {
-    read -p "请输入脚本执行的间隔分钟数（1-59，默认为5）: " interval
-    if [[ ! $interval =~ ^[1-9]$|^[1-5][0-9]$ ]]; then
-        interval=5
-        log_message "无效输入或未输入，设置为默认值5分钟"
-    fi
-    CRON_INTERVAL=$interval
-    (crontab -l 2>/dev/null | grep -v "$SCRIPT_PATH"; echo "*/$interval * * * * $SCRIPT_PATH --run") | crontab -
-    log_message "已设置 crontab 每 $interval 分钟执行一次脚本"
+    (crontab -l 2>/dev/null | grep -v "/root/traffic_monitor.sh") | crontab -
+    echo "0 0 * * * /root/traffic_monitor.sh" | crontab -
+    log_message "Crontab 已设置"
 }
 
 # 初始配置函数
 initial_config() {
     log_message "开始初始配置"
-    read -p "每日流量限制 (GB): " DAILY_LIMIT
-    read -p "每月流量限制 (GB): " MONTHLY_LIMIT
+    
+    while true; do
+        read -p "请选择流量统计周期 (1: 月, 2: 季度, 3: 年): " period_choice
+        case $period_choice in
+            1) TRAFFIC_PERIOD="monthly"; break;;
+            2) TRAFFIC_PERIOD="quarterly"; break;;
+            3) TRAFFIC_PERIOD="yearly"; break;;
+            *) echo "无效选择，请重新输入";;
+        esac
+    done
+    
+    read -p "请输入 ${TRAFFIC_PERIOD} 流量限制 (GB): " TRAFFIC_LIMIT
+    
+    read -p "请输入流量统计周期的起始日 (1-31): " PERIOD_START_DAY
+    if [[ ! $PERIOD_START_DAY =~ ^[1-9]$|^[1-2][0-9]$|^3[0-1]$ ]]; then
+        PERIOD_START_DAY=1
+        echo "无效输入，设置为默认值1"
+    fi
+    
     setup_crontab
     write_config
 }
@@ -135,15 +126,78 @@ update_config_with_timeout() {
     read -p "是否需要更新配置？(y/n) " answer
     if [[ $answer == "y" ]]; then
         log_message "用户选择更新配置"
-        read -t 10 -p "每日流量限制 (GB) (10秒后超时): " -e -i "$DAILY_LIMIT" new_daily
-        DAILY_LIMIT=${new_daily:-$DAILY_LIMIT}
-        read -t 10 -p "每月流量限制 (GB) (10秒后超时): " -e -i "$MONTHLY_LIMIT" new_monthly
-        MONTHLY_LIMIT=${new_monthly:-$MONTHLY_LIMIT}
+        
+        read -t 10 -p "流量统计周期 (1: 月, 2: 季度, 3: 年, 当前: $TRAFFIC_PERIOD) (10秒后超时): " -e period_choice
+        case $period_choice in
+            1) TRAFFIC_PERIOD="monthly";;
+            2) TRAFFIC_PERIOD="quarterly";;
+            3) TRAFFIC_PERIOD="yearly";;
+            "") 
+                if [ "$TRAFFIC_PERIOD" == "" ]; then
+                    TRAFFIC_PERIOD="monthly"
+                    log_message "超时或未输入，默认设置为月度周期"
+                fi
+                ;;
+            *) 
+                TRAFFIC_PERIOD="monthly"
+                log_message "无效输入，默认设置为月度周期"
+                ;;
+        esac
+        
+        read -t 10 -p "${TRAFFIC_PERIOD} 流量限制 (GB) (10秒后超时): " -e -i "$TRAFFIC_LIMIT" new_limit
+        TRAFFIC_LIMIT=${new_limit:-$TRAFFIC_LIMIT}
+        
+        read -t 10 -p "流量统计周期的起始日 (1-31, 当前: $PERIOD_START_DAY) (10秒后超时): " -e -i "$PERIOD_START_DAY" new_start_day
+        if [[ $new_start_day =~ ^[1-9]$|^[1-2][0-9]$|^3[0-1]$ ]]; then
+            PERIOD_START_DAY=$new_start_day
+        elif [ -z "$new_start_day" ]; then
+            PERIOD_START_DAY=1
+            log_message "超时或未输入，起始日默认设置为1号"
+        else
+            PERIOD_START_DAY=1
+            log_message "无效的起始日输入，默认设置为1号"
+        fi
+        
         setup_crontab
         write_config
     else
         log_message "用户未选择更新配置"
     fi
+}
+
+# 获取当前周期的起始日期
+get_period_start_date() {
+    local current_date=$(date +%Y-%m-%d)
+    local current_month=$(date +%m)
+    local current_year=$(date +%Y)
+    
+    case $TRAFFIC_PERIOD in
+        monthly)
+            if [ $(date +%d) -lt $PERIOD_START_DAY ]; then
+                # 如果当前日期小于起始日，则取上个月的起始日
+                echo $(date -d "${current_year}-${current_month}-01 -1 month" +'%Y-%m-%d')
+            else
+                # 确保日期有效，如果无效则使用当月最后一天
+                echo $(date -d "${current_year}-${current_month}-${PERIOD_START_DAY}" +%Y-%m-%d 2>/dev/null || date -d "${current_year}-${current_month}-01 +1 month -1 day" +%Y-%m-%d)
+            fi
+            ;;
+        quarterly)
+            local quarter_month=$(((($(date +%m) - 1) / 3) * 3 + 1))
+            echo $(date -d "${current_year}-${quarter_month}-01" +'%Y-%m-%d')
+            ;;
+        yearly)
+            echo "${current_year}-01-01"
+            ;;
+    esac
+}
+
+# 获取流量使用情况
+get_traffic_usage() {
+    local start_date=$(get_period_start_date)
+    local end_date=$(date +%Y-%m-%d)
+    local rx_bytes=$(awk -v start="$start_date" -v end="$end_date" '\$1 >= start && \$1 <= end {sum += \$2} END {print sum}' /root/vnstat_data.txt)
+    local tx_bytes=$(awk -v start="$start_date" -v end="$end_date" '\$1 >= start && \$1 <= end {sum += \$3} END {print sum}' /root/vnstat_data.txt)
+    echo "$(( (rx_bytes + tx_bytes) / (1024*1024*1024) ))"
 }
 
 # 检查并限制流量
