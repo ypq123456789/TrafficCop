@@ -10,6 +10,93 @@ log_message() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - \$1" >> "$LOG_FILE"
 }
 
+# 读取配置
+read_config() {
+    if [ -f "$CONFIG_FILE" ]; then
+        source "$CONFIG_FILE"
+        return 0
+    else
+        return 1
+    fi
+}
+
+# 写入配置
+write_config() {
+    cat > "$CONFIG_FILE" << EOF
+TRAFFIC_PERIOD=$TRAFFIC_PERIOD
+TRAFFIC_LIMIT=$TRAFFIC_LIMIT
+PERIOD_START_DAY=$PERIOD_START_DAY
+MAIN_INTERFACE=$MAIN_INTERFACE
+SSH_PORT=$SSH_PORT
+EOF
+    log_message "配置已更新"
+}
+
+# 配置处理函数
+handle_config() {
+    if read_config; then
+        echo "当前配置："
+        echo "流量统计周期: $TRAFFIC_PERIOD"
+        echo "流量限制: $TRAFFIC_LIMIT GB"
+        echo "周期起始日: $PERIOD_START_DAY"
+        echo "主网卡: $MAIN_INTERFACE"
+        echo "SSH端口: $SSH_PORT"
+        
+        read -t 10 -p "是否需要修改配置？(y/n, 10秒后默认为n): " modify_config
+        if [[ $modify_config == "y" ]]; then
+            update_config
+        fi
+    else
+        echo "未找到配置文件，开始初始配置"
+        initial_config
+    fi
+}
+
+# 更新配置函数
+update_config() {
+    read -p "流量统计周期 (monthly/quarterly/yearly, 当前: $TRAFFIC_PERIOD): " new_period
+    TRAFFIC_PERIOD=${new_period:-$TRAFFIC_PERIOD}
+
+    read -p "流量限制 (GB, 当前: $TRAFFIC_LIMIT): " new_limit
+    TRAFFIC_LIMIT=${new_limit:-$TRAFFIC_LIMIT}
+
+    read -p "周期起始日 (1-31, 当前: $PERIOD_START_DAY): " new_start_day
+    PERIOD_START_DAY=${new_start_day:-$PERIOD_START_DAY}
+
+    MAIN_INTERFACE=$(get_main_interface)
+    SSH_PORT=$(get_ssh_port)
+
+    write_config
+}
+
+# 初始配置函数
+initial_config() {
+    read -p "请选择流量统计周期 (monthly/quarterly/yearly): " TRAFFIC_PERIOD
+    read -p "请输入流量限制 (GB): " TRAFFIC_LIMIT
+    read -p "请输入周期起始日 (1-31): " PERIOD_START_DAY
+    MAIN_INTERFACE=$(get_main_interface)
+    SSH_PORT=$(get_ssh_port)
+
+    write_config
+}
+
+# 主函数
+main() {
+    if [[ "\$1" == "--run" ]]; then
+        if read_config; then
+            check_and_limit_traffic
+        else
+            log_message "配置文件为空或不存在，请先运行脚本进行配置"
+        fi
+    else
+        check_and_install_vnstat
+        check_and_update
+        handle_config
+        setup_crontab
+        log_message "设置完成，脚本将通过 crontab 自动运行"
+    fi
+}
+
 # 检查并更新脚本
 check_and_update() {
     # 实现脚本自动更新的逻辑
@@ -18,7 +105,7 @@ check_and_update() {
         if [[ -s "$TEMP_SCRIPT" ]]; then
             CURRENT_HASH=$(sha256sum "\$0" | cut -d' ' -f1)
             NEW_HASH=$(sha256sum "$TEMP_SCRIPT" | cut -d' ' -f1)
-            
+             
             if [[ "$NEW_HASH" != "$CURRENT_HASH" ]]; then
                 log_message "发现新版本。"
                 read -p "是否要更新？(y/n): " choice
@@ -59,10 +146,23 @@ check_and_install_vnstat() {
 
 # 函数：获取 SSH 端口
 get_ssh_port() {
-    local ssh_port=$(grep "^Port" /etc/ssh/sshd_config | awk '{print \$2}')
+    local ssh_port=$(grep "^Port" /etc/ssh/sshd_config | cut -d ' ' -f 2)
     if [ -z "$ssh_port" ]; then
         ssh_port=22
     fi
+    
+    echo "检测到的 SSH 端口是: $ssh_port"
+    read -p "是否使用此端口？(y/n) " confirm
+    
+    if [[ $confirm != "y" ]]; then
+        read -p "请输入正确的 SSH 端口: " new_port
+        if [[ $new_port =~ ^[0-9]+$ ]] && [ $new_port -ge 1 ] && [ $new_port -le 65535 ]; then
+            ssh_port=$new_port
+        else
+            echo "输入的端口无效，将使用默认端口 $ssh_port"
+        fi
+    fi
+    
     echo $ssh_port
 }
 
@@ -94,7 +194,7 @@ setup_crontab() {
     echo "0 0 * * * /root/traffic_monitor.sh" | crontab -
     log_message "Crontab 已设置"
 }
-
+ 
 # 初始配置函数
 initial_config() {
     log_message "开始初始配置"
