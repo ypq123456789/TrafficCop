@@ -50,26 +50,29 @@ EOF
 
 # 获取主要网络接口
 get_main_interface() {
-    local main_interface=$(ip route | grep default | cut -d ' ' -f 5 | head -n1)
+    local main_interface=$(ip route | grep default | sed -n 's/^default via [0-9.]* dev \([^ ]*\).*/\1/p' | head -n1)
     if [ -z "$main_interface" ]; then
-        main_interface=$(ip link show | grep 'state UP' | cut -d ':' -f 2 | cut -d ' ' -f 2 | head -n1)
+        main_interface=$(ip link | grep 'state UP' | sed -n 's/^[0-9]*: \([^:]*\):.*/\1/p' | head -n1)
     fi
     
     if [ -z "$main_interface" ]; then
         echo "无法自动检测主要网络接口。"
-        read -p "请手动输入主要网络接口名称: " main_interface
+        echo "可用的网络接口有："
+        ip -o link show | sed -n 's/^[0-9]*: \([^:]*\):.*/\1/p'
+        read -p "请从上面的列表中选择一个网络接口: " main_interface
     else
         echo "检测到的主要网络接口是: $main_interface"
         read -p "是否使用此接口？(y/n) " confirm
         if [[ $confirm != "y" ]]; then
-            read -p "请输入正确的网络接口名称: " new_interface
+            echo "可用的网络接口有："
+            ip -o link show | sed -n 's/^[0-9]*: \([^:]*\):.*/\1/p'
+            read -p "请从上面的列表中选择一个网络接口: " new_interface
             main_interface=$new_interface
         fi
     fi
     
     echo $main_interface
 }
-
 # 初始配置函数
 initial_config() {
     echo "正在检测主要网络接口..."
