@@ -57,8 +57,8 @@ check_and_update() {
 
 # 函数：获取主要网卡名称
 get_main_interface() {
-    local detected_interface=$(ip route | grep default | awk '{print \$5}' | head -n1)
-    local all_interfaces=($(ip -o link show | awk -F': ' '{print \$2}' | tr -d ' '))
+    local detected_interface=$(ip route | grep default | cut -d ' ' -f 5 | head -n1)
+    local all_interfaces=($(ip -o link show | cut -d': ' -f2 | tr -d ' '))
 
     echo "检测到的默认网卡: $detected_interface"
     echo "系统上的所有网卡:"
@@ -79,6 +79,7 @@ get_main_interface() {
         fi
     fi
 }
+
 
 # 函数：获取 SSH 端口
 get_ssh_port() {
