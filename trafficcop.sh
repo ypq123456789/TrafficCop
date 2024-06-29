@@ -7,43 +7,43 @@ TEMP_SCRIPT="/tmp/trafficcop_new.sh"
 
 # 检查并更新脚本函数
 check_and_update() {
-    echo "Checking for updates..."
+    echo "正在检查更新..."
     if curl -fsSL "$SCRIPT_URL" -o "$TEMP_SCRIPT"; then
         if [[ -s "$TEMP_SCRIPT" ]]; then
             CURRENT_HASH=$(sha256sum "\$0" | cut -d' ' -f1)
             NEW_HASH=$(sha256sum "$TEMP_SCRIPT" | cut -d' ' -f1)
             
             if [[ "$NEW_HASH" != "$CURRENT_HASH" ]]; then
-                echo "New version available."
-                read -p "Do you want to update? (y/n): " choice
+                echo "发现新版本。"
+                read -p "是否要更新？(y/n): " choice
                 case "$choice" in 
                     y|Y )
                         mv "$TEMP_SCRIPT" "\$0"
                         chmod +x "\$0"
-                        echo "Update successful. Please run the script again."
+                        echo "更新成功。请重新运行脚本。"
                         exit 0
                         ;;
                     * ) 
-                        echo "Update skipped."
+                        echo "更新已跳过。"
                         rm -f "$TEMP_SCRIPT"
                         ;;
                 esac
             else
-                echo "You are using the latest version."
+                echo "您正在使用最新版本。"
                 rm -f "$TEMP_SCRIPT"
             fi
         else
-            echo "Error: Downloaded file is empty."
+            echo "错误：下载的文件为空。"
             rm -f "$TEMP_SCRIPT"
         fi
     else
-        echo "Error: Failed to download the update."
+        echo "错误：下载更新失败。"
     fi
 }
 
 # 检查是否以root权限运行
 if [[ $EUID -ne 0 ]]; then
-   echo "This script must be run as root" 
+   echo "此脚本必须以root权限运行" 
    exit 1
 fi
 
@@ -159,7 +159,7 @@ setup_iptables() {
     iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
 
     # 记录日志
-    log_traffic "应用了iptables规则，限制了网络访问"
+    log_traffic "已应用iptables规则，限制了网络访问"
 }
 
 # 检查流量并应用限制
