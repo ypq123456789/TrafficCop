@@ -4,7 +4,7 @@ echo "当前版本：1.0.1"
 # 配置文件路径
 CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
-SCRIPT_PATH=$(realpath "\$0")
+SCRIPT_PATH="/root/traffic_monitor.sh"
 
 # 检查配置和定时任务
 check_existing_setup() {
@@ -232,6 +232,7 @@ setup_crontab() {
     echo "* * * * * $SCRIPT_PATH --run" | crontab -
     log_message "Crontab 已设置，每分钟运行一次"
 }
+
 
 # 主函数
 main() {
