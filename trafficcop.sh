@@ -1,5 +1,5 @@
 #!/bin/bash
-echo "当前版本：1.0.5"
+echo "当前版本：1.0.6"
 
 # 配置文件路径
 CONFIG_FILE="/root/traffic_monitor_config.txt"
@@ -247,30 +247,34 @@ setup_crontab() {
 
 # 主函数
 main() {
- if [ -f "$CONFIG_FILE" ] && [ -s "$CONFIG_FILE" ]; then  
-    if check_existing_setup; then
-        read -p "是否需要修改配置？(y/n): " modify_config
-        if [[ $modify_config == "y" ]]; then
+    if [[ -f "$CONFIG_FILE" ]] && [[ -s "$CONFIG_FILE" ]]; then  
+        if check_existing_setup; then
+            read -p "是否需要修改配置？(y/n): " modify_config
+            case $modify_config in
+                [Yy]*)
+                    initial_config
+                    setup_crontab
+                    log_message "设置已更新，脚本将每分钟自动运行一次"
+                    ;;
+                *)
+                    echo "保持现有配置。"
+                    ;;
+            esac
+        else
+            echo "未找到现有配置，开始初始设置..."
+            check_and_install_packages
             initial_config
             setup_crontab
-            log_message "设置已更新，脚本将每分钟自动运行一次"
-        else
-            echo "保持现有配置。"
+            log_message "设置完成，脚本将每分钟自动运行一次"
         fi
-    else
-        echo "未找到现有配置，开始初始设置..."
-        check_and_install_packages
-        initial_config
-        setup_crontab
-        log_message "设置完成，脚本将每分钟自动运行一次"
-    fi
 
-    if [[ "\$1" == "--run" ]]; then
-        if read_config; then
-            check_reset_limit
-            check_and_limit_traffic
-        else
-            log_message "配置文件为空或不存在，请先运行脚本进行配置"
+        if [[ "\$1" == "--run" ]]; then
+            if read_config; then
+                check_reset_limit
+                check_and_limit_traffic
+            else
+                log_message "配置文件为空或不存在，请先运行脚本进行配置"
+            fi
         fi
     fi
 }
