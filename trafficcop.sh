@@ -1,5 +1,5 @@
 #!/bin/bash
-echo "当前版本：1.0.8"
+echo "当前版本：1.0.9"
 set -e
 set -o pipefail
 set -u 
@@ -58,7 +58,7 @@ check_and_install_packages() {
 
 # 日志函数
 log_message() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - \$1" >> "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - \$1" | tee -a "$LOG_FILE"
 }
 
 # 读取配置
@@ -134,7 +134,7 @@ get_main_interface() {
 
 
 # 初始配置函数
-debug_log "Starting initial configuration"
+log_message "Starting initial configuration"
 initial_config() {
     echo "正在检测主要网络接口..."
     MAIN_INTERFACE=$(get_main_interface)
@@ -260,19 +260,24 @@ setup_crontab() {
 
 # 主函数
 main() {
-    debug_log "Entering main function"
-    debug_log "CONFIG_FILE=$CONFIG_FILE"
-    debug_log "Current directory: $(pwd)"
-    debug_log "Script arguments: $@"
-    
-    if [[ ! -f "$CONFIG_FILE" ]]; then
-        debug_log "Config file does not exist"
-        echo "配置文件不存在，创建新文件"
-        touch "$CONFIG_FILE"
-        chmod 600 "$CONFIG_FILE"
-    fi
+    log_message "Entering main function"
+    log_message "Current directory: $(pwd)"
+    log_message "Script arguments: $@"
 
-    if [[ -f "$CONFIG_FILE" ]] && [[ -s "$CONFIG_FILE" ]]; then  
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        log_message "Config file does not exist"
+        echo "配置文件不存在，开始初始配置"
+        initial_config
+        setup_crontab
+        log_message "初始配置完成"
+    elif [[ ! -s "$CONFIG_FILE" ]]; then
+        log_message "Config file is empty"
+        echo "配置文件为空，开始初始配置"
+        initial_config
+        setup_crontab
+        log_message "初始配置完成"
+    else
+        log_message "Config file exists and is not empty"
         if check_existing_setup; then
             read -p "是否需要修改配置？(y/n): " modify_config
             case $modify_config in
@@ -286,27 +291,23 @@ main() {
                     ;;
             esac
         else
-            echo "未找到现有配置，开始初始设置..."
-            check_and_install_packages
+            echo "配置文件存在但格式不正确，开始重新配置..."
             initial_config
             setup_crontab
-            log_message "设置完成，脚本将每分钟自动运行一次"
+            log_message "重新配置完成，脚本将每分钟自动运行一次"
         fi
+    fi
 
-        if [[ "\$1" == "--run" ]]; then
-            debug_log "Running in automatic mode"
-            if read_config; then
-                check_reset_limit
-                check_and_limit_traffic
-            else
-                log_message "配置文件为空或不存在，请先运行脚本进行配置"
-            fi
+    if [[ "\$1" == "--run" ]]; then
+        log_message "Running in automatic mode"
+        if read_config; then
+            check_reset_limit
+            check_and_limit_traffic
+        else
+            log_message "配置文件读取失败，请检查配置"
         fi
-    else
-        echo "配置文件为空或不存在，请运行脚本进行初始配置"
     fi
 }
-
 
 
 # 执行主函数
