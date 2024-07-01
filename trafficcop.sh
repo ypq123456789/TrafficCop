@@ -3,11 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.12"| tee -a "$LOG_FILE"
-
-# 配置文件路径
-
-
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.13"| tee -a "$LOG_FILE"
 
 # 检查配置和定时任务
 check_existing_setup() {
