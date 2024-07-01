@@ -1,5 +1,15 @@
 #!/bin/bash
-echo "当前版本：1.0.6"
+set -e
+set -o pipefail
+
+DEBUG=true
+
+debug_log() {
+    if [[ "$DEBUG" == "true" ]]; then
+        echo "DEBUG: \$1" >&2
+    fi
+}
+echo "当前版本：1.0.7"
 
 # 配置文件路径
 CONFIG_FILE="/root/traffic_monitor_config.txt"
@@ -8,6 +18,7 @@ SCRIPT_PATH="/root/traffic_monitor.sh"
 
 
 # 检查配置和定时任务
+debug_log "Checking existing setup"
 check_existing_setup() {
      if [ -s "$CONFIG_FILE" ]; then  
         source "$CONFIG_FILE"
@@ -123,6 +134,7 @@ get_main_interface() {
 
 
 # 初始配置函数
+debug_log "Starting initial configuration"
 initial_config() {
     echo "正在检测主要网络接口..."
     MAIN_INTERFACE=$(get_main_interface)
@@ -211,6 +223,7 @@ get_traffic_usage() {
 }
 
 # 检查并限制流量
+debug_log "Checking and limiting traffic"
 check_and_limit_traffic() {
     local usage=$(get_traffic_usage)
     local limit=$((TRAFFIC_LIMIT - TRAFFIC_TOLERANCE))
@@ -247,6 +260,13 @@ setup_crontab() {
 
 # 主函数
 main() {
+    debug_log "Entering main function"
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        echo "配置文件不存在，创建新文件"
+        touch "$CONFIG_FILE"
+        chmod 600 "$CONFIG_FILE"
+    fi
+
     if [[ -f "$CONFIG_FILE" ]] && [[ -s "$CONFIG_FILE" ]]; then  
         if check_existing_setup; then
             read -p "是否需要修改配置？(y/n): " modify_config
@@ -269,6 +289,7 @@ main() {
         fi
 
         if [[ "\$1" == "--run" ]]; then
+            debug_log "Running in automatic mode"
             if read_config; then
                 check_reset_limit
                 check_and_limit_traffic
@@ -276,8 +297,11 @@ main() {
                 log_message "配置文件为空或不存在，请先运行脚本进行配置"
             fi
         fi
+    else
+        echo "配置文件为空或不存在，请运行脚本进行初始配置"
     fi
 }
+
 
 
 # 执行主函数
