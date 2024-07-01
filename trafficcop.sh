@@ -3,7 +3,21 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.14"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.15"| tee -a "$LOG_FILE"
+
+# 检查并安装必要的软件包
+check_and_install_packages() {
+    local packages=("vnstat" "jq" "bc" "tc")
+    for package in "${packages[@]}"; do
+        if ! command -v $package &> /dev/null; then
+            echo "$(date '+%Y-%m-%d %H:%M:%S') $package 未安装，正在安装..."| tee -a "$LOG_FILE"
+            sudo apt-get update && sudo apt-get install -y $package
+            echo "$(date '+%Y-%m-%d %H:%M:%S') $package 安装完成"| tee -a "$LOG_FILE"
+        else
+            echo "$(date '+%Y-%m-%d %H:%M:%S') $package 已安装"| tee -a "$LOG_FILE"
+        fi
+    done
+}
 
 # 检查配置和定时任务
 check_existing_setup() {
@@ -28,22 +42,6 @@ check_existing_setup() {
         return 1
     fi
 }
-
-# 检查并安装必要的软件包
-check_and_install_packages() {
-    local packages=("vnstat" "jq" "bc" "tc")
-    for package in "${packages[@]}"; do
-        if ! command -v $package &> /dev/null; then
-            echo "$(date '+%Y-%m-%d %H:%M:%S') $package 未安装，正在安装..."| tee -a "$LOG_FILE"
-            sudo apt-get update && sudo apt-get install -y $package
-            echo "$(date '+%Y-%m-%d %H:%M:%S') $package 安装完成"| tee -a "$LOG_FILE"
-        else
-            echo "$(date '+%Y-%m-%d %H:%M:%S') $package 已安装"| tee -a "$LOG_FILE"
-        fi
-    done
-}
-
-
 
 # 读取配置
 read_config() {
@@ -82,6 +80,7 @@ show_current_config() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') 主要网络接口: $MAIN_INTERFACE"| tee -a "$LOG_FILE"
 }
 
+# 检测主要网络接口
 get_main_interface() {
     local main_interface=$(ip route | grep default | sed -n 's/^default via [0-9.]* dev \([^ ]*\).*/\1/p' | head -n1)
     if [ -z "$main_interface" ]; then
@@ -115,7 +114,6 @@ get_main_interface() {
     
     echo $main_interface| tee -a "$LOG_FILE"
 }
-
 
 # 初始配置函数
 echo "开始初始化配置"| tee -a "$LOG_FILE"
@@ -242,48 +240,52 @@ setup_crontab() {
 
 # 主函数
 main() {
-    if [[ ! -f "$CONFIG_FILE" ]]; then
-        echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件不存在，开始初始配置"| tee -a "$LOG_FILE"
+    if [[ ! -f "$CONFIG_FILE" ]] || [[ ! -s "$CONFIG_FILE" ]]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件不存在或为空，开始初始配置" | tee -a "$LOG_FILE"
         initial_config
         setup_crontab
-        echo "$(date '+%Y-%m-%d %H:%M:%S') 初始配置完成"| tee -a "$LOG_FILE"
-    elif [[ ! -s "$CONFIG_FILE" ]]; then
-        echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件为空，开始初始配置"| tee -a "$LOG_FILE"
-        initial_config
-        setup_crontab
-        echo "$(date '+%Y-%m-%d %H:%M:%S') 初始配置完成"| tee -a "$LOG_FILE"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 初始配置完成" | tee -a "$LOG_FILE"
     else
-        echo "配置文件已存在且不为空"| tee -a "$LOG_FILE"
+        echo "配置文件已存在且不为空" | tee -a "$LOG_FILE"
         if check_existing_setup; then
             read -p "是否需要修改配置？(y/n): " modify_config
             case $modify_config in
                 [Yy]*)
                     initial_config
                     setup_crontab
-                    echo "$(date '+%Y-%m-%d %H:%M:%S') 设置已更新，脚本将每分钟自动运行一次"| tee -a "$LOG_FILE"
+                    echo "$(date '+%Y-%m-%d %H:%M:%S') 设置已更新，脚本将每分钟自动运行一次" | tee -a "$LOG_FILE"
                     ;;
                 *)
-                    echo "$(date '+%Y-%m-%d %H:%M:%S') 保持现有配置。"| tee -a "$LOG_FILE"
+                    echo "$(date '+%Y-%m-%d %H:%M:%S') 保持现有配置。" | tee -a "$LOG_FILE"
                     ;;
             esac
         else
-            echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件存在但格式不正确，开始重新配置..."| tee -a "$LOG_FILE"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件存在但格式不正确，开始重新配置..." | tee -a "$LOG_FILE"
             initial_config
             setup_crontab
-            echo "$(date '+%Y-%m-%d %H:%M:%S') 重新配置完成，脚本将每分钟自动运行一次"| tee -a "$LOG_FILE"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 重新配置完成，脚本将每分钟自动运行一次" | tee -a "$LOG_FILE"
         fi
     fi
 
+    # 显示当前流量使用情况和限制状态
+    if read_config; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 当前流量使用情况和限制状态：" | tee -a "$LOG_FILE"
+        check_and_limit_traffic
+    else
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件读取失败，请检查配置" | tee -a "$LOG_FILE"
+    fi
+
     if [[ "\$1" == "--run" ]]; then
-        echo "正在以自动化模式运行"| tee -a "$LOG_FILE"
+        echo "正在以自动化模式运行" | tee -a "$LOG_FILE"
         if read_config; then
             check_reset_limit
             check_and_limit_traffic
         else
-            echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件读取失败，请检查配置"| tee -a "$LOG_FILE"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件读取失败，请检查配置" | tee -a "$LOG_FILE"
         fi
     fi
 }
+
 
 
 # 执行主函数
