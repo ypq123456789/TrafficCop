@@ -1,5 +1,5 @@
 # 一键脚本
-curl -fsSL https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/trafficcop.sh -o /root/traffic_monitor.sh && chmod +x /root/traffic_monitor.sh && bash /root/traffic_monitor.sh
+```curl -fsSL https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/trafficcop.sh -o /root/traffic_monitor.sh && chmod +x /root/traffic_monitor.sh && bash /root/traffic_monitor.sh```
 # 脚本逻辑
 首先，这个脚本会判断当前主要使用的网卡名称是什么，选择主要网卡进行流量限制。
 
