@@ -3,13 +3,13 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.13"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.14"| tee -a "$LOG_FILE"
 
 # 检查配置和定时任务
 check_existing_setup() {
      if [ -s "$CONFIG_FILE" ]; then  
         source "$CONFIG_FILE"
-        echo "$(date '+%Y-%m-%d %H:%M:%S') 配置已存在："| tee -a "$LOG_FILE"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 配置已存在，如下："| tee -a "$LOG_FILE"
         echo "$(date '+%Y-%m-%d %H:%M:%S') 流量统计模式: $TRAFFIC_MODE"| tee -a "$LOG_FILE"
         echo "$(date '+%Y-%m-%d %H:%M:%S') 流量统计周期: $TRAFFIC_PERIOD"| tee -a "$LOG_FILE"
         echo "$(date '+%Y-%m-%d %H:%M:%S') 周期起始日: ${PERIOD_START_DAY:-1}"| tee -a "$LOG_FILE"
@@ -253,7 +253,7 @@ main() {
         setup_crontab
         echo "$(date '+%Y-%m-%d %H:%M:%S') 初始配置完成"| tee -a "$LOG_FILE"
     else
-        echo "Config file exists and is not empty"| tee -a "$LOG_FILE"
+        echo "配置文件已存在且不为空"| tee -a "$LOG_FILE"
         if check_existing_setup; then
             read -p "是否需要修改配置？(y/n): " modify_config
             case $modify_config in
