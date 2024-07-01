@@ -86,7 +86,6 @@ show_current_config() {
     echo "主要网络接口: $MAIN_INTERFACE"
 }
 
-# 获取主要网络接口
 get_main_interface() {
     local main_interface=$(ip route | grep default | sed -n 's/^default via [0-9.]* dev \([^ ]*\).*/\1/p' | head -n1)
     if [ -z "$main_interface" ]; then
@@ -95,17 +94,38 @@ get_main_interface() {
     
     if [ -z "$main_interface" ]; then
         echo "无法自动检测主要网络接口。"
-        echo "可用的网络接口有："
-        ip -o link show | sed -n 's/^[0-9]*: \([^:]*\):.*/\1/p'
-        read -p "请从上面的列表中选择一个网络接口: " main_interface
-    else
-        read -p "检测到的主要网络接口是: $main_interface,是否使用此接口？(y/n) " confirm
-        if [[ $confirm != "y" ]]; then
+        while true; do
             echo "可用的网络接口有："
             ip -o link show | sed -n 's/^[0-9]*: \([^:]*\):.*/\1/p'
-            read -p "请从上面的列表中选择一个网络接口: " new_interface
-            main_interface=$new_interface
-        fi
+            read -p "请从上面的列表中选择一个网络接口: " main_interface
+            if ip link show "$main_interface" > /dev/null 2>&1; then
+                break
+            else
+                echo "无效的接口，请重新选择。"
+            fi
+        done
+    else
+        while true; do
+            read -p "检测到的主要网络接口是: $main_interface, 是否使用此接口？(y/n) " confirm
+            if [[ $confirm == "y" ]]; then
+                break
+            elif [[ $confirm == "n" ]]; then
+                while true; do
+                    echo "可用的网络接口有："
+                    ip -o link show | sed -n 's/^[0-9]*: \([^:]*\):.*/\1/p'
+                    read -p "请从上面的列表中选择一个网络接口: " new_interface
+                    if ip link show "$new_interface" > /dev/null 2>&1; then
+                        main_interface=$new_interface
+                        break
+                    else
+                        echo "无效的接口，请重新选择。"
+                    fi
+                done
+                break
+            else
+                echo "请输入 y 或 n。"
+            fi
+        done
     fi
     
     echo $main_interface
