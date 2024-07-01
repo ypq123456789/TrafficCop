@@ -1,20 +1,12 @@
 #!/bin/bash
-
-# 日志函数
-log_message() {
-    local message="\$1"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $message" | tee -a "$LOG_FILE"
-}
-
-echo "当前版本：1.0.10"
-log_message "当前版本：1.0.10"
-
-
-
-# 配置文件路径
 CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
+
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.10"| tee -a "$LOG_FILE"
+
+# 配置文件路径
+
 
 
 # 检查配置和定时任务
@@ -29,21 +21,21 @@ check_existing_setup() {
         echo "容错范围: $TRAFFIC_TOLERANCE GB"
         echo "限速: ${LIMIT_SPEED:-20} kbit/s"
         echo "主要网络接口: $MAIN_INTERFACE"
-        log_message "配置已存在："
-        log_message "流量统计模式: $TRAFFIC_MODE"
-        log_message "流量统计周期: $TRAFFIC_PERIOD"
-        log_message "周期起始日: ${PERIOD_START_DAY:-1}"
-        log_message "流量限制: $TRAFFIC_LIMIT GB"
-        log_message "容错范围: $TRAFFIC_TOLERANCE GB"
-        log_message "限速: ${LIMIT_SPEED:-20} kbit/s"
-        log_message "主要网络接口: $MAIN_INTERFACE"
+        echo "配置已存在："
+        echo "流量统计模式: $TRAFFIC_MODE"
+        echo "流量统计周期: $TRAFFIC_PERIOD"
+        echo "周期起始日: ${PERIOD_START_DAY:-1}"
+        echo "流量限制: $TRAFFIC_LIMIT GB"
+        echo "容错范围: $TRAFFIC_TOLERANCE GB"
+        echo "限速: ${LIMIT_SPEED:-20} kbit/s"
+        echo "主要网络接口: $MAIN_INTERFACE"
         
         if crontab -l 2>/dev/null | grep -q "$SCRIPT_PATH --run"; then
             echo "每分钟一次的定时任务已在执行。"
-            log_message "每分钟一次的定时任务已在执行。"
+            echo "每分钟一次的定时任务已在执行。"
         else
             echo "警告：定时任务未找到，可能需要重新设置。"
-            log_message "警告：定时任务未找到，可能需要重新设置。"
+            echo "警告：定时任务未找到，可能需要重新设置。"
         fi
         return 0
     else
@@ -57,13 +49,13 @@ check_and_install_packages() {
     for package in "${packages[@]}"; do
         if ! command -v $package &> /dev/null; then
             echo "$package 未安装，正在安装..."
-            log_message "$package 未安装，正在安装..."
+            echo "$package 未安装，正在安装..."
             sudo apt-get update && sudo apt-get install -y $package
             echo "$package 安装完成"
-            log_message "$package 安装完成"
+            echo "$package 安装完成"
         else
             echo "$package 已安装"
-            log_message "$package 已安装"
+            echo "$package 已安装"
         fi
     done
 }
@@ -91,7 +83,7 @@ PERIOD_START_DAY=${PERIOD_START_DAY:-1}
 LIMIT_SPEED=${LIMIT_SPEED:-20}
 MAIN_INTERFACE=$MAIN_INTERFACE
 EOF
-    log_message "配置已更新"
+    echo "配置已更新"
 }
 
 
@@ -105,14 +97,14 @@ show_current_config() {
     echo "容错范围: $TRAFFIC_TOLERANCE GB"
     echo "限速: ${LIMIT_SPEED:-20} kbit/s"
     echo "主要网络接口: $MAIN_INTERFACE"
-    log_message "当前配置:"
-    log_message "流量统计模式: $TRAFFIC_MODE"
-    log_message "流量统计周期: $TRAFFIC_PERIOD"
-    log_message "周期起始日: ${PERIOD_START_DAY:-1}"
-    log_message "流量限制: $TRAFFIC_LIMIT GB"
-    log_message "容错范围: $TRAFFIC_TOLERANCE GB"
-    log_message "限速: ${LIMIT_SPEED:-20} kbit/s"
-    log_message "主要网络接口: $MAIN_INTERFACE"
+    echo "当前配置:"
+    echo "流量统计模式: $TRAFFIC_MODE"
+    echo "流量统计周期: $TRAFFIC_PERIOD"
+    echo "周期起始日: ${PERIOD_START_DAY:-1}"
+    echo "流量限制: $TRAFFIC_LIMIT GB"
+    echo "容错范围: $TRAFFIC_TOLERANCE GB"
+    echo "限速: ${LIMIT_SPEED:-20} kbit/s"
+    echo "主要网络接口: $MAIN_INTERFACE"
 }
 
 get_main_interface() {
@@ -124,19 +116,19 @@ get_main_interface() {
     if [ -z "$main_interface" ]; then
         while true; do
             echo "无法自动检测主要网络接口。"
-            log_message "无法自动检测主要网络接口。"
+            echo "无法自动检测主要网络接口。"
             echo "可用的网络接口有："
-            log_message "可用的网络接口有："
+            echo "可用的网络接口有："
             ip -o link show | sed -n 's/^[0-9]*: \([^:]*\):.*/\1/p'
             read -p "请从上面的列表中选择一个网络接口: " main_interface
             if [ -z "$main_interface" ]; then
                 echo "请输入一个有效的接口名称。"
-                log_message "请输入一个有效的接口名称。"
+                echo "请输入一个有效的接口名称。"
             elif ip link show "$main_interface" > /dev/null 2>&1; then
                 break
             else
                 echo "无效的接口，请重新选择。"
-                log_message "无效的接口，请重新选择。"
+                echo "无效的接口，请重新选择。"
             fi
         done
     else
@@ -146,7 +138,7 @@ get_main_interface() {
                 main_interface=$new_interface
             else
                 echo "输入的接口无效，将使用检测到的接口: $main_interface"
-                log_message "输入的接口无效，将使用检测到的接口: $main_interface"
+                echo "输入的接口无效，将使用检测到的接口: $main_interface"
             fi
         fi
     fi
@@ -156,10 +148,10 @@ get_main_interface() {
 
 
 # 初始配置函数
-log_message "Starting initial configuration"
+echo "Starting initial configuration"
 initial_config() {
     echo "正在检测主要网络接口..."
-    log_message "正在检测主要网络接口..."
+    echo "正在检测主要网络接口..."
     MAIN_INTERFACE=$(get_main_interface)
 
     echo "请选择流量统计模式："
@@ -167,11 +159,11 @@ initial_config() {
     echo "2. 只计算进站流量"
     echo "3. 出进站流量都计算"
     echo "4. 出站和进站流量只取大"
-    log_message "请选择流量统计模式："
-    log_message "1. 只计算出站流量"
-    log_message "2. 只计算进站流量"
-    log_message "3. 出进站流量都计算"
-    log_message "4. 出站和进站流量只取大"
+    echo "请选择流量统计模式："
+    echo "1. 只计算出站流量"
+    echo "2. 只计算进站流量"
+    echo "3. 出进站流量都计算"
+    echo "4. 出站和进站流量只取大"
     read -p "请输入选择 (1-4): " mode_choice
     case $mode_choice in
         1) TRAFFIC_MODE="out" ;;
@@ -254,15 +246,15 @@ get_traffic_usage() {
 check_and_limit_traffic() {
     local usage=$(get_traffic_usage)
     local limit=$((TRAFFIC_LIMIT - TRAFFIC_TOLERANCE))
-    log_message "当前使用流量: $usage GB，限制流量: $limit GB"
+    echo "当前使用流量: $usage GB，限制流量: $limit GB"
     echo "当前使用流量: $usage GB，限制流量: $limit GB"
     if (( $(echo "$usage > $limit" | bc -l) )); then
-        log_message "超过流量限制，正在限制带宽..."
+        echo "超过流量限制，正在限制带宽..."
         echo "超过流量限制，正在限制带宽..."
         tc qdisc del dev $MAIN_INTERFACE root 2>/dev/null
         tc qdisc add dev $MAIN_INTERFACE root tbf rate ${LIMIT_SPEED}kbit burst 32kbit latency 400ms
     else
-        log_message "流量正常，清除所有限制"
+        echo "流量正常，清除所有限制"
         echo "流量正常，清除所有限制"
         tc qdisc del dev $MAIN_INTERFACE root 2>/dev/null
     fi
@@ -274,7 +266,7 @@ check_reset_limit() {
     local period_start=$(get_period_start_date)
     
     if [[ "$current_date" == "$period_start" ]]; then
-        log_message "新的流量周期开始，重置限制"
+        echo "新的流量周期开始，重置限制"
         echo "新的流量周期开始，重置限制"
         tc qdisc del dev $MAIN_INTERFACE root 2>/dev/null
     fi
@@ -285,59 +277,59 @@ setup_crontab() {
     (crontab -l 2>/dev/null | grep -v "$SCRIPT_PATH") | crontab -
     echo "* * * * * $SCRIPT_PATH --run" | crontab -
     echo "Crontab 已设置，每分钟运行一次"
-    log_message "Crontab 已设置，每分钟运行一次"
+    echo "Crontab 已设置，每分钟运行一次"
 }
 
 
 # 主函数
 main() {
     if [[ ! -f "$CONFIG_FILE" ]]; then
-        log_message "配置文件不存在，开始初始配置"
+        echo "配置文件不存在，开始初始配置"
         echo "配置文件不存在，开始初始配置"
         initial_config
         setup_crontab
-        log_message "初始配置完成"
+        echo "初始配置完成"
         echo "初始配置完成"
     elif [[ ! -s "$CONFIG_FILE" ]]; then
-        log_message "配置文件为空，开始初始配置"
+        echo "配置文件为空，开始初始配置"
         echo "配置文件为空，开始初始配置"
         initial_config
         setup_crontab
-        log_message "初始配置完成"
+        echo "初始配置完成"
         echo "初始配置完成"
     else
-        log_message "Config file exists and is not empty"
+        echo "Config file exists and is not empty"
         if check_existing_setup; then
             read -p "是否需要修改配置？(y/n): " modify_config
             case $modify_config in
                 [Yy]*)
                     initial_config
                     setup_crontab
-                    log_message "设置已更新，脚本将每分钟自动运行一次"
+                    echo "设置已更新，脚本将每分钟自动运行一次"
                     echo "设置已更新，脚本将每分钟自动运行一次"
                     ;;
                 *)
                     echo "保持现有配置。"
-                    log_message "保持现有配置。"
+                    echo "保持现有配置。"
                     ;;
             esac
         else
             echo "配置文件存在但格式不正确，开始重新配置..."
-            log_message "配置文件存在但格式不正确，开始重新配置..."
+            echo "配置文件存在但格式不正确，开始重新配置..."
             initial_config
             setup_crontab
             echo "重新配置完成，脚本将每分钟自动运行一次"
-            log_message "重新配置完成，脚本将每分钟自动运行一次"
+            echo "重新配置完成，脚本将每分钟自动运行一次"
         fi
     fi
 
     if [[ "\$1" == "--run" ]]; then
-        log_message "Running in automatic mode"
+        echo "Running in automatic mode"
         if read_config; then
             check_reset_limit
             check_and_limit_traffic
         else
-            log_message "配置文件读取失败，请检查配置"
+            echo "配置文件读取失败，请检查配置"
             echo "配置文件读取失败，请检查配置"
         fi
     fi
