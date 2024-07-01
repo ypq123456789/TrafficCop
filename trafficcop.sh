@@ -41,11 +41,23 @@ TRAFFIC_MODE=$TRAFFIC_MODE
 TRAFFIC_PERIOD=$TRAFFIC_PERIOD
 TRAFFIC_LIMIT=$TRAFFIC_LIMIT
 TRAFFIC_TOLERANCE=$TRAFFIC_TOLERANCE
-PERIOD_START_DAY=$PERIOD_START_DAY
-LIMIT_SPEED=$LIMIT_SPEED
+PERIOD_START_DAY=${PERIOD_START_DAY:-1}
+LIMIT_SPEED=${LIMIT_SPEED:-20}
 MAIN_INTERFACE=$MAIN_INTERFACE
 EOF
     log_message "配置已更新"
+}
+
+# 显示当前配置
+show_current_config() {
+    echo "当前配置:"
+    echo "流量统计模式: $TRAFFIC_MODE"
+    echo "流量统计周期: $TRAFFIC_PERIOD"
+    echo "周期起始日: ${PERIOD_START_DAY:-1}"
+    echo "流量限制: $TRAFFIC_LIMIT GB"
+    echo "容错范围: $TRAFFIC_TOLERANCE GB"
+    echo "限速: ${LIMIT_SPEED:-20} kbit/s"
+    echo "主要网络接口: $MAIN_INTERFACE"
 }
 
 # 获取主要网络接口
@@ -72,6 +84,7 @@ get_main_interface() {
     
     echo $main_interface
 }
+
 # 初始配置函数
 initial_config() {
     echo "正在检测主要网络接口..."
@@ -98,12 +111,14 @@ initial_config() {
         *) TRAFFIC_PERIOD="monthly" ;;
     esac
 
-    read -p "请输入周期起始日 (1-31): " PERIOD_START_DAY
+    read -p "请输入周期起始日 (1-31，默认为1): " PERIOD_START_DAY
+    PERIOD_START_DAY=${PERIOD_START_DAY:-1}
 
     read -p "请输入流量限制 (GB): " TRAFFIC_LIMIT
     read -p "请输入容错范围 (GB): " TRAFFIC_TOLERANCE
 
-    read -p "请输入限速 (kbit/s): " LIMIT_SPEED
+    read -p "请输入限速 (kbit/s，默认为20): " LIMIT_SPEED
+    LIMIT_SPEED=${LIMIT_SPEED:-20}
 
     write_config
 }
@@ -204,9 +219,34 @@ main() {
             log_message "配置文件为空或不存在，请先运行脚本进行配置"
         fi
     else
-        initial_config
-        setup_crontab
-        log_message "设置完成，脚本将每分钟自动运行一次"
+        if read_config; then
+            echo "配置已存在。您想要："
+            echo "1. 查看当前配置"
+            echo "2. 修改配置"
+            echo "3. 退出"
+            read -p "请选择 (1-3): " choice
+            case $choice in
+                1)
+                    show_current_config
+                    ;;
+                2)
+                    initial_config
+                    setup_crontab
+                    log_message "设置完成，脚本将每分钟自动运行一次"
+                    ;;
+                3)
+                    exit 0
+                    ;;
+                *)
+                    echo "无效选择，退出"
+                    exit 1
+                    ;;
+            esac
+        else
+            initial_config
+            setup_crontab
+            log_message "设置完成，脚本将每分钟自动运行一次"
+        fi
     fi
 }
 
