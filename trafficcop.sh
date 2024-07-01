@@ -1,10 +1,34 @@
 #!/bin/bash
-echo "当前版本：1.0.0"
+echo "当前版本：1.0.1"
 
 # 配置文件路径
 CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH=$(realpath "\$0")
+
+# 检查配置和定时任务
+check_existing_setup() {
+    if [ -f "$CONFIG_FILE" ]; then
+        source "$CONFIG_FILE"
+        echo "配置已存在："
+        echo "流量统计模式: $TRAFFIC_MODE"
+        echo "流量统计周期: $TRAFFIC_PERIOD"
+        echo "周期起始日: ${PERIOD_START_DAY:-1}"
+        echo "流量限制: $TRAFFIC_LIMIT GB"
+        echo "容错范围: $TRAFFIC_TOLERANCE GB"
+        echo "限速: ${LIMIT_SPEED:-20} kbit/s"
+        echo "主要网络接口: $MAIN_INTERFACE"
+        
+        if crontab -l 2>/dev/null | grep -q "$SCRIPT_PATH --run"; then
+            echo "每分钟一次的定时任务已在执行。"
+        else
+            echo "警告：定时任务未找到，可能需要重新设置。"
+        fi
+        return 0
+    else
+        return 1
+    fi
+}
 
 # 检查并安装必要的软件包
 check_and_install_packages() {
@@ -48,6 +72,7 @@ MAIN_INTERFACE=$MAIN_INTERFACE
 EOF
     log_message "配置已更新"
 }
+
 
 # 显示当前配置
 show_current_config() {
@@ -210,8 +235,23 @@ setup_crontab() {
 
 # 主函数
 main() {
-    check_and_install_packages
-    
+    if check_existing_setup; then
+        read -p "是否需要修改配置？(y/n): " modify_config
+        if [[ $modify_config == "y" ]]; then
+            initial_config
+            setup_crontab
+            log_message "设置已更新，脚本将每分钟自动运行一次"
+        else
+            echo "保持现有配置。"
+        fi
+    else
+        echo "未找到现有配置，开始初始设置..."
+        check_and_install_packages
+        initial_config
+        setup_crontab
+        log_message "设置完成，脚本将每分钟自动运行一次"
+    fi
+
     if [[ "\$1" == "--run" ]]; then
         if read_config; then
             check_reset_limit
@@ -219,37 +259,9 @@ main() {
         else
             log_message "配置文件为空或不存在，请先运行脚本进行配置"
         fi
-    else
-        if read_config; then
-            echo "配置已存在。您想要："
-            echo "1. 查看当前配置"
-            echo "2. 修改配置"
-            echo "3. 退出"
-            read -p "请选择 (1-3): " choice
-            case $choice in
-                1)
-                    show_current_config
-                    ;;
-                2)
-                    initial_config
-                    setup_crontab
-                    log_message "设置完成，脚本将每分钟自动运行一次"
-                    ;;
-                3)
-                    exit 0
-                    ;;
-                *)
-                    echo "无效选择，退出"
-                    exit 1
-                    ;;
-            esac
-        else
-            initial_config
-            setup_crontab
-            log_message "设置完成，脚本将每分钟自动运行一次"
-        fi
     fi
 }
+
 
 # 执行主函数
 main "$@"
