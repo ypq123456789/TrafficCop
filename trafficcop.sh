@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.15"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.16"| tee -a "$LOG_FILE"
 
 # 检查并安装必要的软件包
 check_and_install_packages() {
@@ -240,6 +240,9 @@ setup_crontab() {
 
 # 主函数
 main() {
+ # 首先检查并安装必要的软件包
+    check_and_install_packages
+    
     if [[ ! -f "$CONFIG_FILE" ]] || [[ ! -s "$CONFIG_FILE" ]]; then
         echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件不存在或为空，开始初始配置" | tee -a "$LOG_FILE"
         initial_config
