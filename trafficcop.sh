@@ -6,9 +6,10 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 
+
 # 检查配置和定时任务
 check_existing_setup() {
-    if [ -f "$CONFIG_FILE" ]; then
+     if [ -s "$CONFIG_FILE" ]; then  
         source "$CONFIG_FILE"
         echo "配置已存在："
         echo "流量统计模式: $TRAFFIC_MODE"
@@ -246,6 +247,7 @@ setup_crontab() {
 
 # 主函数
 main() {
+ if [ -f "$CONFIG_FILE" ] && [ -s "$CONFIG_FILE" ]; then  
     if check_existing_setup; then
         read -p "是否需要修改配置？(y/n): " modify_config
         if [[ $modify_config == "y" ]]; then
