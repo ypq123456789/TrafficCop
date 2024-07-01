@@ -1,7 +1,8 @@
 #!/bin/bash
+echo "当前版本：1.0.8"
 set -e
 set -o pipefail
-
+set -u 
 DEBUG=true
 
 debug_log() {
@@ -9,7 +10,6 @@ debug_log() {
         echo "DEBUG: \$1" >&2
     fi
 }
-echo "当前版本：1.0.7"
 
 # 配置文件路径
 CONFIG_FILE="/root/traffic_monitor_config.txt"
@@ -261,7 +261,12 @@ setup_crontab() {
 # 主函数
 main() {
     debug_log "Entering main function"
+    debug_log "CONFIG_FILE=$CONFIG_FILE"
+    debug_log "Current directory: $(pwd)"
+    debug_log "Script arguments: $@"
+    
     if [[ ! -f "$CONFIG_FILE" ]]; then
+        debug_log "Config file does not exist"
         echo "配置文件不存在，创建新文件"
         touch "$CONFIG_FILE"
         chmod 600 "$CONFIG_FILE"
