@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.11"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.12"| tee -a "$LOG_FILE"
 
 # 配置文件路径
 
@@ -13,29 +13,19 @@ echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.11"| tee -a "$LOG_FILE"
 check_existing_setup() {
      if [ -s "$CONFIG_FILE" ]; then  
         source "$CONFIG_FILE"
-        echo "配置已存在："
-        echo "流量统计模式: $TRAFFIC_MODE"
-        echo "流量统计周期: $TRAFFIC_PERIOD"
-        echo "周期起始日: ${PERIOD_START_DAY:-1}"
-        echo "流量限制: $TRAFFIC_LIMIT GB"
-        echo "容错范围: $TRAFFIC_TOLERANCE GB"
-        echo "限速: ${LIMIT_SPEED:-20} kbit/s"
-        echo "主要网络接口: $MAIN_INTERFACE"
-        echo "配置已存在："
-        echo "流量统计模式: $TRAFFIC_MODE"
-        echo "流量统计周期: $TRAFFIC_PERIOD"
-        echo "周期起始日: ${PERIOD_START_DAY:-1}"
-        echo "流量限制: $TRAFFIC_LIMIT GB"
-        echo "容错范围: $TRAFFIC_TOLERANCE GB"
-        echo "限速: ${LIMIT_SPEED:-20} kbit/s"
-        echo "主要网络接口: $MAIN_INTERFACE"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 配置已存在："| tee -a "$LOG_FILE"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 流量统计模式: $TRAFFIC_MODE"| tee -a "$LOG_FILE"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 流量统计周期: $TRAFFIC_PERIOD"| tee -a "$LOG_FILE"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 周期起始日: ${PERIOD_START_DAY:-1}"| tee -a "$LOG_FILE"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 流量限制: $TRAFFIC_LIMIT GB"| tee -a "$LOG_FILE"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 容错范围: $TRAFFIC_TOLERANCE GB"| tee -a "$LOG_FILE"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 限速: ${LIMIT_SPEED:-20} kbit/s"| tee -a "$LOG_FILE"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 主要网络接口: $MAIN_INTERFACE"| tee -a "$LOG_FILE"
         
         if crontab -l 2>/dev/null | grep -q "$SCRIPT_PATH --run"; then
-            echo "每分钟一次的定时任务已在执行。"
-            echo "每分钟一次的定时任务已在执行。"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 每分钟一次的定时任务已在执行。"| tee -a "$LOG_FILE"
         else
-            echo "警告：定时任务未找到，可能需要重新设置。"
-            echo "警告：定时任务未找到，可能需要重新设置。"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 警告：定时任务未找到，可能需要重新设置。"| tee -a "$LOG_FILE"
         fi
         return 0
     else
@@ -48,14 +38,11 @@ check_and_install_packages() {
     local packages=("vnstat" "jq" "bc" "tc")
     for package in "${packages[@]}"; do
         if ! command -v $package &> /dev/null; then
-            echo "$package 未安装，正在安装..."
-            echo "$package 未安装，正在安装..."
+            echo "$(date '+%Y-%m-%d %H:%M:%S') $package 未安装，正在安装..."| tee -a "$LOG_FILE"
             sudo apt-get update && sudo apt-get install -y $package
-            echo "$package 安装完成"
-            echo "$package 安装完成"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') $package 安装完成"| tee -a "$LOG_FILE"
         else
-            echo "$package 已安装"
-            echo "$package 已安装"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') $package 已安装"| tee -a "$LOG_FILE"
         fi
     done
 }
@@ -83,28 +70,20 @@ PERIOD_START_DAY=${PERIOD_START_DAY:-1}
 LIMIT_SPEED=${LIMIT_SPEED:-20}
 MAIN_INTERFACE=$MAIN_INTERFACE
 EOF
-    echo "配置已更新"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 配置已更新"| tee -a "$LOG_FILE"
 }
 
 
 # 显示当前配置
 show_current_config() {
-    echo "当前配置:"
-    echo "流量统计模式: $TRAFFIC_MODE"
-    echo "流量统计周期: $TRAFFIC_PERIOD"
-    echo "周期起始日: ${PERIOD_START_DAY:-1}"
-    echo "流量限制: $TRAFFIC_LIMIT GB"
-    echo "容错范围: $TRAFFIC_TOLERANCE GB"
-    echo "限速: ${LIMIT_SPEED:-20} kbit/s"
-    echo "主要网络接口: $MAIN_INTERFACE"
-    echo "当前配置:"
-    echo "流量统计模式: $TRAFFIC_MODE"
-    echo "流量统计周期: $TRAFFIC_PERIOD"
-    echo "周期起始日: ${PERIOD_START_DAY:-1}"
-    echo "流量限制: $TRAFFIC_LIMIT GB"
-    echo "容错范围: $TRAFFIC_TOLERANCE GB"
-    echo "限速: ${LIMIT_SPEED:-20} kbit/s"
-    echo "主要网络接口: $MAIN_INTERFACE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 当前配置:"| tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 流量统计模式: $TRAFFIC_MODE"| tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 流量统计周期: $TRAFFIC_PERIOD"| tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 周期起始日: ${PERIOD_START_DAY:-1}"| tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 流量限制: $TRAFFIC_LIMIT GB"| tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 容错范围: $TRAFFIC_TOLERANCE GB"| tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 限速: ${LIMIT_SPEED:-20} kbit/s"| tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 主要网络接口: $MAIN_INTERFACE"| tee -a "$LOG_FILE"
 }
 
 get_main_interface() {
@@ -115,20 +94,16 @@ get_main_interface() {
     
     if [ -z "$main_interface" ]; then
         while true; do
-            echo "无法自动检测主要网络接口。"
-            echo "无法自动检测主要网络接口。"
-            echo "可用的网络接口有："
-            echo "可用的网络接口有："
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 无法自动检测主要网络接口。"| tee -a "$LOG_FILE"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 可用的网络接口有："| tee -a "$LOG_FILE"
             ip -o link show | sed -n 's/^[0-9]*: \([^:]*\):.*/\1/p'
             read -p "请从上面的列表中选择一个网络接口: " main_interface
             if [ -z "$main_interface" ]; then
-                echo "请输入一个有效的接口名称。"
-                echo "请输入一个有效的接口名称。"
+                echo "$(date '+%Y-%m-%d %H:%M:%S') 请输入一个有效的接口名称。"| tee -a "$LOG_FILE"
             elif ip link show "$main_interface" > /dev/null 2>&1; then
                 break
             else
-                echo "无效的接口，请重新选择。"
-                echo "无效的接口，请重新选择。"
+                echo "$(date '+%Y-%m-%d %H:%M:%S') 无效的接口，请重新选择。"| tee -a "$LOG_FILE"
             fi
         done
     else
@@ -137,33 +112,26 @@ get_main_interface() {
             if ip link show "$new_interface" > /dev/null 2>&1; then
                 main_interface=$new_interface
             else
-                echo "输入的接口无效，将使用检测到的接口: $main_interface"
-                echo "输入的接口无效，将使用检测到的接口: $main_interface"
+                echo "$(date '+%Y-%m-%d %H:%M:%S') 输入的接口无效，将使用检测到的接口: $main_interface"| tee -a "$LOG_FILE"
             fi
         fi
     fi
     
-    echo $main_interface
+    echo $main_interface| tee -a "$LOG_FILE"
 }
 
 
 # 初始配置函数
-echo "Starting initial configuration"
+echo "开始初始化配置"| tee -a "$LOG_FILE"
 initial_config() {
-    echo "正在检测主要网络接口..."
-    echo "正在检测主要网络接口..."
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 正在检测主要网络接口..."| tee -a "$LOG_FILE"
     MAIN_INTERFACE=$(get_main_interface)
 
-    echo "请选择流量统计模式："
-    echo "1. 只计算出站流量"
-    echo "2. 只计算进站流量"
-    echo "3. 出进站流量都计算"
-    echo "4. 出站和进站流量只取大"
-    echo "请选择流量统计模式："
-    echo "1. 只计算出站流量"
-    echo "2. 只计算进站流量"
-    echo "3. 出进站流量都计算"
-    echo "4. 出站和进站流量只取大"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 请选择流量统计模式："| tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 1. 只计算出站流量"| tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 2. 只计算进站流量"| tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 3. 出进站流量都计算"| tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 4. 出站和进站流量只取大"| tee -a "$LOG_FILE"
     read -p "请输入选择 (1-4): " mode_choice
     case $mode_choice in
         1) TRAFFIC_MODE="out" ;;
@@ -201,17 +169,17 @@ get_period_start_date() {
     case $TRAFFIC_PERIOD in
         monthly)
             if [ $(date +%d) -lt $PERIOD_START_DAY ]; then
-                echo $(date -d "${current_year}-${current_month}-01 -1 month" +'%Y-%m-%d')
+                echo $(date -d "${current_year}-${current_month}-01 -1 month" +'%Y-%m-%d')| tee -a "$LOG_FILE"
             else
-                echo $(date -d "${current_year}-${current_month}-${PERIOD_START_DAY}" +%Y-%m-%d 2>/dev/null || date -d "${current_year}-${current_month}-01 +1 month -1 day" +%Y-%m-%d)
+                echo $(date -d "${current_year}-${current_month}-${PERIOD_START_DAY}" +%Y-%m-%d 2>/dev/null || date -d "${current_year}-${current_month}-01 +1 month -1 day" +%Y-%m-%d)| tee -a "$LOG_FILE"
             fi
             ;;
         quarterly)
             local quarter_month=$(((($(date +%m) - 1) / 3) * 3 + 1))
-            echo $(date -d "${current_year}-${quarter_month}-${PERIOD_START_DAY}" +'%Y-%m-%d')
+            echo $(date -d "${current_year}-${quarter_month}-${PERIOD_START_DAY}" +'%Y-%m-%d')| tee -a "$LOG_FILE"
             ;;
         yearly)
-            echo "${current_year}-01-${PERIOD_START_DAY}"
+            echo "${current_year}-01-${PERIOD_START_DAY}"| tee -a "$LOG_FILE"
             ;;
     esac
 }
@@ -239,23 +207,20 @@ get_traffic_usage() {
             ;;
     esac
     
-    echo "$((usage / (1024*1024*1024)))"
+    echo "$((usage / (1024*1024*1024)))"| tee -a "$LOG_FILE"
 }
 
 # 检查并限制流量
 check_and_limit_traffic() {
     local usage=$(get_traffic_usage)
     local limit=$((TRAFFIC_LIMIT - TRAFFIC_TOLERANCE))
-    echo "当前使用流量: $usage GB，限制流量: $limit GB"
-    echo "当前使用流量: $usage GB，限制流量: $limit GB"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 当前使用流量: $usage GB，限制流量: $limit GB"| tee -a "$LOG_FILE"
     if (( $(echo "$usage > $limit" | bc -l) )); then
-        echo "超过流量限制，正在限制带宽..."
-        echo "超过流量限制，正在限制带宽..."
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 超过流量限制，正在限制带宽..."| tee -a "$LOG_FILE"
         tc qdisc del dev $MAIN_INTERFACE root 2>/dev/null
         tc qdisc add dev $MAIN_INTERFACE root tbf rate ${LIMIT_SPEED}kbit burst 32kbit latency 400ms
     else
-        echo "流量正常，清除所有限制"
-        echo "流量正常，清除所有限制"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 流量正常，清除所有限制"| tee -a "$LOG_FILE"
         tc qdisc del dev $MAIN_INTERFACE root 2>/dev/null
     fi
 }
@@ -266,8 +231,7 @@ check_reset_limit() {
     local period_start=$(get_period_start_date)
     
     if [[ "$current_date" == "$period_start" ]]; then
-        echo "新的流量周期开始，重置限制"
-        echo "新的流量周期开始，重置限制"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 新的流量周期开始，重置限制"| tee -a "$LOG_FILE"
         tc qdisc del dev $MAIN_INTERFACE root 2>/dev/null
     fi
 }
@@ -276,61 +240,51 @@ check_reset_limit() {
 setup_crontab() {
     (crontab -l 2>/dev/null | grep -v "$SCRIPT_PATH") | crontab -
     echo "* * * * * $SCRIPT_PATH --run" | crontab -
-    echo "Crontab 已设置，每分钟运行一次"
-    echo "Crontab 已设置，每分钟运行一次"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') Crontab 已设置，每分钟运行一次"| tee -a "$LOG_FILE"
 }
 
 
 # 主函数
 main() {
     if [[ ! -f "$CONFIG_FILE" ]]; then
-        echo "配置文件不存在，开始初始配置"
-        echo "配置文件不存在，开始初始配置"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件不存在，开始初始配置"| tee -a "$LOG_FILE"
         initial_config
         setup_crontab
-        echo "初始配置完成"
-        echo "初始配置完成"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 初始配置完成"| tee -a "$LOG_FILE"
     elif [[ ! -s "$CONFIG_FILE" ]]; then
-        echo "配置文件为空，开始初始配置"
-        echo "配置文件为空，开始初始配置"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件为空，开始初始配置"| tee -a "$LOG_FILE"
         initial_config
         setup_crontab
-        echo "初始配置完成"
-        echo "初始配置完成"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 初始配置完成"| tee -a "$LOG_FILE"
     else
-        echo "Config file exists and is not empty"
+        echo "Config file exists and is not empty"| tee -a "$LOG_FILE"
         if check_existing_setup; then
             read -p "是否需要修改配置？(y/n): " modify_config
             case $modify_config in
                 [Yy]*)
                     initial_config
                     setup_crontab
-                    echo "设置已更新，脚本将每分钟自动运行一次"
-                    echo "设置已更新，脚本将每分钟自动运行一次"
+                    echo "$(date '+%Y-%m-%d %H:%M:%S') 设置已更新，脚本将每分钟自动运行一次"| tee -a "$LOG_FILE"
                     ;;
                 *)
-                    echo "保持现有配置。"
-                    echo "保持现有配置。"
+                    echo "$(date '+%Y-%m-%d %H:%M:%S') 保持现有配置。"| tee -a "$LOG_FILE"
                     ;;
             esac
         else
-            echo "配置文件存在但格式不正确，开始重新配置..."
-            echo "配置文件存在但格式不正确，开始重新配置..."
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件存在但格式不正确，开始重新配置..."| tee -a "$LOG_FILE"
             initial_config
             setup_crontab
-            echo "重新配置完成，脚本将每分钟自动运行一次"
-            echo "重新配置完成，脚本将每分钟自动运行一次"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 重新配置完成，脚本将每分钟自动运行一次"| tee -a "$LOG_FILE"
         fi
     fi
 
     if [[ "\$1" == "--run" ]]; then
-        echo "Running in automatic mode"
+        echo "正在以自动化模式运行"| tee -a "$LOG_FILE"
         if read_config; then
             check_reset_limit
             check_and_limit_traffic
         else
-            echo "配置文件读取失败，请检查配置"
-            echo "配置文件读取失败，请检查配置"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件读取失败，请检查配置"| tee -a "$LOG_FILE"
         fi
     fi
 }
