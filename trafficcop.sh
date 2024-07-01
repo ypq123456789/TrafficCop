@@ -93,43 +93,33 @@ get_main_interface() {
     fi
     
     if [ -z "$main_interface" ]; then
-        echo "无法自动检测主要网络接口。"
         while true; do
+            echo "无法自动检测主要网络接口。"
             echo "可用的网络接口有："
             ip -o link show | sed -n 's/^[0-9]*: \([^:]*\):.*/\1/p'
             read -p "请从上面的列表中选择一个网络接口: " main_interface
-            if ip link show "$main_interface" > /dev/null 2>&1; then
+            if [ -z "$main_interface" ]; then
+                echo "请输入一个有效的接口名称。"
+            elif ip link show "$main_interface" > /dev/null 2>&1; then
                 break
             else
                 echo "无效的接口，请重新选择。"
             fi
         done
     else
-        while true; do
-            read -p "检测到的主要网络接口是: $main_interface, 是否使用此接口？(y/n) " confirm
-            if [[ $confirm == "y" ]]; then
-                break
-            elif [[ $confirm == "n" ]]; then
-                while true; do
-                    echo "可用的网络接口有："
-                    ip -o link show | sed -n 's/^[0-9]*: \([^:]*\):.*/\1/p'
-                    read -p "请从上面的列表中选择一个网络接口: " new_interface
-                    if ip link show "$new_interface" > /dev/null 2>&1; then
-                        main_interface=$new_interface
-                        break
-                    else
-                        echo "无效的接口，请重新选择。"
-                    fi
-                done
-                break
+        read -p "检测到的主要网络接口是: $main_interface, 按Enter使用此接口，或输入新的接口名称: " new_interface
+        if [ -n "$new_interface" ]; then
+            if ip link show "$new_interface" > /dev/null 2>&1; then
+                main_interface=$new_interface
             else
-                echo "请输入 y 或 n。"
+                echo "输入的接口无效，将使用检测到的接口: $main_interface"
             fi
-        done
+        fi
     fi
     
     echo $main_interface
 }
+
 
 # 初始配置函数
 initial_config() {
