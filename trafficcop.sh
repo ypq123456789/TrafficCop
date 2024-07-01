@@ -1,4 +1,5 @@
 #!/bin/bash
+echo "当前版本：1.0.0"
 
 # 配置文件路径
 CONFIG_FILE="/root/traffic_monitor_config.txt"
