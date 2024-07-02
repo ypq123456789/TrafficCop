@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.60"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.61"| tee -a "$LOG_FILE"
 
 check_and_install_packages() {
     local flag_file="/root/.traffic_monitor_packages_installed"
@@ -35,7 +35,7 @@ check_and_install_packages() {
 
     # 获取 vnstat 统计开始时间
     if [ -n "$main_interface" ]; then
-        local vnstat_start_time=$(vnstat -i "$main_interface" --json d | jq -r '.interfaces[0].created.date + " " + .interfaces[0].created.time')
+        local vnstat_start_time=$(vnstat -i "$main_interface" --json d | jq -r '.interfaces[0].created | "\(.date) \(.time)"')
         
         if [ -n "$vnstat_start_time" ]; then
             echo "$(date '+%Y-%m-%d %H:%M:%S') vnstat 统计开始时间: $vnstat_start_time" | tee -a "$LOG_FILE"
