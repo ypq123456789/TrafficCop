@@ -1,5 +1,5 @@
 # TrafficCop - Intelligent Traffic Monitoring and Limiting Script
-
+[中文](README.md) | English
 ## Special Reminder
 **Traffic statistics start from when you begin installing vnstat**
 
