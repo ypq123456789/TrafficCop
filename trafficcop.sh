@@ -183,32 +183,39 @@ get_traffic_usage() {
     local start_date=$(get_period_start_date)
     local end_date=$(date +%Y-%m-%d)
     
-    echo "Debug: Start date: $start_date, End date: $end_date" | tee -a "$LOG_FILE"
+    echo "Debug: Start date: $start_date, End date: $end_date" >&2
+    
+    local vnstat_output=$(vnstat -i $MAIN_INTERFACE --oneline)
+    echo "Debug: vnstat output: $vnstat_output" >&2
     
     case $TRAFFIC_MODE in
         out)
-            local usage=$(vnstat -i $MAIN_INTERFACE --oneline | cut -d';' -f9)
+            local usage=$(echo "$vnstat_output" | grep -oP '(?<=;)[^;]*(?=;0;)')
             ;;
         in)
-            local usage=$(vnstat -i $MAIN_INTERFACE --oneline | cut -d';' -f8)
+            local usage=$(echo "$vnstat_output" | grep -oP '(?<=;)[^;]*(?=;[^;]*;0;)')
             ;;
         total)
-            local usage=$(vnstat -i $MAIN_INTERFACE --oneline | cut -d';' -f11)
+            local usage=$(echo "$vnstat_output" | grep -oP '(?<=;0;)[^;]*')
             ;;
         max)
-            local tx=$(vnstat -i $MAIN_INTERFACE --oneline | cut -d';' -f9)
-            local rx=$(vnstat -i $MAIN_INTERFACE --oneline | cut -d';' -f8)
-            local usage=$(echo "$tx $rx" | awk '{print (\$1 > \$2) ? \$1 : \$2}')
+            local tx=$(echo "$vnstat_output" | grep -oP '(?<=;)[^;]*(?=;0;)')
+            local rx=$(echo "$vnstat_output" | grep -oP '(?<=;)[^;]*(?=;[^;]*;0;)')
+            if (( $(echo "$tx > $rx" | bc -l) )); then
+                local usage=$tx
+            else
+                local usage=$rx
+            fi
             ;;
     esac
     
-    echo "Debug: Raw usage value: $usage" | tee -a "$LOG_FILE"
+    echo "Debug: Raw usage value: $usage" >&2
     if [ -n "$usage" ]; then
         local gb_usage=$(echo "scale=2; $usage / 1024" | bc)
-        echo "Debug: Usage in GB: $gb_usage" | tee -a "$LOG_FILE"
+        echo "Debug: Usage in GB: $gb_usage" >&2
         echo $gb_usage
     else
-        echo "Debug: Unable to get usage data" | tee -a "$LOG_FILE"
+        echo "Debug: Unable to get usage data" >&2
         echo "0"
     fi
 }
@@ -284,11 +291,12 @@ main() {
     fi
 
     # 显示当前流量使用情况和限制状态
-       if read_config; then
+     if read_config; then
         echo "$(date '+%Y-%m-%d %H:%M:%S') 当前配置：" | tee -a "$LOG_FILE"
         show_current_config
         echo "$(date '+%Y-%m-%d %H:%M:%S') 当前流量使用情况：" | tee -a "$LOG_FILE"
         local current_usage=$(get_traffic_usage)
+        echo "Debug: Current usage from get_traffic_usage: $current_usage" | tee -a "$LOG_FILE"
         if [ "$current_usage" != "0" ]; then
             echo "当前使用流量: $current_usage GB" | tee -a "$LOG_FILE"
             echo "$(date '+%Y-%m-%d %H:%M:%S') 检查并限制流量：" | tee -a "$LOG_FILE"
