@@ -6,36 +6,21 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH=$(readlink -f "\$0")
 CRON_LOG="/root/tg_notifier_cron.log"
 
-echo "版本号：0.3"
+echo "版本号：0.4"
 
-# 函数：获取有效输入
+# 函数：获取非空输入
 get_valid_input() {
     local prompt="\$1"
-    local validation_func="\$2"
     local input=""
     while true; do
         read -p "$prompt" input
-        if $validation_func "$input"; then
+        if [[ -n "$input" ]]; then
             echo "$input"
             return
         else
-            echo "输入无效，请重试。"
+            echo "输入不能为空，请重试。"
         fi
     done
-}
-
-
-# 验证函数
-validate_token() {
-    [[ \$1 =~ ^[0-9]+:[a-zA-Z0-9_-]+$ ]]
-}
-
-validate_chat_id() {
-    [[ \$1 =~ ^-?[0-9]+$ ]]
-}
-
-validate_yn() {
-    [[ \$1 =~ ^[YyNn]$ ]]
 }
 
 # 读取配置
@@ -60,9 +45,9 @@ EOF
 
 # 初始配置
 initial_config() {
-    TG_BOT_TOKEN=$(get_valid_input "请输入Telegram Bot Token: " validate_token)
-    TG_CHAT_ID=$(get_valid_input "请输入Telegram Chat ID: " validate_chat_id)
-    daily_report_choice=$(get_valid_input "是否启用每日流量报告？(y/n) " validate_yn)
+    TG_BOT_TOKEN=$(get_valid_input "请输入Telegram Bot Token: ")
+    TG_CHAT_ID=$(get_valid_input "请输入Telegram Chat ID: ")
+    daily_report_choice=$(get_valid_input "是否启用每日流量报告？(y/n) ")
     DAILY_REPORT=$([ "$daily_report_choice" = "y" ] && echo "true" || echo "false")
     write_config
 }
@@ -134,7 +119,7 @@ main() {
         fi
     fi
 
-    TEST_NOTIFY=$(get_valid_input "是否测试Telegram通知功能？(y/n) " validate_yn)
+    TEST_NOTIFY=$(get_valid_input "是否测试Telegram通知功能？(y/n) ")
     [[ $TEST_NOTIFY =~ ^[Yy]$ ]] && test_telegram_notification
 
     if ! crontab -l | grep -q "$SCRIPT_PATH"; then
