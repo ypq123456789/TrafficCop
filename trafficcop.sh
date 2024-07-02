@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.56"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.57"| tee -a "$LOG_FILE"
 
 check_and_install_packages() {
     local flag_file="/root/.traffic_monitor_packages_installed"
@@ -26,36 +26,39 @@ check_and_install_packages() {
     local vnstat_output=$(vnstat --dbiflist 2>/dev/null)
     local vnstat_install_time
 
-
-    echo "Debug: 开始获取 vnstat 安装时间" >> "$LOG_FILE"
+    echo "开始获取 vnstat 安装时间"| tee -a "$LOG_FILE"
     
     # 获取 vnstat 版本
     local vnstat_version=$(vnstat --version 2>&1 | head -n 1)
-    echo "Debug: vnstat 版本: $vnstat_version" >> "$LOG_FILE"
+    echo "vnstat 版本: $vnstat_version"| tee -a "$LOG_FILE"
 
     # 从 eth0 接口获取信息
     local vnstat_output=$(vnstat -i eth0 2>&1)
-    echo "Debug: vnstat -i eth0 输出: $vnstat_output" >> "$LOG_FILE"
+    echo "vnstat -i eth0 输出: $vnstat_output"| tee -a "$LOG_FILE"
     local vnstat_install_time=$(echo "$vnstat_output" | grep "since" | sed -E 's/.*since (.*)/\1/')
-    echo "Debug: 从 eth0 输出提取的时间: $vnstat_install_time" >> "$LOG_FILE"
+    echo "从 eth0 输出提取的时间: $vnstat_install_time"| tee -a "$LOG_FILE"
 
     # 如果无法从输出获取时间，尝试从数据库文件获取时间
     if [ -z "$vnstat_install_time" ]; then
-        echo "Debug: 尝试从文件获取时间" >> "$LOG_FILE"
+        echo "尝试从文件获取时间"| tee -a "$LOG_FILE"
         local db_file="/var/lib/vnstat/vnstat.db"
         if [ -f "$db_file" ]; then
-            local file_time=$(stat -c %w "$db_file" 2>&1)
-            echo "Debug: 文件创建时间: $file_time" >> "$LOG_FILE"
-            vnstat_install_time=$(echo "$file_time" | cut -d' ' -f1)
-            echo "Debug: 提取的安装时间: $vnstat_install_time" >> "$LOG_FILE"
+            # 修改这里：使用 %y 而不是 %w 来获取文件的修改时间（包括具体时间）
+            local file_time=$(stat -c "%y" "$db_file" 2>&1)
+            echo "文件修改时间: $file_time"| tee -a "$LOG_FILE"
+            # 修改这里：不再截取日期，保留完整的日期和时间
+            vnstat_install_time="$file_time"
+            echo "提取的安装时间: $vnstat_install_time"| tee -a "$LOG_FILE"
         else
-            echo "Debug: 数据库文件 $db_file 不存在" >> "$LOG_FILE"
+            echo "数据库文件 $db_file 不存在"| tee -a "$LOG_FILE"
             vnstat_install_time="未知"
         fi
     fi
 
-    echo "vnstat 安装时间: $vnstat_install_time" | tee -a "$LOG_FILE"
+    # 修改这里：使用 date 命令格式化输出
+    echo "$(date '+%Y-%m-%d %H:%M:%S') vnstat 安装时间: $vnstat_install_time" | tee -a "$LOG_FILE"
 }
+
 
 
 
