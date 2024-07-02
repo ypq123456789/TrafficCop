@@ -1,64 +1,68 @@
-# 特别提醒
-**流量统计是从你开始装vnstat开始的**
+# TrafficCop - 智能流量监控与限制脚本
 
-**流量统计是从你开始装vnstat开始的**
+## 特别提醒
+**流量统计是从你开始安装vnstat开始的**
 
-**流量统计是从你开始装vnstat开始的**
+**流量统计是从你开始安装vnstat开始的**
 
-**如果你在安装本脚本之前，没有安装过vnstat，那么请注意，本脚本是基于vnstat的流量统计，而vnstat的流量统计只会从它安装好之后开始！**
+**流量统计是从你开始安装vnstat开始的**
 
-# 一键脚本
-正常一键脚本，刚更新的代码可能会有延迟：
+**如果你在安装本脚本之前没有安装过vnstat，请注意：本脚本基于vnstat的流量统计，而vnstat只会从它安装好之后开始统计流量！**
+
+## 一键安装脚本
+
+### 标准安装（可能有几分钟延迟）：
 ```
 curl -fsSL https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/trafficcop.sh -o /root/traffic_monitor.sh && chmod +x /root/traffic_monitor.sh && bash /root/traffic_monitor.sh
 ```
-快速更新版本：
+### 快速更新版本：
 ```
 curl -H "Accept: application/vnd.github.v3.raw" -fsSL "https://api.github.com/repos/ypq123456789/TrafficCop/contents/trafficcop.sh" | tr -d '\r' > /root/traffic_monitor.sh && chmod +x /root/traffic_monitor.sh && bash /root/traffic_monitor.sh
 ```
-查看日志：
+## 实用命令
+### 查看日志：
 ```
 tail -f -n 30 /root/traffic_monitor.log
 ```
-查看当前配置：
+### 查看当前配置：
 ```
 cat traffic_monitor_config.txt
 ```
-杀死所有traffic_monitor进程，万一脚本出bug导致cpu爆满时使用：
+### 紧急停止所有traffic_monitor进程（用于脚本出现问题时）：
 ```
 pkill -f traffic_monitor.sh
 ```
-# 脚本逻辑
-首先，这个脚本会判断当前主要使用的网卡名称是什么，选择主要网卡进行流量限制。
+### 一键解除限速
+```
+curl -sSL https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/remove_traffic_limit.sh | sudo bash
+```
 
-其次，这个脚本会要求用户输入限制流量统计的模式，包括四种，第一种是只计算出站流量，第二种是只计算进站流量，第三种是出进站流量都计算，第四种是出站和进站流量只取大。
+## 脚本逻辑
+- 自动检测并选择主要网卡进行流量限制。
+- 用户选择流量统计模式（四种选项）。
+- 用户设置流量计算周期（月/季/年）和起始日期。
+- 用户输入流量限制和容错范围。
+- 用户选择限制模式（TC模式或关机模式）。
+- 对于TC模式，用户可设置限速值。
+- 脚本每分钟检测流量消耗，达到限制时执行相应操作。
+- 在新的流量周期开始时自动解除限制。
 
-然后，这个脚本会要求用户输入流量计算周期（默认为月，允许输入季度、年），以及流量周期计算的起始日期。
+## 脚本特色
+- 四种全面的流量统计模式，适应各种VPS计费方式。
+- 自定义流量计算周期和起始日。
+- 自定义流量容错范围。
+- 交互式配置，可随时修改参数。
+- 实时流量统计提示。
+- TC模式保证SSH连接可用。
+- 关机模式提供更严格的流量控制。
+- 自定义限速带宽（TC模式）。
 
-然后，这个脚本会要求用户输入要限制的流量大小，然后再输入容错范围，后台计算限制流量为要限制的流量大小减去容错范围，单位均为GB。
-
-最后，这个脚本会每隔1分钟检测当前的流量消耗，如果达到了限制值，那么就会使用 tc (Traffic Control) 来限制带宽。
-
-并且，这个脚本会在下一个流量周期到达时，自动解除限制。
-# 脚本特色
-- ▪️四种模式非常全面，覆盖了几乎市面上所有vps的流量计费模式。
-- ▪️允许用户自定义流量计算周期和流量周期计算起始日。
-- ▪️允许用户自定义流量容错范围。
-- ▪️每一个要求用户输入的参数，脚本每次运行都会读取这些参数，并且会询问用户是否需要更改。
-- ▪️在脚本运行时和日志中提示用户当前流量统计结果。
-- ▪️**使用 tc (Traffic Control) 来限制带宽，而不是完全阻断流量。这样可以确保 SSH 连接始终可用。**
-- ▪️允许自定义设置限制带宽（默认为 20 kbit/s）。
-
-# 预设配置
-阿里云cdt200G：
+## 预设配置
+### 阿里云CDT 200G：
 ```
 curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/ali-200g
 ```
-阿里云cdt20G：
+### 阿里云CDT 20G：
 ```
 curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/ali-20g
-```
-# 一键解除限速
-```
-curl -sSL https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/remove_traffic_limit.sh | sudo bash
 ```
