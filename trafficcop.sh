@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.42"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.43"| tee -a "$LOG_FILE"
 
 # 检查并安装必要的软件包
 check_and_install_packages() {
@@ -213,12 +213,17 @@ get_period_end_date() {
 # 获取流量使用情况
 get_traffic_usage() {
     local start_date=$(get_period_start_date)
-    local end_date=$(get_period_end_date)  # 新增函数来获取周期结束日期
+    local end_date=$(get_period_end_date)
     
     echo "周期开始日期: $start_date, 周期结束日期: $end_date" >&2
     
     local vnstat_output=$(vnstat -i $MAIN_INTERFACE --begin "$start_date" --end "$end_date" --oneline b)
     echo "Debug: vnstat output: $vnstat_output" >&2
+    
+    # 输出每个字段的内容以进行调试
+    echo "Debug: Field 11 (supposed rx): $(echo "$vnstat_output" | cut -d';' -f11)" >&2
+    echo "Debug: Field 12 (supposed tx): $(echo "$vnstat_output" | cut -d';' -f12)" >&2
+    echo "Debug: Field 13 (supposed total): $(echo "$vnstat_output" | cut -d';' -f13)" >&2
     
     case $TRAFFIC_MODE in
         out)
@@ -234,9 +239,12 @@ get_traffic_usage() {
             local rx=$(echo "$vnstat_output" | cut -d';' -f11)
             local tx=$(echo "$vnstat_output" | cut -d';' -f12)
             usage=$(echo "$rx $tx" | tr ' ' '\n' | sort -rn | head -n1)
+            echo "Debug: rx=$rx, tx=$tx, selected max=$usage" >&2
             ;;
     esac
-    
+
+    echo $usage
+}
     echo "Debug: Raw usage value: $usage" >&2
     if [ -n "$usage" ]; then
         # 将字节转换为 GiB
