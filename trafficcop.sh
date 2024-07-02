@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.70"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.71"| tee -a "$LOG_FILE"
 
 check_and_install_packages() {
     local flag_file="/root/.traffic_monitor_packages_installed"
@@ -196,29 +196,33 @@ initial_config() {
         fi
     done
 
-    read -p "请输入限速 (kbit/s，默认为20): " LIMIT_SPEED
-    LIMIT_SPEED=${LIMIT_SPEED:-20}
-    if ! [[ "$LIMIT_SPEED" =~ ^[0-9]+$ ]]; then
-        echo "无效输入，使用默认值：20 kbit/s"
-        LIMIT_SPEED=20
-    fi
- 
- while true; do
+    while true; do
         echo "$(date '+%Y-%m-%d %H:%M:%S') 请选择限制模式："| tee -a "$LOG_FILE"
         echo "$(date '+%Y-%m-%d %H:%M:%S') 1. TC 模式（更灵活）"| tee -a "$LOG_FILE"
         echo "$(date '+%Y-%m-%d %H:%M:%S') 2. 关机模式（更安全）"| tee -a "$LOG_FILE"
         read -p "请输入选择 (1-2): " limit_mode_choice
         case $limit_mode_choice in
-            1) LIMIT_MODE="tc"; break ;;
-            2) LIMIT_MODE="shutdown"; break ;;
+            1) 
+                LIMIT_MODE="tc"
+                read -p "请输入限速 (kbit/s，默认为20): " LIMIT_SPEED
+                LIMIT_SPEED=${LIMIT_SPEED:-20}
+                if ! [[ "$LIMIT_SPEED" =~ ^[0-9]+$ ]]; then
+                    echo "无效输入，使用默认值：20 kbit/s"
+                    LIMIT_SPEED=20
+                fi
+                break 
+                ;;
+            2) 
+                LIMIT_MODE="shutdown"
+                LIMIT_SPEED=""  # 关机模式不需要限速
+                break 
+                ;;
             *) echo "无效输入，请重新选择。" ;;
         esac
     done
-    
+
     write_config
 }
-
-
 
 # 获取当前周期的起始日期
 get_period_start_date() {
