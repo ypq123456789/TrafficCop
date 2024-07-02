@@ -6,6 +6,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH=$(readlink -f "\$0")
 CRON_LOG="/root/tg_notifier_cron.log"
 
+echo "版本号：0.1"
 # 读取配置
 read_config() {
     if [ -f "$CONFIG_FILE" ]; then
@@ -21,6 +22,7 @@ write_config() {
     cat > "$CONFIG_FILE" << EOF
 TG_BOT_TOKEN="$TG_BOT_TOKEN"
 TG_CHAT_ID="$TG_CHAT_ID"
+DAILY_REPORT="$DAILY_REPORT"
 EOF
     echo "配置已保存到 $CONFIG_FILE"
 }
@@ -31,6 +33,9 @@ initial_config() {
     read -r TG_BOT_TOKEN
     echo "请输入Telegram Chat ID:"
     read -r TG_CHAT_ID
+    echo "是否启用每日流量报告？(y/n)"
+    read -r daily_report_choice
+    DAILY_REPORT=$([ "$daily_report_choice" = "y" ] && echo "true" || echo "false")
     write_config
 }
 
@@ -40,6 +45,12 @@ send_telegram_message() {
         -d chat_id="$TG_CHAT_ID" \
         -d text="$message" \
         -d parse_mode="Markdown"
+}
+
+test_telegram_notification() {
+    local test_message="🔔 这是一条测试消息。如果您收到这条消息，说明Telegram通知功能正常工作。"
+    send_telegram_message "$test_message"
+    echo "测试消息已发送，请检查您的Telegram。"
 }
 
 check_and_notify() {
@@ -66,7 +77,18 @@ check_and_notify() {
 
 add_to_crontab() {
     (crontab -l 2>/dev/null; echo "* * * * * $SCRIPT_PATH >> $CRON_LOG 2>&1") | crontab -
+    if [ "$DAILY_REPORT" = "true" ]; then
+        (crontab -l 2>/dev/null; echo "0 0 * * * $SCRIPT_PATH daily_report >> $CRON_LOG 2>&1") | crontab -
+    fi
     echo "脚本已添加到 crontab，将每分钟执行一次。"
+    [ "$DAILY_REPORT" = "true" ] && echo "每日流量报告将在每天 00:00 执行。"
+}
+
+daily_report() {
+    local current_usage=$(grep "当前流量" "$LOG_FILE" | tail -n 1 | awk '{print $NF}')
+    local limit=$(grep "流量限制" "$LOG_FILE" | tail -n 1 | awk '{print $NF}')
+    local message="📊 每日流量报告\n当前使用流量：$current_usage\n流量限制：$limit"
+    send_telegram_message "$message"
 }
 
 # 主函数
@@ -84,14 +106,22 @@ main() {
         fi
     fi
 
+    echo "是否测试Telegram通知功能？(y/n)"
+    read -r test_choice
+    [ "$test_choice" = "y" ] && test_telegram_notification
+
     if ! crontab -l | grep -q "$SCRIPT_PATH"; then
         add_to_crontab
     fi
 
-    echo "$(date): 开始检查日志文件..." >> "$CRON_LOG"
-    check_and_notify
-    echo "$(date): 检查完成。" >> "$CRON_LOG"
+    if [ "\$1" = "daily_report" ]; then
+        daily_report
+    else
+        echo "$(date): 开始检查日志文件..." >> "$CRON_LOG"
+        check_and_notify
+        echo "$(date): 检查完成。" >> "$CRON_LOG"
+    fi
 }
 
 # 执行主函数
-main
+main "$@"
