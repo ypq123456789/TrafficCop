@@ -6,7 +6,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH=$(readlink -f "\$0")
 CRON_LOG="/root/tg_notifier_cron.log"
 
-echo "版本号：0.2"
+echo "版本号：0.3"
 
 # 函数：获取有效输入
 get_valid_input() {
@@ -23,6 +23,7 @@ get_valid_input() {
         fi
     done
 }
+
 
 # 验证函数
 validate_token() {
