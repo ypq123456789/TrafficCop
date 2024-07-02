@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.43"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.44"| tee -a "$LOG_FILE"
 
 # 检查并安装必要的软件包
 check_and_install_packages() {
@@ -225,15 +225,16 @@ get_traffic_usage() {
     echo "Debug: Field 12 (supposed tx): $(echo "$vnstat_output" | cut -d';' -f12)" >&2
     echo "Debug: Field 13 (supposed total): $(echo "$vnstat_output" | cut -d';' -f13)" >&2
     
+    local usage
     case $TRAFFIC_MODE in
         out)
-            local usage=$(echo "$vnstat_output" | cut -d';' -f12)
+            usage=$(echo "$vnstat_output" | cut -d';' -f12)
             ;;
         in)
-            local usage=$(echo "$vnstat_output" | cut -d';' -f11)
+            usage=$(echo "$vnstat_output" | cut -d';' -f11)
             ;;
         total)
-            local usage=$(echo "$vnstat_output" | cut -d';' -f13)
+            usage=$(echo "$vnstat_output" | cut -d';' -f13)
             ;;
         max)
             local rx=$(echo "$vnstat_output" | cut -d';' -f11)
@@ -243,8 +244,6 @@ get_traffic_usage() {
             ;;
     esac
 
-    echo $usage
-}
     echo "Debug: Raw usage value: $usage" >&2
     if [ -n "$usage" ]; then
         # 将字节转换为 GiB
@@ -256,7 +255,6 @@ get_traffic_usage() {
         echo "0"
     fi
 }
-
 
 # 检查并限制流量
 check_and_limit_traffic() {
