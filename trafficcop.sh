@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.22"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.23"| tee -a "$LOG_FILE"
 
 # 检查并安装必要的软件包
 check_and_install_packages() {
@@ -190,17 +190,17 @@ get_traffic_usage() {
     
     case $TRAFFIC_MODE in
         out)
-            local usage=$(echo "$vnstat_output" | sed 's/;/ /g' | sed -n 's/.*\([0-9.]\+\) GiB.*/\1/p' | sed -n '2p')
+            local usage=$(echo "$vnstat_output" | cut -d';' -f4 | sed 's/ GiB//')
             ;;
         in)
-            local usage=$(echo "$vnstat_output" | sed 's/;/ /g' | sed -n 's/.*\([0-9.]\+\) GiB.*/\1/p' | sed -n '1p')
+            local usage=$(echo "$vnstat_output" | cut -d';' -f5 | sed 's/ GiB//')
             ;;
         total)
-            local usage=$(echo "$vnstat_output" | sed 's/;/ /g' | sed -n 's/.*\([0-9.]\+\) GiB.*/\1/p' | sed -n '3p')
+            local usage=$(echo "$vnstat_output" | cut -d';' -f6 | sed 's/ GiB//')
             ;;
         max)
-            local tx=$(echo "$vnstat_output" | sed 's/;/ /g' | sed -n 's/.*\([0-9.]\+\) GiB.*/\1/p' | sed -n '2p')
-            local rx=$(echo "$vnstat_output" | sed 's/;/ /g' | sed -n 's/.*\([0-9.]\+\) GiB.*/\1/p' | sed -n '1p')
+            local tx=$(echo "$vnstat_output" | cut -d';' -f4 | sed 's/ GiB//')
+            local rx=$(echo "$vnstat_output" | cut -d';' -f5 | sed 's/ GiB//')
             usage=$(echo "$tx $rx" | tr ' ' '\n' | sort -rn | head -n1)
             ;;
     esac
@@ -214,10 +214,6 @@ get_traffic_usage() {
         echo "0"
     fi
 }
-
-
-
-
 
 # 检查并限制流量
 check_and_limit_traffic() {
