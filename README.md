@@ -58,3 +58,7 @@ curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq12
 ```
 curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/ali-20g
 ```
+# 一键解除限速
+```
+curl -sSL https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/remove_traffic_limit.sh | sudo bash
+```
