@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.32"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.33"| tee -a "$LOG_FILE"
 
 # 检查并安装必要的软件包
 check_and_install_packages() {
@@ -296,13 +296,12 @@ setup_crontab() {
 
 # 主函数
 main() {
- # 首先检查并安装必要的软件包
+    # 首先检查并安装必要的软件包
     check_and_install_packages
-     # 检查配置
- if check_existing_setup; then
+
+    # 检查配置
+    if check_existing_setup; then
         read_config
-        echo "$(date '+%Y-%m-%d %H:%M:%S') 当前配置：" | tee -a "$LOG_FILE"
-        show_current_config
         while true; do
             # 清空输入缓冲区
             read -n 1 -s -r -p ""
@@ -325,44 +324,45 @@ main() {
             esac
         done
     else
-    echo "$(date '+%Y-%m-%d %H:%M:%S') 开始初始化配置..." | tee -a "$LOG_FILE"
-    initial_config
-    setup_crontab
-    echo "$(date '+%Y-%m-%d %H:%M:%S') 初始配置完成，脚本将每分钟自动运行一次" | tee -a "$LOG_FILE"
-fi
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 开始初始化配置..." | tee -a "$LOG_FILE"
+        initial_config
+        setup_crontab
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 初始配置完成，脚本将每分钟自动运行一次" | tee -a "$LOG_FILE"
+    fi
+
+    # 显示当前配置
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 当前配置：" | tee -a "$LOG_FILE"
+    show_current_config
 
     # 显示当前流量使用情况和限制状态
     if read_config; then
-        echo "$(date '+%Y-%m-%d %H:%M:%S') 当前配置：" | tee -a "$LOG_FILE"
-        show_current_config
-       echo "$(date '+%Y-%m-%d %H:%M:%S') 当前流量使用情况：" | tee -a "$LOG_FILE"
-       local current_usage=$(get_traffic_usage)
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 当前流量使用情况：" | tee -a "$LOG_FILE"
+        local current_usage=$(get_traffic_usage)
         echo "Debug: Current usage from get_traffic_usage: $current_usage" | tee -a "$LOG_FILE"
-     if [ "$current_usage" != "0" ]; then
-       local start_date=$(get_period_start_date)
-       echo "当前统计周期: $TRAFFIC_PERIOD (从 $start_date 开始)" | tee -a "$LOG_FILE"
-       echo "统计模式: $TRAFFIC_MODE" | tee -a "$LOG_FILE"
-       echo "当前使用流量: $current_usage GB" | tee -a "$LOG_FILE"
-       echo "$(date '+%Y-%m-%d %H:%M:%S') 检查并限制流量：" | tee -a "$LOG_FILE"
-       check_and_limit_traffic
-     else
-       echo "$(date '+%Y-%m-%d %H:%M:%S') 无法获取流量数据，请检查 vnstat 配置" | tee -a "$LOG_FILE"
-    fi
+        if [ "$current_usage" != "0" ]; then
+            local start_date=$(get_period_start_date)
+            echo "当前统计周期: $TRAFFIC_PERIOD (从 $start_date 开始)" | tee -a "$LOG_FILE"
+            echo "统计模式: $TRAFFIC_MODE" | tee -a "$LOG_FILE"
+            echo "当前使用流量: $current_usage GB" | tee -a "$LOG_FILE"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 检查并限制流量：" | tee -a "$LOG_FILE"
+            check_and_limit_traffic
+        else
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 无法获取流量数据，请检查 vnstat 配置" | tee -a "$LOG_FILE"
+        fi
     else
         echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件读取失败，请检查配置" | tee -a "$LOG_FILE"
     fi
 
-if [ "\$1" = "--run" ]; then
-    echo "正在以自动化模式运行" | tee -a "$LOG_FILE"
-    if read_config; then
-        check_reset_limit
-        check_and_limit_traffic
-    else
-        echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件读取失败，请检查配置" | tee -a "$LOG_FILE"
+    if [ "\$1" = "--run" ]; then
+        echo "正在以自动化模式运行" | tee -a "$LOG_FILE"
+        if read_config; then
+            check_reset_limit
+            check_and_limit_traffic
+        else
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件读取失败，请检查配置" | tee -a "$LOG_FILE"
+        fi
     fi
-fi
 }
-   
 
 
 # 执行主函数
