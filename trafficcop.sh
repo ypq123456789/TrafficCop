@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.37"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.38"| tee -a "$LOG_FILE"
 
 # 检查并安装必要的软件包
 check_and_install_packages() {
@@ -285,13 +285,24 @@ setup_crontab() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') Crontab 已设置，每分钟运行一次"| tee -a "$LOG_FILE"
 }
 
-
 # 主函数
 main() {
     # 首先检查并安装必要的软件包
     check_and_install_packages
 
-    # 检查配置
+    # 检查是否以 --run 模式运行
+    if [ "\$1" = "--run" ]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 正在以自动化模式运行" | tee -a "$LOG_FILE"
+        if read_config; then
+            check_reset_limit
+            check_and_limit_traffic
+        else
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件读取失败，请检查配置" | tee -a "$LOG_FILE"
+        fi
+        return
+    fi
+
+    # 非 --run 模式下的操作
     if check_existing_setup; then
         read_config
         echo "$(date '+%Y-%m-%d %H:%M:%S') 当前配置：" | tee -a "$LOG_FILE"
@@ -334,17 +345,8 @@ main() {
     else
         echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件读取失败，请检查配置" | tee -a "$LOG_FILE"
     fi
-
-    if [ "\$1" = "--run" ]; then
-        echo "正在以自动化模式运行" | tee -a "$LOG_FILE"
-        if read_config; then
-            check_reset_limit
-            check_and_limit_traffic
-        else
-            echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件读取失败，请检查配置" | tee -a "$LOG_FILE"
-        fi
-    fi
 }
+
 
 # 执行主函数
 main "$@"
