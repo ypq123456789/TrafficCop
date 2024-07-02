@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.26"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.27"| tee -a "$LOG_FILE"
 
 # 检查并安装必要的软件包
 check_and_install_packages() {
@@ -186,10 +186,42 @@ get_period_start_date() {
     esac
 }
 
+# 获取周期结束日期
+get_period_end_date() {
+    local current_date=$(date +%Y-%m-%d)
+    local current_month=$(date +%m)
+    local current_year=$(date +%Y)
+    
+    case $TRAFFIC_PERIOD in
+        monthly)
+            if [ $(date +%d) -lt $PERIOD_START_DAY ]; then
+                date -d "${current_year}-${current_month}-${PERIOD_START_DAY} -1 day" +'%Y-%m-%d'
+            else
+                date -d "${current_year}-${current_month}-${PERIOD_START_DAY} +1 month -1 day" +'%Y-%m-%d'
+            fi
+            ;;
+        quarterly)
+            local quarter_month=$(((($(date +%m) - 1) / 3) * 3 + 1))
+            if [ $(date +%d) -lt $PERIOD_START_DAY ] || [ $(date +%m) -eq $quarter_month ]; then
+                date -d "${current_year}-${quarter_month}-${PERIOD_START_DAY} +2 month -1 day" +'%Y-%m-%d'
+            else
+                date -d "${current_year}-${quarter_month}-${PERIOD_START_DAY} +5 month -1 day" +'%Y-%m-%d'
+            fi
+            ;;
+        yearly)
+            if [ $(date +%d) -lt $PERIOD_START_DAY ] || [ $(date +%m) -eq 01 ]; then
+                date -d "${current_year}-12-31" +'%Y-%m-%d'
+            else
+                date -d "$((current_year + 1))-12-31" +'%Y-%m-%d'
+            fi
+            ;;
+    esac
+}
+
 # 获取流量使用情况
 get_traffic_usage() {
     local start_date=$(get_period_start_date)
-    local end_date=$(date +%Y-%m-%d)
+    local end_date=$(get_period_end_date)  # 新增函数来获取周期结束日期
     
     echo "Debug: Start date: $start_date, End date: $end_date" >&2
     
