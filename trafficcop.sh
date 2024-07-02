@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.66"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.67"| tee -a "$LOG_FILE"
 
 check_and_install_packages() {
     local flag_file="/root/.traffic_monitor_packages_installed"
@@ -314,12 +314,16 @@ check_reset_limit() {
     fi
 }
 
-# 设置crontab
 setup_crontab() {
-    (crontab -l 2>/dev/null | grep -v "$SCRIPT_PATH") | crontab -
-    echo "* * * * * $SCRIPT_PATH --run" | crontab -
+    # 删除旧的脚本任务（如果存在）
+    crontab -l 2>/dev/null | grep -v "$SCRIPT_PATH" | crontab -
+
+    # 添加新的脚本任务
+    (crontab -l 2>/dev/null; echo "* * * * * $SCRIPT_PATH --run") | crontab -
+
     echo "$(date '+%Y-%m-%d %H:%M:%S') Crontab 已设置，每分钟运行一次"| tee -a "$LOG_FILE"
 }
+
 
 # 主函数
 main() {
