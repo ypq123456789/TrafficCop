@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.27"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.28"| tee -a "$LOG_FILE"
 
 # 检查并安装必要的软件包
 check_and_install_packages() {
@@ -221,26 +221,28 @@ get_period_end_date() {
 # 获取流量使用情况
 get_traffic_usage() {
     local start_date=$(get_period_start_date)
-    local end_date=$(get_period_end_date)  # 新增函数来获取周期结束日期
+    local end_date=$(get_period_end_date)
     
     echo "Debug: Start date: $start_date, End date: $end_date" >&2
     
-    local vnstat_output=$(vnstat -i $MAIN_INTERFACE --begin "$start_date" --end "$end_date" --oneline b)
-    echo "Debug: vnstat output: $vnstat_output" >&2
+    # 修改：使用 --json 参数替代 --oneline
+    local vnstat_output=$(vnstat -i $MAIN_INTERFACE --json d "$start_date" "$end_date")
+    echo "Debug: Full vnstat output: $vnstat_output" >&2
     
+    # 修改：使用 jq 解析 JSON 输出
     case $TRAFFIC_MODE in
         out)
-            local usage=$(echo "$vnstat_output" | cut -d';' -f12)
+            local usage=$(echo "$vnstat_output" | jq -r '.interfaces[0].traffic.total.tx')
             ;;
         in)
-            local usage=$(echo "$vnstat_output" | cut -d';' -f11)
+            local usage=$(echo "$vnstat_output" | jq -r '.interfaces[0].traffic.total.rx')
             ;;
         total)
-            local usage=$(echo "$vnstat_output" | cut -d';' -f13)
+            local usage=$(echo "$vnstat_output" | jq -r '.interfaces[0].traffic.total.bytes')
             ;;
         max)
-            local rx=$(echo "$vnstat_output" | cut -d';' -f11)
-            local tx=$(echo "$vnstat_output" | cut -d';' -f12)
+            local rx=$(echo "$vnstat_output" | jq -r '.interfaces[0].traffic.total.rx')
+            local tx=$(echo "$vnstat_output" | jq -r '.interfaces[0].traffic.total.tx')
             usage=$(echo "$rx $tx" | tr ' ' '\n' | sort -rn | head -n1)
             ;;
     esac
@@ -248,7 +250,7 @@ get_traffic_usage() {
     echo "Debug: Raw usage value: $usage" >&2
     if [ -n "$usage" ]; then
         # 将字节转换为 GiB
-        usage=$(echo "scale=3; $usage / 1024 / 1024 / 1024" | bc)
+        usage=$(echo "scale=3; $usage / (1024*1024*1024)" | bc)
         echo "Debug: Usage in GiB: $usage" >&2
         echo $usage
     else
@@ -256,6 +258,7 @@ get_traffic_usage() {
         echo "0"
     fi
 }
+
 
 
 # 检查并限制流量
