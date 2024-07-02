@@ -1,34 +1,32 @@
 #!/bin/bash
 
-# 测试下载速度的脚本
-
-# 定义下载文件的 URL（这里使用 Ubuntu 镜像作为示例）
-URL="http://releases.ubuntu.com/20.04/ubuntu-20.04.3-desktop-amd64.iso"
-
-# 定义测试时间（秒）
-TEST_DURATION=30
-
-# 定义输出文件名
-OUTPUT_FILE="/dev/null"
-
 echo "开始测试下载速度..."
-echo "测试时间: ${TEST_DURATION} 秒"
-echo "下载 URL: ${URL}"
+echo "测试时间: 30 秒"
+echo "下载 URL: http://releases.ubuntu.com/20.04/ubuntu-20.04.3-desktop-amd64.iso"
 echo
 
-# 使用 wget 下载文件，限制时间，并将输出重定向到 /dev/null
-wget --output-document=$OUTPUT_FILE --report-speed=bits -q --show-progress \
-     --limit-rate=unlimited --no-clobber --tries=1 \
-     --timeout=$TEST_DURATION --progress=bar:force:noscroll \
-     $URL 2>&1 | \
-    grep -oP '\d+\.\d+\s*[KM]iB/s' | tail -n 1 | \
-    awk '{
-        speed=\$1;
-        unit=\$2;
-        if (unit == "KiB/s") speed *= 1024;
-        else if (unit == "MiB/s") speed *= 1024 * 1024;
-        printf "平均下载速度: %.2f Mbps\n", speed * 8 / (1024 * 1024)
-    }'
+# 使用 wget 下载文件，限制时间为 30 秒，并将输出保存到临时文件
+wget -O /dev/null http://releases.ubuntu.com/20.04/ubuntu-20.04.3-desktop-amd64.iso 2>&1 | tee /tmp/wget_output.txt &
+wget_pid=$!
 
-echo
-echo "测试完成"
+sleep 30
+kill $wget_pid
+
+# 使用 sed 提取下载速度
+speed=$(sed -n 's/.*(\([0-9.]\+\) [KM]B\/s).*/\1/p' /tmp/wget_output.txt | tail -n 1)
+unit=$(sed -n 's/.*(\([0-9.]\+\) \([KM]B\)\/s).*/\2/p' /tmp/wget_output.txt | tail -n 1)
+
+# 转换速度到 Mbps
+if [ "$unit" = "KB" ]; then
+    speed_mbps=$(echo "scale=2; $speed / 125" | bc)
+elif [ "$unit" = "MB" ]; then
+    speed_mbps=$(echo "scale=2; $speed * 8" | bc)
+else
+    echo "无法识别速度单位"
+    exit 1
+fi
+
+echo "平均下载速度: $speed_mbps Mbps"
+
+# 清理临时文件
+rm /tmp/wget_output.txt
