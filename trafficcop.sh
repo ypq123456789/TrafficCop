@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.29"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.30"| tee -a "$LOG_FILE"
 
 # 检查并安装必要的软件包
 check_and_install_packages() {
@@ -25,9 +25,11 @@ check_vnstat_database() {
         echo "$(date '+%Y-%m-%d %H:%M:%S') vnstat 数据库未正确初始化，正在初始化..." | tee -a "$LOG_FILE"
         sudo vnstat -i $MAIN_INTERFACE --create
         sudo systemctl restart vnstat
+        sleep 5  # 等待 vnstat 服务重启
         echo "$(date '+%Y-%m-%d %H:%M:%S') vnstat 数据库初始化完成" | tee -a "$LOG_FILE"
     fi
 }
+
 
 # 检查配置和定时任务
 check_existing_setup() {
@@ -235,30 +237,55 @@ get_traffic_usage() {
     
     echo "Debug: Start date: $start_date, End date: $end_date" >&2
     
-    # 修改：使用 --json 参数，并移除日期参数
+    # 使用 --json 参数获取 JSON 格式的输出
     local vnstat_output=$(vnstat -i $MAIN_INTERFACE --json)
     echo "Debug: Full vnstat output: $vnstat_output" >&2
     
-    # 修改：使用 jq 解析 JSON 输出，并根据日期范围过滤数据
+    # 使用 jq 解析 JSON 输出，并根据日期范围过滤数据
     case $TRAFFIC_MODE in
         out)
-            local usage=$(echo "$vnstat_output" | jq -r --arg start "$start_date" --arg end "$end_date" '[.interfaces[0].traffic.days[] | select(.date >= $start and .date <= $end)] | map(.tx) | add')
+            local usage=$(echo "$vnstat_output" | jq -r --arg start "$start_date" --arg end "$end_date" '
+                [.interfaces[0].traffic.days[] | 
+                select(.date | tostring | split("-") | .[0] as $year | .[1] as $month | .[2] as $day | 
+                ($year + "-" + $month + "-" + $day) >= $start and ($year + "-" + $month + "-" + $day) <= $end)
+                ] | map(.tx) | add // 0
+            ')
             ;;
         in)
-            local usage=$(echo "$vnstat_output" | jq -r --arg start "$start_date" --arg end "$end_date" '[.interfaces[0].traffic.days[] | select(.date >= $start and .date <= $end)] | map(.rx) | add')
+            local usage=$(echo "$vnstat_output" | jq -r --arg start "$start_date" --arg end "$end_date" '
+                [.interfaces[0].traffic.days[] | 
+                select(.date | tostring | split("-") | .[0] as $year | .[1] as $month | .[2] as $day | 
+                ($year + "-" + $month + "-" + $day) >= $start and ($year + "-" + $month + "-" + $day) <= $end)
+                ] | map(.rx) | add // 0
+            ')
             ;;
         total)
-            local usage=$(echo "$vnstat_output" | jq -r --arg start "$start_date" --arg end "$end_date" '[.interfaces[0].traffic.days[] | select(.date >= $start and .date <= $end)] | map(.rx + .tx) | add')
+            local usage=$(echo "$vnstat_output" | jq -r --arg start "$start_date" --arg end "$end_date" '
+                [.interfaces[0].traffic.days[] | 
+                select(.date | tostring | split("-") | .[0] as $year | .[1] as $month | .[2] as $day | 
+                ($year + "-" + $month + "-" + $day) >= $start and ($year + "-" + $month + "-" + $day) <= $end)
+                ] | map(.rx + .tx) | add // 0
+            ')
             ;;
         max)
-            local rx=$(echo "$vnstat_output" | jq -r --arg start "$start_date" --arg end "$end_date" '[.interfaces[0].traffic.days[] | select(.date >= $start and .date <= $end)] | map(.rx) | add')
-            local tx=$(echo "$vnstat_output" | jq -r --arg start "$start_date" --arg end "$end_date" '[.interfaces[0].traffic.days[] | select(.date >= $start and .date <= $end)] | map(.tx) | add')
+            local rx=$(echo "$vnstat_output" | jq -r --arg start "$start_date" --arg end "$end_date" '
+                [.interfaces[0].traffic.days[] | 
+                select(.date | tostring | split("-") | .[0] as $year | .[1] as $month | .[2] as $day | 
+                ($year + "-" + $month + "-" + $day) >= $start and ($year + "-" + $month + "-" + $day) <= $end)
+                ] | map(.rx) | add // 0
+            ')
+            local tx=$(echo "$vnstat_output" | jq -r --arg start "$start_date" --arg end "$end_date" '
+                [.interfaces[0].traffic.days[] | 
+                select(.date | tostring | split("-") | .[0] as $year | .[1] as $month | .[2] as $day | 
+                ($year + "-" + $month + "-" + $day) >= $start and ($year + "-" + $month + "-" + $day) <= $end)
+                ] | map(.tx) | add // 0
+            ')
             usage=$(echo "$rx $tx" | tr ' ' '\n' | sort -rn | head -n1)
             ;;
     esac
     
     echo "Debug: Raw usage value: $usage" >&2
-    if [ -n "$usage" ] && [ "$usage" != "null" ]; then
+    if [ -n "$usage" ] && [ "$usage" != "null" ] && [ "$usage" != "0" ]; then
         # 将字节转换为 GiB
         usage=$(echo "scale=3; $usage / (1024*1024*1024)" | bc)
         echo "Debug: Usage in GiB: $usage" >&2
