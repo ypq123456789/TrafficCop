@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.58"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.59"| tee -a "$LOG_FILE"
 
 check_and_install_packages() {
     local flag_file="/root/.traffic_monitor_packages_installed"
@@ -23,49 +23,25 @@ check_and_install_packages() {
         touch "$flag_file"
     fi
 
-    local vnstat_output=$(vnstat --dbiflist 2>/dev/null)
-    local vnstat_install_time
-
-    echo "开始获取 vnstat 安装时间"| tee -a "$LOG_FILE"
+    echo "开始获取 vnstat 统计开始时间"| tee -a "$LOG_FILE"
     
     # 获取 vnstat 版本
     local vnstat_version=$(vnstat --version 2>&1 | head -n 1)
     echo "vnstat 版本: $vnstat_version"| tee -a "$LOG_FILE"
 
-    # 从 eth0 接口获取信息
-    local vnstat_output=$(vnstat -i eth0 2>&1)
-    echo "vnstat -i eth0 输出: $vnstat_output"| tee -a "$LOG_FILE"
-    local vnstat_install_time=$(echo "$vnstat_output" | grep "since" | sed -E 's/.*since (.*)/\1/')
-    echo "从 eth0 输出提取的时间: $vnstat_install_time"| tee -a "$LOG_FILE"
+    # 获取主要网络接口
+    local main_interface=$(ip route | grep default | awk '{print \$5}' | head -n 1)
+    echo "主要网络接口: $main_interface"| tee -a "$LOG_FILE"
 
-    # 如果无法从输出获取时间，尝试从数据库文件获取时间
-    if [ -z "$vnstat_install_time" ]; then
-        echo "尝试从文件获取时间"| tee -a "$LOG_FILE"
-        local db_file="/var/lib/vnstat/vnstat.db"
-        if [ -f "$db_file" ]; then
-            # 修改这里：使用 stat 命令获取文件的创建时间（包括具体时间）
-            local file_time=$(stat -c "%w" "$db_file" 2>&1)
-            echo "文件创建时间: $file_time"| tee -a "$LOG_FILE"
-            # 如果创建时间不可用，则使用修改时间
-            if [ "$file_time" = "-" ]; then
-                file_time=$(stat -c "%y" "$db_file" 2>&1)
-                echo "文件修改时间: $file_time"| tee -a "$LOG_FILE"
-            fi
-            # 格式化时间
-            vnstat_install_time=$(date -d "$file_time" '+%Y-%m-%d %H:%M:%S')
-            echo "提取的安装时间: $vnstat_install_time"| tee -a "$LOG_FILE"
-        else
-            echo "数据库文件 $db_file 不存在"| tee -a "$LOG_FILE"
-            vnstat_install_time="未知"
-        fi
+    # 获取 vnstat 统计开始时间
+    local vnstat_start_time=$(vnstat -i "$main_interface" --json d | jq -r '.interfaces[0].created.date + " " + .interfaces[0].created.time')
+    
+    if [ -n "$vnstat_start_time" ]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') vnstat 统计开始时间: $vnstat_start_time" | tee -a "$LOG_FILE"
+    else
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 无法获取 vnstat 统计开始时间" | tee -a "$LOG_FILE"
     fi
-
-    echo "$(date '+%Y-%m-%d %H:%M:%S') vnstat 安装时间: $vnstat_install_time" | tee -a "$LOG_FILE"
 }
-
-
-
-
 
 # 检查配置和定时任务
 check_existing_setup() {
