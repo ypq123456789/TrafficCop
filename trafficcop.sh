@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.31"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.32"| tee -a "$LOG_FILE"
 
 # 检查并安装必要的软件包
 check_and_install_packages() {
@@ -300,26 +300,31 @@ main() {
     check_and_install_packages
      # 检查配置
  if check_existing_setup; then
-    while true; do
-        read -p "是否需要修改配置？(y/n): " modify_config
-        case $modify_config in
-            [Yy]*)
-                echo "$(date '+%Y-%m-%d %H:%M:%S') 开始修改配置..." | tee -a "$LOG_FILE"
-                initial_config
-                setup_crontab
-                echo "$(date '+%Y-%m-%d %H:%M:%S') 配置已更新，脚本将每分钟自动运行一次" | tee -a "$LOG_FILE"
-                break
-                ;;
-            [Nn]*)
-                echo "$(date '+%Y-%m-%d %H:%M:%S') 保持现有配置。" | tee -a "$LOG_FILE"
-                break
-                ;;
-            *)
-                echo "$(date '+%Y-%m-%d %H:%M:%S') 无效输入，请输入 y 或 n。" | tee -a "$LOG_FILE"
-                ;;
-        esac
-    done
-else
+        read_config
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 当前配置：" | tee -a "$LOG_FILE"
+        show_current_config
+        while true; do
+            # 清空输入缓冲区
+            read -n 1 -s -r -p ""
+            read -p "是否需要修改配置？(y/n): " modify_config
+            case $modify_config in
+                [Yy]*)
+                    echo "$(date '+%Y-%m-%d %H:%M:%S') 开始修改配置..." | tee -a "$LOG_FILE"
+                    initial_config
+                    setup_crontab
+                    echo "$(date '+%Y-%m-%d %H:%M:%S') 配置已更新，脚本将每分钟自动运行一次" | tee -a "$LOG_FILE"
+                    break
+                    ;;
+                [Nn]*)
+                    echo "$(date '+%Y-%m-%d %H:%M:%S') 保持现有配置。" | tee -a "$LOG_FILE"
+                    break
+                    ;;
+                *)
+                    echo "$(date '+%Y-%m-%d %H:%M:%S') 无效输入，请输入 y 或 n。" | tee -a "$LOG_FILE"
+                    ;;
+            esac
+        done
+    else
     echo "$(date '+%Y-%m-%d %H:%M:%S') 开始初始化配置..." | tee -a "$LOG_FILE"
     initial_config
     setup_crontab
