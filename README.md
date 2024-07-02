@@ -71,5 +71,27 @@ curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq12
 
 [![Star History Chart](https://api.star-history.com/svg?repos=ypq123456789/TrafficCop&type=Date)](https://star-history.com/#ypq123456789/TrafficCop&Date)
 
+## 交流TG群：
+https://t.me/+ydvXl1_OBBBiZWM1
+
 ## 支持作者
-![mm_reward_qrcode_1719923713616](https://github.com/ypq123456789/TrafficCop/assets/114487221/d402da68-b37d-4538-8505-1afe704507b2)
+<span><small>非常感谢您对本项目的兴趣！维护开源项目确实需要大量时间和精力投入。若您认为这个项目为您带来了价值，希望您能考虑给予一些支持，哪怕只是一杯咖啡的费用。
+您的慷慨相助将激励我继续完善这个项目，使其更加实用。它还能让我更专心地参与开源社区的工作。如果您愿意提供赞助，可通过下列渠道：</small></span>
+<ul>
+    <li>给该项目点赞 &nbsp;<a style="vertical-align: text-bottom;" href="https://github.com/ypq123456789/TrafficCop">
+      <img src="https://img.shields.io/github/stars/ypq123456789/TrafficCop?style=social" alt="给该项目点赞" />
+    </a></li>
+    <li>关注我的 Github &nbsp;<a style="vertical-align: text-bottom;"  href="https://github.com/ypq123456789/TrafficCop">
+      <img src="https://img.shields.io/github/followers/ypq123456789?style=social" alt="关注我的 Github" />
+    </a></li>
+</ul>
+<table>
+    <thead><tr>
+        <th>微信</th>
+        <th>支付宝</th>
+    </tr></thead>
+    <tbody><tr>
+        <td><img style="max-width: 50px" src="https://github.com/ypq123456789/TrafficCop/assets/114487221/fb265eef-e624-4429-b14a-afdf5b2ca9c4" alt="微信" /></td>
+        <td><img style="max-width: 50px" src="https://github.com/ypq123456789/TrafficCop/assets/114487221/884b58bd-d76f-4e8f-99f4-cac4b9e97168" alt="支付宝" /></td>
+    </tr></tbody>
+</table>
