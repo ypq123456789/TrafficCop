@@ -1,5 +1,5 @@
 #!/bin/bash
-
+echo "当前版本：0.1"
 echo "开始测试下载速度..."
 echo "测试时间: 30 秒"
 echo "下载 URL: http://releases.ubuntu.com/20.04/ubuntu-20.04.3-desktop-amd64.iso"
