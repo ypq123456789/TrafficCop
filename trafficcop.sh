@@ -48,7 +48,7 @@ check_and_install_packages() {
     echo "警告：vnstat 的初始安装时间是 $vnstat_install_time" | tee -a "$LOG_FILE"
     echo "它只会统计 $vnstat_install_time 这个时间点之后的流量，请务必注意！！！" | tee -a "$LOG_FILE"
     echo "-----------------------------------------------------" | tee -a "$LOG_FILE"
-
+}
 
 
 
