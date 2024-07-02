@@ -3,6 +3,8 @@
 CONFIG_FILE="/root/tg_notifier_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
+SCRIPT_PATH=$(readlink -f "\$0")
+CRON_LOG="/root/tg_notifier_cron.log"
 
 # 读取配置
 read_config() {
@@ -62,18 +64,33 @@ check_and_notify() {
     fi
 }
 
+add_to_crontab() {
+    (crontab -l 2>/dev/null; echo "* * * * * $SCRIPT_PATH >> $CRON_LOG 2>&1") | crontab -
+    echo "脚本已添加到 crontab，将每分钟执行一次。"
+}
+
 # 主函数
 main() {
     if ! read_config; then
         echo "未找到配置文件，开始初始化配置..."
         initial_config
+    else
+        echo "配置已加载。如需修改配置，请在5秒内按任意键，否则将使用现有配置继续运行。"
+        if read -t 5 -n 1; then
+            echo "开始修改配置..."
+            initial_config
+        else
+            echo "使用现有配置继续运行。"
+        fi
     fi
 
-    echo "配置已加载。开始监控日志文件..."
-    while true; do
-        check_and_notify
-        sleep 60
-    done
+    if ! crontab -l | grep -q "$SCRIPT_PATH"; then
+        add_to_crontab
+    fi
+
+    echo "$(date): 开始检查日志文件..." >> "$CRON_LOG"
+    check_and_notify
+    echo "$(date): 检查完成。" >> "$CRON_LOG"
 }
 
 # 执行主函数
