@@ -3,35 +3,42 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.27"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.50"| tee -a "$LOG_FILE"
 
 # 检查并安装必要的软件包
 check_and_install_packages() {
-    local packages=("vnstat" "jq" "bc" "tc")
-    for package in "${packages[@]}"; do
-        if ! command -v $package &> /dev/null; then
-            echo "$(date '+%Y-%m-%d %H:%M:%S') $package 未安装，正在安装..."| tee -a "$LOG_FILE"
-            sudo apt-get update && sudo apt-get install -y $package
-            echo "$(date '+%Y-%m-%d %H:%M:%S') $package 安装完成"| tee -a "$LOG_FILE"
-        else
-            echo "$(date '+%Y-%m-%d %H:%M:%S') $package 已安装"| tee -a "$LOG_FILE"
-        fi
-    done
+    local flag_file="/root/.traffic_monitor_packages_installed"
+    if [ -f "$flag_file" ]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 必要的软件包已安装" | tee -a "$LOG_FILE"
+    else
+        local packages=("vnstat" "jq" "bc" "tc")
+        for package in "${packages[@]}"; do
+            if ! command -v $package &> /dev/null; then
+                echo "$(date '+%Y-%m-%d %H:%M:%S') $package 未安装，正在安装..."| tee -a "$LOG_FILE"
+                sudo apt-get update && sudo apt-get install -y $package
+                echo "$(date '+%Y-%m-%d %H:%M:%S') $package 安装完成"| tee -a "$LOG_FILE"
+            else
+                echo "$(date '+%Y-%m-%d %H:%M:%S') $package 已安装"| tee -a "$LOG_FILE"
+            fi
+        done
+        touch "$flag_file"
+    fi
+
+    # 获取 vnstat 的安装时间
+    local vnstat_install_time=$(stat -c %Y /var/lib/vnstat)
+    local vnstat_install_date=$(date -d "@$vnstat_install_time" '+%Y-%m-%d %H:%M:%S')
+
+    echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
+    echo "警告：vnstat 的安装时间是 $vnstat_install_date" | tee -a "$LOG_FILE"
+    echo "它只会统计 $vnstat_install_date 这个时间点之后的流量，请务必注意！！！" | tee -a "$LOG_FILE"
+    echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
 }
 
 # 检查配置和定时任务
 check_existing_setup() {
      if [ -s "$CONFIG_FILE" ]; then  
         source "$CONFIG_FILE"
-        echo "$(date '+%Y-%m-%d %H:%M:%S') 配置已存在，如下："| tee -a "$LOG_FILE"
-        echo "$(date '+%Y-%m-%d %H:%M:%S') 流量统计模式: $TRAFFIC_MODE"| tee -a "$LOG_FILE"
-        echo "$(date '+%Y-%m-%d %H:%M:%S') 流量统计周期: $TRAFFIC_PERIOD"| tee -a "$LOG_FILE"
-        echo "$(date '+%Y-%m-%d %H:%M:%S') 周期起始日: ${PERIOD_START_DAY:-1}"| tee -a "$LOG_FILE"
-        echo "$(date '+%Y-%m-%d %H:%M:%S') 流量限制: $TRAFFIC_LIMIT GB"| tee -a "$LOG_FILE"
-        echo "$(date '+%Y-%m-%d %H:%M:%S') 容错范围: $TRAFFIC_TOLERANCE GB"| tee -a "$LOG_FILE"
-        echo "$(date '+%Y-%m-%d %H:%M:%S') 限速: ${LIMIT_SPEED:-20} kbit/s"| tee -a "$LOG_FILE"
-        echo "$(date '+%Y-%m-%d %H:%M:%S') 主要网络接口: $MAIN_INTERFACE"| tee -a "$LOG_FILE"
-        
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 配置已存在"| tee -a "$LOG_FILE"
         if crontab -l 2>/dev/null | grep -q "$SCRIPT_PATH --run"; then
             echo "$(date '+%Y-%m-%d %H:%M:%S') 每分钟一次的定时任务已在执行。"| tee -a "$LOG_FILE"
         else
@@ -221,42 +228,47 @@ get_period_end_date() {
 # 获取流量使用情况
 get_traffic_usage() {
     local start_date=$(get_period_start_date)
-    local end_date=$(get_period_end_date)  # 新增函数来获取周期结束日期
+    local end_date=$(get_period_end_date)
     
-    echo "Debug: Start date: $start_date, End date: $end_date" >&2
+    echo "周期开始日期: $start_date, 周期结束日期: $end_date" >&2
     
     local vnstat_output=$(vnstat -i $MAIN_INTERFACE --begin "$start_date" --end "$end_date" --oneline b)
-    echo "Debug: vnstat output: $vnstat_output" >&2
+    #echo "Debug: vnstat output: $vnstat_output" >&2
     
+    # 输出每个字段的内容以进行调试
+    #echo "Debug: Field 11 (supposed rx): $(echo "$vnstat_output" | cut -d';' -f11)" >&2
+    #echo "Debug: Field 12 (supposed tx): $(echo "$vnstat_output" | cut -d';' -f12)" >&2
+    #echo "Debug: Field 13 (supposed total): $(echo "$vnstat_output" | cut -d';' -f13)" >&2
+    
+    local usage
     case $TRAFFIC_MODE in
-        out)
-            local usage=$(echo "$vnstat_output" | cut -d';' -f12)
-            ;;
-        in)
-            local usage=$(echo "$vnstat_output" | cut -d';' -f11)
-            ;;
-        total)
-            local usage=$(echo "$vnstat_output" | cut -d';' -f13)
-            ;;
-        max)
-            local rx=$(echo "$vnstat_output" | cut -d';' -f11)
-            local tx=$(echo "$vnstat_output" | cut -d';' -f12)
-            usage=$(echo "$rx $tx" | tr ' ' '\n' | sort -rn | head -n1)
+       out)
+    usage=$(echo "$vnstat_output" | cut -d';' -f10)
+    ;;
+       in)
+    usage=$(echo "$vnstat_output" | cut -d';' -f9)
+    ;;
+       total)
+    usage=$(echo "$vnstat_output" | cut -d';' -f11)
+    ;;
+       max)
+    local rx=$(echo "$vnstat_output" | cut -d';' -f9)
+    local tx=$(echo "$vnstat_output" | cut -d';' -f10)
+    usage=$(echo "$rx $tx" | tr ' ' '\n' | sort -rn | head -n1)
             ;;
     esac
-    
-    echo "Debug: Raw usage value: $usage" >&2
+
+    #echo "Debug: Raw usage value: $usage" >&2
     if [ -n "$usage" ]; then
         # 将字节转换为 GiB
         usage=$(echo "scale=3; $usage / 1024 / 1024 / 1024" | bc)
-        echo "Debug: Usage in GiB: $usage" >&2
+        #echo "Debug: Usage in GiB: $usage" >&2
         echo $usage
     else
-        echo "Debug: Unable to get usage data" >&2
+        #echo "Debug: Unable to get usage data" >&2
         echo "0"
     fi
 }
-
 
 # 检查并限制流量
 check_and_limit_traffic() {
@@ -293,73 +305,87 @@ setup_crontab() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') Crontab 已设置，每分钟运行一次"| tee -a "$LOG_FILE"
 }
 
-
 # 主函数
 main() {
- # 首先检查并安装必要的软件包
-    check_and_install_packages
-     # 检查配置
-    if [[ ! -f "$CONFIG_FILE" ]] || [[ ! -s "$CONFIG_FILE" ]]; then
-        echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件不存在或为空，开始初始配置" | tee -a "$LOG_FILE"
-        initial_config
-        setup_crontab
-        echo "$(date '+%Y-%m-%d %H:%M:%S') 初始配置完成" | tee -a "$LOG_FILE"
-    else
-        echo "配置文件已存在且不为空" | tee -a "$LOG_FILE"
-        if check_existing_setup; then
-            read -p "是否需要修改配置？(y/n): " modify_config
-            case $modify_config in
-                [Yy]*)
-                    initial_config
-                    setup_crontab
-                    echo "$(date '+%Y-%m-%d %H:%M:%S') 设置已更新，脚本将每分钟自动运行一次" | tee -a "$LOG_FILE"
-                    ;;
-                *)
-                    echo "$(date '+%Y-%m-%d %H:%M:%S') 保持现有配置。" | tee -a "$LOG_FILE"
-                    ;;
-            esac
-        else
-            echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件存在但格式不正确，开始重新配置..." | tee -a "$LOG_FILE"
-            initial_config
-            setup_crontab
-            echo "$(date '+%Y-%m-%d %H:%M:%S') 重新配置完成，脚本将每分钟自动运行一次" | tee -a "$LOG_FILE"
-        fi
-    fi
+   
 
-    # 显示当前流量使用情况和限制状态
-    if read_config; then
-        echo "$(date '+%Y-%m-%d %H:%M:%S') 当前配置：" | tee -a "$LOG_FILE"
-        show_current_config
-       echo "$(date '+%Y-%m-%d %H:%M:%S') 当前流量使用情况：" | tee -a "$LOG_FILE"
-       local current_usage=$(get_traffic_usage)
-        echo "Debug: Current usage from get_traffic_usage: $current_usage" | tee -a "$LOG_FILE"
-     if [ "$current_usage" != "0" ]; then
-       local start_date=$(get_period_start_date)
-       echo "当前统计周期: $TRAFFIC_PERIOD (从 $start_date 开始)" | tee -a "$LOG_FILE"
-       echo "统计模式: $TRAFFIC_MODE" | tee -a "$LOG_FILE"
-       echo "当前使用流量: $current_usage GB" | tee -a "$LOG_FILE"
-       echo "$(date '+%Y-%m-%d %H:%M:%S') 检查并限制流量：" | tee -a "$LOG_FILE"
-       check_and_limit_traffic
-     else
-       echo "$(date '+%Y-%m-%d %H:%M:%S') 无法获取流量数据，请检查 vnstat 配置" | tee -a "$LOG_FILE"
-    fi
-    else
-        echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件读取失败，请检查配置" | tee -a "$LOG_FILE"
-    fi
-
-    if [[ "\$1" == "--run" ]]; then
-        echo "正在以自动化模式运行" | tee -a "$LOG_FILE"
+    # 检查是否以 --run 模式运行
+    if [ "\$1" = "--run" ]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 正在以自动化模式运行" | tee -a "$LOG_FILE"
         if read_config; then
             check_reset_limit
             check_and_limit_traffic
         else
             echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件读取失败，请检查配置" | tee -a "$LOG_FILE"
         fi
+        return
+    fi
+
+ # 非 --run 模式下的操作
+  # 首先检查并安装必要的软件包
+    check_and_install_packages
+    if check_existing_setup; then
+        read_config
+        show_current_config
+
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 是否需要修改配置？(y/n): 5秒内按任意键修改配置，否则保持现有配置" | tee -a "$LOG_FILE"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 开始等待用户输入..." | tee -a "$LOG_FILE"
+        
+        start_time=$(date +%s.%N)
+        if read -t 5 -n 1 modify_config; then
+            end_time=$(date +%s.%N)
+            duration=$(echo "$end_time - $start_time" | bc)
+            echo ""  # 换行
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 收到用户输入: '${modify_config}' (ASCII: $(printf '%d' "'$modify_config" 2>/dev/null || echo "N/A"))" | tee -a "$LOG_FILE"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 等待时间: $duration 秒" | tee -a "$LOG_FILE"
+            if [[ $duration < 0.1 ]]; then
+                echo "$(date '+%Y-%m-%d %H:%M:%S') 警告：输入时间过短，可能是自动输入" | tee -a "$LOG_FILE"
+                echo "$(date '+%Y-%m-%d %H:%M:%S') 忽略此输入，保持现有配置。" | tee -a "$LOG_FILE"
+            elif [[ $modify_config =~ [Yy] ]]; then
+                echo "$(date '+%Y-%m-%d %H:%M:%S') 开始修改配置..." | tee -a "$LOG_FILE"
+                initial_config
+                setup_crontab
+                echo "$(date '+%Y-%m-%d %H:%M:%S') 配置已更新，脚本将每分钟自动运行一次" | tee -a "$LOG_FILE"
+            elif [[ -z "$modify_config" ]]; then
+                echo "$(date '+%Y-%m-%d %H:%M:%S') 收到空输入，视为保持现有配置。" | tee -a "$LOG_FILE"
+            else
+                echo "$(date '+%Y-%m-%d %H:%M:%S') 保持现有配置。" | tee -a "$LOG_FILE"
+            fi
+        else
+            end_time=$(date +%s.%N)
+            duration=$(echo "$end_time - $start_time" | bc)
+            echo ""  # 换行
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 等待超时，无用户输入" | tee -a "$LOG_FILE"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 等待时间: $duration 秒" | tee -a "$LOG_FILE"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 保持现有配置。" | tee -a "$LOG_FILE"
+        fi
+    else
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 开始初始化配置..." | tee -a "$LOG_FILE"
+        initial_config
+        setup_crontab
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 初始配置完成，脚本将每分钟自动运行一次" | tee -a "$LOG_FILE"
+    fi
+
+    # 显示当前流量使用情况和限制状态
+    if read_config; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 当前流量使用情况：" | tee -a "$LOG_FILE"
+        local current_usage=$(get_traffic_usage)
+        #echo "Debug: Current usage from get_traffic_usage: $current_usage" | tee -a "$LOG_FILE"
+        if [ "$current_usage" != "0" ]; then
+            local start_date=$(get_period_start_date)
+            echo "当前统计周期: $TRAFFIC_PERIOD (从 $start_date 开始)" | tee -a "$LOG_FILE"
+            echo "统计模式: $TRAFFIC_MODE" | tee -a "$LOG_FILE"
+            echo "当前使用流量: $current_usage GB" | tee -a "$LOG_FILE"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 检查并限制流量：" | tee -a "$LOG_FILE"
+            check_and_limit_traffic
+        else
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 无法获取流量数据，请检查 vnstat 配置" | tee -a "$LOG_FILE"
+        fi
+    else
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件读取失败，请检查配置" | tee -a "$LOG_FILE"
     fi
 }
 
-echo "Debug: Testing vnstat command directly" >&2
-vnstat -i $MAIN_INTERFACE --oneline
 
 
 # 执行主函数
