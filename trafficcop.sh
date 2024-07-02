@@ -2,8 +2,19 @@
 CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
+LOCK_FILE="/var/run/traffic_monitor.lock"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.33"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.34"| tee -a "$LOG_FILE"
+
+# 在脚本开始处添加
+if [ -f "$LOCK_FILE" ]; then
+    pid=$(cat "$LOCK_FILE")
+    if kill -0 $pid 2>/dev/null; then
+        echo "脚本已在运行，PID: $pid"
+        exit 1
+    fi
+fi
+echo $$ > "$LOCK_FILE"
 
 # 检查并安装必要的软件包
 check_and_install_packages() {
@@ -367,5 +378,8 @@ main() {
 
 # 执行主函数
 main "$@"
+
+# 在脚本结束处添加
+trap 'rm -f "$LOCK_FILE"' EXIT
 
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
