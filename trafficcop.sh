@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.28"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.29"| tee -a "$LOG_FILE"
 
 # 检查并安装必要的软件包
 check_and_install_packages() {
@@ -299,14 +299,8 @@ main() {
  # 首先检查并安装必要的软件包
     check_and_install_packages
      # 检查配置
-    if [[ ! -f "$CONFIG_FILE" ]] || [[ ! -s "$CONFIG_FILE" ]]; then
-        echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件不存在或为空，开始初始配置" | tee -a "$LOG_FILE"
-        initial_config
-        setup_crontab
-        echo "$(date '+%Y-%m-%d %H:%M:%S') 初始配置完成" | tee -a "$LOG_FILE"
-    else
-        echo "配置文件已存在且不为空" | tee -a "$LOG_FILE"
-      if check_existing_setup; then
+   if check_existing_setup; then
+    while true; do
         read -p "是否需要修改配置？(y/n): " modify_config
         case $modify_config in
             [Yy]*)
@@ -314,15 +308,18 @@ main() {
                 initial_config
                 setup_crontab
                 echo "$(date '+%Y-%m-%d %H:%M:%S') 配置已更新，脚本将每分钟自动运行一次" | tee -a "$LOG_FILE"
+                break
                 ;;
             [Nn]*)
                 echo "$(date '+%Y-%m-%d %H:%M:%S') 保持现有配置。" | tee -a "$LOG_FILE"
+                break
                 ;;
             *)
-                echo "$(date '+%Y-%m-%d %H:%M:%S') 无效输入，保持现有配置。" | tee -a "$LOG_FILE"
+                echo "$(date '+%Y-%m-%d %H:%M:%S') 无效输入，请输入 y 或 n。" | tee -a "$LOG_FILE"
                 ;;
         esac
-    else
+    done
+else
             echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件存在但格式不正确，开始重新配置..." | tee -a "$LOG_FILE"
             initial_config
             setup_crontab
