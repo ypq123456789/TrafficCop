@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.28"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.29"| tee -a "$LOG_FILE"
 
 # 检查并安装必要的软件包
 check_and_install_packages() {
@@ -17,6 +17,16 @@ check_and_install_packages() {
             echo "$(date '+%Y-%m-%d %H:%M:%S') $package 已安装"| tee -a "$LOG_FILE"
         fi
     done
+}
+
+# 检查 vnstat 数据库是否正确初始化
+check_vnstat_database() {
+    if ! vnstat -i $MAIN_INTERFACE --json >/dev/null 2>&1; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') vnstat 数据库未正确初始化，正在初始化..." | tee -a "$LOG_FILE"
+        sudo vnstat -i $MAIN_INTERFACE --create
+        sudo systemctl restart vnstat
+        echo "$(date '+%Y-%m-%d %H:%M:%S') vnstat 数据库初始化完成" | tee -a "$LOG_FILE"
+    fi
 }
 
 # 检查配置和定时任务
@@ -225,30 +235,30 @@ get_traffic_usage() {
     
     echo "Debug: Start date: $start_date, End date: $end_date" >&2
     
-    # 修改：使用 --json 参数替代 --oneline
-    local vnstat_output=$(vnstat -i $MAIN_INTERFACE --json d "$start_date" "$end_date")
+    # 修改：使用 --json 参数，并移除日期参数
+    local vnstat_output=$(vnstat -i $MAIN_INTERFACE --json)
     echo "Debug: Full vnstat output: $vnstat_output" >&2
     
-    # 修改：使用 jq 解析 JSON 输出
+    # 修改：使用 jq 解析 JSON 输出，并根据日期范围过滤数据
     case $TRAFFIC_MODE in
         out)
-            local usage=$(echo "$vnstat_output" | jq -r '.interfaces[0].traffic.total.tx')
+            local usage=$(echo "$vnstat_output" | jq -r --arg start "$start_date" --arg end "$end_date" '[.interfaces[0].traffic.days[] | select(.date >= $start and .date <= $end)] | map(.tx) | add')
             ;;
         in)
-            local usage=$(echo "$vnstat_output" | jq -r '.interfaces[0].traffic.total.rx')
+            local usage=$(echo "$vnstat_output" | jq -r --arg start "$start_date" --arg end "$end_date" '[.interfaces[0].traffic.days[] | select(.date >= $start and .date <= $end)] | map(.rx) | add')
             ;;
         total)
-            local usage=$(echo "$vnstat_output" | jq -r '.interfaces[0].traffic.total.bytes')
+            local usage=$(echo "$vnstat_output" | jq -r --arg start "$start_date" --arg end "$end_date" '[.interfaces[0].traffic.days[] | select(.date >= $start and .date <= $end)] | map(.rx + .tx) | add')
             ;;
         max)
-            local rx=$(echo "$vnstat_output" | jq -r '.interfaces[0].traffic.total.rx')
-            local tx=$(echo "$vnstat_output" | jq -r '.interfaces[0].traffic.total.tx')
+            local rx=$(echo "$vnstat_output" | jq -r --arg start "$start_date" --arg end "$end_date" '[.interfaces[0].traffic.days[] | select(.date >= $start and .date <= $end)] | map(.rx) | add')
+            local tx=$(echo "$vnstat_output" | jq -r --arg start "$start_date" --arg end "$end_date" '[.interfaces[0].traffic.days[] | select(.date >= $start and .date <= $end)] | map(.tx) | add')
             usage=$(echo "$rx $tx" | tr ' ' '\n' | sort -rn | head -n1)
             ;;
     esac
     
     echo "Debug: Raw usage value: $usage" >&2
-    if [ -n "$usage" ]; then
+    if [ -n "$usage" ] && [ "$usage" != "null" ]; then
         # 将字节转换为 GiB
         usage=$(echo "scale=3; $usage / (1024*1024*1024)" | bc)
         echo "Debug: Usage in GiB: $usage" >&2
@@ -258,6 +268,7 @@ get_traffic_usage() {
         echo "0"
     fi
 }
+
 
 
 
@@ -299,8 +310,12 @@ setup_crontab() {
 
 # 主函数
 main() {
- # 首先检查并安装必要的软件包
+    # 首先检查并安装必要的软件包
     check_and_install_packages
+    
+    # 检查 vnstat 数据库
+    check_vnstat_database
+    
      # 检查配置
     if [[ ! -f "$CONFIG_FILE" ]] || [[ ! -s "$CONFIG_FILE" ]]; then
         echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件不存在或为空，开始初始配置" | tee -a "$LOG_FILE"
