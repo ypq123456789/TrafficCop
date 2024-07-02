@@ -3,10 +3,16 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.48"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.49"| tee -a "$LOG_FILE"
 
 # 检查并安装必要的软件包
 check_and_install_packages() {
+    local flag_file="/root/.traffic_monitor_packages_installed"
+    if [ -f "$flag_file" ]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 必要的软件包已安装" | tee -a "$LOG_FILE"
+        return
+    fi
+
     local packages=("vnstat" "jq" "bc" "tc")
     for package in "${packages[@]}"; do
         if ! command -v $package &> /dev/null; then
@@ -17,7 +23,10 @@ check_and_install_packages() {
             echo "$(date '+%Y-%m-%d %H:%M:%S') $package 已安装"| tee -a "$LOG_FILE"
         fi
     done
+
+    touch "$flag_file"
 }
+
 
 # 检查配置和定时任务
 check_existing_setup() {
@@ -292,8 +301,7 @@ setup_crontab() {
 
 # 主函数
 main() {
-    # 首先检查并安装必要的软件包
-    check_and_install_packages
+   
 
     # 检查是否以 --run 模式运行
     if [ "\$1" = "--run" ]; then
@@ -308,6 +316,8 @@ main() {
     fi
 
  # 非 --run 模式下的操作
+  # 首先检查并安装必要的软件包
+    check_and_install_packages
     if check_existing_setup; then
         read_config
         show_current_config
