@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.55"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.56"| tee -a "$LOG_FILE"
 
 check_and_install_packages() {
     local flag_file="/root/.traffic_monitor_packages_installed"
@@ -26,28 +26,35 @@ check_and_install_packages() {
     local vnstat_output=$(vnstat --dbiflist 2>/dev/null)
     local vnstat_install_time
 
-    # 尝试从 vnstat 输出中获取安装时间
-    vnstat_install_time=$(echo "$vnstat_output" | grep "Created" | head -n 1 | sed -E 's/.*Created:[[:space:]]*(.*)/\1/')
 
-    # 如果上面的方法失败，尝试直接从数据库文件获取
+    echo "Debug: 开始获取 vnstat 安装时间" >> "$LOG_FILE"
+    
+    # 获取 vnstat 版本
+    local vnstat_version=$(vnstat --version 2>&1 | head -n 1)
+    echo "Debug: vnstat 版本: $vnstat_version" >> "$LOG_FILE"
+
+    # 从 eth0 接口获取信息
+    local vnstat_output=$(vnstat -i eth0 2>&1)
+    echo "Debug: vnstat -i eth0 输出: $vnstat_output" >> "$LOG_FILE"
+    local vnstat_install_time=$(echo "$vnstat_output" | grep "since" | sed -E 's/.*since (.*)/\1/')
+    echo "Debug: 从 eth0 输出提取的时间: $vnstat_install_time" >> "$LOG_FILE"
+
+    # 如果无法从输出获取时间，尝试从数据库文件获取时间
     if [ -z "$vnstat_install_time" ]; then
-        vnstat_install_time=$(stat -c %Y /var/lib/vnstat/eth0 2>/dev/null)
-        if [ -n "$vnstat_install_time" ]; then
-            vnstat_install_time=$(date -d "@$vnstat_install_time" "+%Y-%m-%d %H:%M")
+        echo "Debug: 尝试从文件获取时间" >> "$LOG_FILE"
+        local db_file="/var/lib/vnstat/vnstat.db"
+        if [ -f "$db_file" ]; then
+            local file_time=$(stat -c %w "$db_file" 2>&1)
+            echo "Debug: 文件创建时间: $file_time" >> "$LOG_FILE"
+            vnstat_install_time=$(echo "$file_time" | cut -d' ' -f1)
+            echo "Debug: 提取的安装时间: $vnstat_install_time" >> "$LOG_FILE"
+        else
+            echo "Debug: 数据库文件 $db_file 不存在" >> "$LOG_FILE"
+            vnstat_install_time="未知"
         fi
     fi
 
-    # 如果仍然无法获取时间，设置为未知
-    if [ -z "$vnstat_install_time" ]; then
-        vnstat_install_time="未知"
-    fi
-
     echo "vnstat 安装时间: $vnstat_install_time" | tee -a "$LOG_FILE"
-
-    echo "-----------------------------------------------------" | tee -a "$LOG_FILE"
-    echo "警告：vnstat 的初始安装时间是 $vnstat_install_time" | tee -a "$LOG_FILE"
-    echo "它只会统计 $vnstat_install_time 这个时间点之后的流量，请务必注意！！！" | tee -a "$LOG_FILE"
-    echo "-----------------------------------------------------" | tee -a "$LOG_FILE"
 }
 
 
