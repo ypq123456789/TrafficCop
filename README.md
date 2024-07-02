@@ -21,4 +21,4 @@ curl -fsSL https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/traffi
 - ▪️每一个要求用户输入的参数，脚本每次运行都会读取这些参数，并且会询问用户是否需要更改。
 - ▪️在脚本运行的最开始提示用户当前流量统计结果。
 - ▪️**使用 tc (Traffic Control) 来限制带宽，而不是完全阻断流量。这样可以确保 SSH 连接始终可用。**
-- ▪️允许自定义设置限制带宽（默认为 20 Kbps）。
+- ▪️允许自定义设置限制带宽（默认为 20 kbit/s）。
