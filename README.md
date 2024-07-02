@@ -43,5 +43,9 @@ pkill -f traffic_monitor.sh
 # 预设配置
 阿里云cdt200G：
 ```
-curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/%E9%98%BF%E9%87%8C%E4%BA%91cdt%E5%85%B1%E4%BA%AB%E5%B8%A6%E5%AE%BD200g.txt
+curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/ali-200g
+```
+阿里云cdt20G：
+```
+curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/ali-20g
 ```
