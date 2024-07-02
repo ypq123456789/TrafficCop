@@ -1,5 +1,5 @@
 #!/bin/bash
-# 文件名: remove_traffic_limit.sh
+echo "版本：0.1"
 
 # 备份原始文件
 cp /root/traffic_monitor_config.txt /root/traffic_monitor_config.txt.bak
