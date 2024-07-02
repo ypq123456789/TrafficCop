@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.53"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.54"| tee -a "$LOG_FILE"
 
 check_and_install_packages() {
     local flag_file="/root/.traffic_monitor_packages_installed"
@@ -23,12 +23,35 @@ check_and_install_packages() {
         touch "$flag_file"
     fi
 
-    echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-    echo "vnstat --dbiflist 输出:" | tee -a "$LOG_FILE"
-    vnstat --dbiflist | tee -a "$LOG_FILE"
-    echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
+
 
     # 获取 vnstat 的初始安装时间
+    echo "开始获取 vnstat 安装时间" | tee -a "$LOG_FILE"
+
+# 执行 vnstat --dbiflist 命令并捕获输出
+vnstat_output=$(vnstat --dbiflist)
+echo "vnstat --dbiflist 输出:" | tee -a "$LOG_FILE"
+echo "$vnstat_output" | tee -a "$LOG_FILE"
+
+# 尝试提取安装时间
+grep_output=$(echo "$vnstat_output" | grep "Created")
+echo "grep 'Created' 结果:" | tee -a "$LOG_FILE"
+echo "$grep_output" | tee -a "$LOG_FILE"
+
+# 使用 sed 提取时间
+sed_output=$(echo "$grep_output" | sed -E 's/.*Created:[[:space:]]*(.*)/\1/')
+echo "sed 提取结果:" | tee -a "$LOG_FILE"
+echo "$sed_output" | tee -a "$LOG_FILE"
+
+# 获取 vnstat 的初始安装时间
+local vnstat_install_time=$(echo "$vnstat_output" | grep "Created" | head -n 1 | sed -E 's/.*Created:[[:space:]]*(.*)/\1/')
+if [ -z "$vnstat_install_time" ]; then
+    vnstat_install_time="未知"
+fi
+
+echo "最终提取的安装时间: $vnstat_install_time" | tee -a "$LOG_FILE"
+
+
     local vnstat_install_time=$(vnstat --dbiflist | grep "Created" | head -n 1 | sed -E 's/.*Created:[[:space:]]*(.*)/\1/')
     if [ -z "$vnstat_install_time" ]; then
         vnstat_install_time="未知"
