@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.45"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.46"| tee -a "$LOG_FILE"
 
 # 检查并安装必要的软件包
 check_and_install_packages() {
@@ -218,12 +218,12 @@ get_traffic_usage() {
     echo "周期开始日期: $start_date, 周期结束日期: $end_date" >&2
     
     local vnstat_output=$(vnstat -i $MAIN_INTERFACE --begin "$start_date" --end "$end_date" --oneline b)
-    echo "Debug: vnstat output: $vnstat_output" >&2
+    #echo "Debug: vnstat output: $vnstat_output" >&2
     
     # 输出每个字段的内容以进行调试
-    echo "Debug: Field 11 (supposed rx): $(echo "$vnstat_output" | cut -d';' -f11)" >&2
-    echo "Debug: Field 12 (supposed tx): $(echo "$vnstat_output" | cut -d';' -f12)" >&2
-    echo "Debug: Field 13 (supposed total): $(echo "$vnstat_output" | cut -d';' -f13)" >&2
+    #echo "Debug: Field 11 (supposed rx): $(echo "$vnstat_output" | cut -d';' -f11)" >&2
+    #echo "Debug: Field 12 (supposed tx): $(echo "$vnstat_output" | cut -d';' -f12)" >&2
+    #echo "Debug: Field 13 (supposed total): $(echo "$vnstat_output" | cut -d';' -f13)" >&2
     
     local usage
     case $TRAFFIC_MODE in
@@ -243,14 +243,14 @@ get_traffic_usage() {
             ;;
     esac
 
-    echo "Debug: Raw usage value: $usage" >&2
+    #echo "Debug: Raw usage value: $usage" >&2
     if [ -n "$usage" ]; then
         # 将字节转换为 GiB
         usage=$(echo "scale=3; $usage / 1024 / 1024 / 1024" | bc)
-        echo "Debug: Usage in GiB: $usage" >&2
+        #echo "Debug: Usage in GiB: $usage" >&2
         echo $usage
     else
-        echo "Debug: Unable to get usage data" >&2
+        #echo "Debug: Unable to get usage data" >&2
         echo "0"
     fi
 }
@@ -355,7 +355,7 @@ main() {
     if read_config; then
         echo "$(date '+%Y-%m-%d %H:%M:%S') 当前流量使用情况：" | tee -a "$LOG_FILE"
         local current_usage=$(get_traffic_usage)
-        echo "Debug: Current usage from get_traffic_usage: $current_usage" | tee -a "$LOG_FILE"
+        #echo "Debug: Current usage from get_traffic_usage: $current_usage" | tee -a "$LOG_FILE"
         if [ "$current_usage" != "0" ]; then
             local start_date=$(get_period_start_date)
             echo "当前统计周期: $TRAFFIC_PERIOD (从 $start_date 开始)" | tee -a "$LOG_FILE"
