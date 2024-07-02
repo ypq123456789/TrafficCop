@@ -3,9 +3,8 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.50"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.51"| tee -a "$LOG_FILE"
 
-# 检查并安装必要的软件包
 check_and_install_packages() {
     local flag_file="/root/.traffic_monitor_packages_installed"
     if [ -f "$flag_file" ]; then
@@ -24,15 +23,18 @@ check_and_install_packages() {
         touch "$flag_file"
     fi
 
-    # 获取 vnstat 的安装时间
-    local vnstat_install_time=$(stat -c %Y /var/lib/vnstat)
-    local vnstat_install_date=$(date -d "@$vnstat_install_time" '+%Y-%m-%d %H:%M:%S')
+    # 获取 vnstat 的初始安装时间
+    local vnstat_install_time=$(vnstat --dbiflist | grep "Created" | head -n 1 | awk -F': ' '{print \$2}')
+    if [ -z "$vnstat_install_time" ]; then
+        vnstat_install_time="未知"
+    fi
 
     echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-    echo "警告：vnstat 的安装时间是 $vnstat_install_date" | tee -a "$LOG_FILE"
-    echo "它只会统计 $vnstat_install_date 这个时间点之后的流量，请务必注意！！！" | tee -a "$LOG_FILE"
+    echo "警告：vnstat 的初始安装时间是 $vnstat_install_time" | tee -a "$LOG_FILE"
+    echo "它只会统计 $vnstat_install_time 这个时间点之后的流量，请务必注意！！！" | tee -a "$LOG_FILE"
     echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
 }
+
 
 # 检查配置和定时任务
 check_existing_setup() {
