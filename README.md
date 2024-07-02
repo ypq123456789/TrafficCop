@@ -1,5 +1,5 @@
 # TrafficCop - 智能流量监控与限制脚本
-
+[English](README_EN.md) | 中文
 ## 特别提醒
 **流量统计是从你开始安装vnstat开始的**
 
