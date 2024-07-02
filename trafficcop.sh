@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.23"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.24"| tee -a "$LOG_FILE"
 
 # 检查并安装必要的软件包
 check_and_install_packages() {
@@ -163,17 +163,17 @@ get_period_start_date() {
     case $TRAFFIC_PERIOD in
         monthly)
             if [ $(date +%d) -lt $PERIOD_START_DAY ]; then
-                echo $(date -d "${current_year}-${current_month}-01 -1 month" +'%Y-%m-%d')| tee -a "$LOG_FILE"
+                date -d "${current_year}-${current_month}-01 -1 month" +'%Y-%m-%d'
             else
-                echo $(date -d "${current_year}-${current_month}-${PERIOD_START_DAY}" +%Y-%m-%d 2>/dev/null || date -d "${current_year}-${current_month}-01 +1 month -1 day" +%Y-%m-%d)| tee -a "$LOG_FILE"
+                date -d "${current_year}-${current_month}-${PERIOD_START_DAY}" +%Y-%m-%d 2>/dev/null || date -d "${current_year}-${current_month}-01" +%Y-%m-%d
             fi
             ;;
         quarterly)
             local quarter_month=$(((($(date +%m) - 1) / 3) * 3 + 1))
-            echo $(date -d "${current_year}-${quarter_month}-${PERIOD_START_DAY}" +'%Y-%m-%d')| tee -a "$LOG_FILE"
+            date -d "${current_year}-${quarter_month}-${PERIOD_START_DAY}" +'%Y-%m-%d' 2>/dev/null || date -d "${current_year}-${quarter_month}-01" +%Y-%m-%d
             ;;
         yearly)
-            echo "${current_year}-01-${PERIOD_START_DAY}"| tee -a "$LOG_FILE"
+            date -d "${current_year}-01-${PERIOD_START_DAY}" +'%Y-%m-%d' 2>/dev/null || date -d "${current_year}-01-01" +%Y-%m-%d
             ;;
     esac
 }
@@ -185,35 +185,47 @@ get_traffic_usage() {
     
     echo "Debug: Start date: $start_date, End date: $end_date" >&2
     
-    local vnstat_output=$(vnstat -i $MAIN_INTERFACE --oneline)
+    local vnstat_output=$(vnstat -i $MAIN_INTERFACE --begin "$start_date" --end "$end_date" --oneline)
     echo "Debug: vnstat output: $vnstat_output" >&2
     
     case $TRAFFIC_MODE in
         out)
-            local usage=$(echo "$vnstat_output" | cut -d';' -f4 | sed 's/ GiB//')
+            local usage=$(echo "$vnstat_output" | cut -d';' -f12)
             ;;
         in)
-            local usage=$(echo "$vnstat_output" | cut -d';' -f5 | sed 's/ GiB//')
+            local usage=$(echo "$vnstat_output" | cut -d';' -f11)
             ;;
         total)
-            local usage=$(echo "$vnstat_output" | cut -d';' -f6 | sed 's/ GiB//')
+            local rx=$(echo "$vnstat_output" | cut -d';' -f11)
+            local tx=$(echo "$vnstat_output" | cut -d';' -f12)
+            usage=$(echo "$rx + $tx" | bc)
             ;;
         max)
-            local tx=$(echo "$vnstat_output" | cut -d';' -f4 | sed 's/ GiB//')
-            local rx=$(echo "$vnstat_output" | cut -d';' -f5 | sed 's/ GiB//')
-            usage=$(echo "$tx $rx" | tr ' ' '\n' | sort -rn | head -n1)
+            local rx=$(echo "$vnstat_output" | cut -d';' -f11)
+            local tx=$(echo "$vnstat_output" | cut -d';' -f12)
+            usage=$(echo "$rx $tx" | tr ' ' '\n' | sort -rn | head -n1)
             ;;
     esac
     
     echo "Debug: Raw usage value: $usage" >&2
     if [ -n "$usage" ]; then
-        echo "Debug: Usage in GB: $usage" >&2
+        # 检查单位并转换为 GiB（如果需要）
+        if [[ $usage == *"MiB"* ]]; then
+            usage=$(echo "scale=3; ${usage%% *} / 1024" | bc)
+        elif [[ $usage == *"GiB"* ]]; then
+            usage=${usage%% *}
+        else
+            echo "Debug: Unexpected unit in usage data" >&2
+            usage="0"
+        fi
+        echo "Debug: Usage in GiB: $usage" >&2
         echo $usage
     else
         echo "Debug: Unable to get usage data" >&2
         echo "0"
     fi
 }
+
 
 # 检查并限制流量
 check_and_limit_traffic() {
@@ -284,7 +296,7 @@ main() {
     fi
 
     # 显示当前流量使用情况和限制状态
-     if read_config; then
+    if read_config; then
         echo "$(date '+%Y-%m-%d %H:%M:%S') 当前配置：" | tee -a "$LOG_FILE"
         show_current_config
         echo "$(date '+%Y-%m-%d %H:%M:%S') 当前流量使用情况：" | tee -a "$LOG_FILE"
