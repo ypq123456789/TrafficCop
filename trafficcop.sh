@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.69"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.71"| tee -a "$LOG_FILE"
 
 check_and_install_packages() {
     local flag_file="/root/.traffic_monitor_packages_installed"
@@ -86,6 +86,7 @@ TRAFFIC_TOLERANCE=$TRAFFIC_TOLERANCE
 PERIOD_START_DAY=${PERIOD_START_DAY:-1}
 LIMIT_SPEED=${LIMIT_SPEED:-20}
 MAIN_INTERFACE=$MAIN_INTERFACE
+LIMIT_MODE=$LIMIT_MODE
 EOF
     echo "$(date '+%Y-%m-%d %H:%M:%S') 配置已更新"| tee -a "$LOG_FILE"
 }
@@ -101,6 +102,7 @@ show_current_config() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') 容错范围: $TRAFFIC_TOLERANCE GB"| tee -a "$LOG_FILE"
     echo "$(date '+%Y-%m-%d %H:%M:%S') 限速: ${LIMIT_SPEED:-20} kbit/s"| tee -a "$LOG_FILE"
     echo "$(date '+%Y-%m-%d %H:%M:%S') 主要网络接口: $MAIN_INTERFACE"| tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 限制模式: $LIMIT_MODE"| tee -a "$LOG_FILE"
 }
 
 # 检测主要网络接口
@@ -194,17 +196,33 @@ initial_config() {
         fi
     done
 
-    read -p "请输入限速 (kbit/s，默认为20): " LIMIT_SPEED
-    LIMIT_SPEED=${LIMIT_SPEED:-20}
-    if ! [[ "$LIMIT_SPEED" =~ ^[0-9]+$ ]]; then
-        echo "无效输入，使用默认值：20 kbit/s"
-        LIMIT_SPEED=20
-    fi
+    while true; do
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 请选择限制模式："| tee -a "$LOG_FILE"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 1. TC 模式（更灵活）"| tee -a "$LOG_FILE"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 2. 关机模式（更安全）"| tee -a "$LOG_FILE"
+        read -p "请输入选择 (1-2): " limit_mode_choice
+        case $limit_mode_choice in
+            1) 
+                LIMIT_MODE="tc"
+                read -p "请输入限速 (kbit/s，默认为20): " LIMIT_SPEED
+                LIMIT_SPEED=${LIMIT_SPEED:-20}
+                if ! [[ "$LIMIT_SPEED" =~ ^[0-9]+$ ]]; then
+                    echo "无效输入，使用默认值：20 kbit/s"
+                    LIMIT_SPEED=20
+                fi
+                break 
+                ;;
+            2) 
+                LIMIT_MODE="shutdown"
+                LIMIT_SPEED=""  # 关机模式不需要限速
+                break 
+                ;;
+            *) echo "无效输入，请重新选择。" ;;
+        esac
+    done
 
     write_config
 }
-
-
 
 # 获取当前周期的起始日期
 get_period_start_date() {
@@ -315,7 +333,7 @@ get_traffic_usage() {
     fi
 }
 
-# 检查并限制流量
+# 修改 check_and_limit_traffic 函数
 check_and_limit_traffic() {
     local current_usage=$(get_traffic_usage)
     local limit_threshold=$(echo "$TRAFFIC_LIMIT - $TRAFFIC_TOLERANCE" | bc)
@@ -323,11 +341,18 @@ check_and_limit_traffic() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') 当前使用流量: $current_usage GB，限制流量: $limit_threshold GB" | tee -a "$LOG_FILE"
     
     if (( $(echo "$current_usage > $limit_threshold" | bc -l) )); then
-        echo "$(date '+%Y-%m-%d %H:%M:%S') 流量超出限制，开始限速" | tee -a "$LOG_FILE"
-        tc qdisc add dev $MAIN_INTERFACE root tbf rate ${LIMIT_SPEED}kbit burst 32kbit latency 400ms
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 流量超出限制" | tee -a "$LOG_FILE"
+        if [ "$LIMIT_MODE" = "tc" ]; then
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 使用 TC 模式限速" | tee -a "$LOG_FILE"
+            tc qdisc add dev $MAIN_INTERFACE root tbf rate ${LIMIT_SPEED}kbit burst 32kbit latency 400ms
+        elif [ "$LIMIT_MODE" = "shutdown" ]; then
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 流量超出限制，系统将在 1 分钟后关机" | tee -a "$LOG_FILE"
+            shutdown -h +1 "流量超出限制，系统将在 1 分钟后关机"
+        fi
     else
         echo "$(date '+%Y-%m-%d %H:%M:%S') 流量正常，清除所有限制" | tee -a "$LOG_FILE"
         tc qdisc del dev $MAIN_INTERFACE root 2>/dev/null
+        shutdown -c 2>/dev/null  # 取消可能存在的关机计划
     fi
 }
 
