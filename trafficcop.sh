@@ -3,28 +3,50 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.49"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.66"| tee -a "$LOG_FILE"
 
-# 检查并安装必要的软件包
 check_and_install_packages() {
     local flag_file="/root/.traffic_monitor_packages_installed"
     if [ -f "$flag_file" ]; then
         echo "$(date '+%Y-%m-%d %H:%M:%S') 必要的软件包已安装" | tee -a "$LOG_FILE"
-        return
+    else
+        local packages=("vnstat" "jq" "bc" "tc")
+        for package in "${packages[@]}"; do
+            if ! command -v $package &> /dev/null; then
+                echo "$(date '+%Y-%m-%d %H:%M:%S') $package 未安装，正在安装..."| tee -a "$LOG_FILE"
+                sudo apt-get update && sudo apt-get install -y $package
+                echo "$(date '+%Y-%m-%d %H:%M:%S') $package 安装完成"| tee -a "$LOG_FILE"
+            else
+                echo "$(date '+%Y-%m-%d %H:%M:%S') $package 已安装"| tee -a "$LOG_FILE"
+            fi
+        done
+        touch "$flag_file"
     fi
 
-    local packages=("vnstat" "jq" "bc" "tc")
-    for package in "${packages[@]}"; do
-        if ! command -v $package &> /dev/null; then
-            echo "$(date '+%Y-%m-%d %H:%M:%S') $package 未安装，正在安装..."| tee -a "$LOG_FILE"
-            sudo apt-get update && sudo apt-get install -y $package
-            echo "$(date '+%Y-%m-%d %H:%M:%S') $package 安装完成"| tee -a "$LOG_FILE"
-        else
-            echo "$(date '+%Y-%m-%d %H:%M:%S') $package 已安装"| tee -a "$LOG_FILE"
-        fi
-    done
+    #echo "开始获取 vnstat 统计开始时间"| tee -a "$LOG_FILE"
+    
+    # 获取 vnstat 版本
+    local vnstat_version=$(vnstat --version 2>&1 | head -n 1)
+    echo "$(date '+%Y-%m-%d %H:%M:%S') vnstat 版本: $vnstat_version"| tee -a "$LOG_FILE"
 
-    touch "$flag_file"
+ # 获取主要网络接口
+    local main_interface=$(ip route | grep default | sed -e 's/^.*dev \([^ ]*\).*$/\1/' | head -n 1)
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 主要网络接口: $main_interface"| tee -a "$LOG_FILE"
+
+    # 获取 vnstat 统计开始时间
+    if [ -n "$main_interface" ]; then
+        local vnstat_json=$(vnstat -i "$main_interface" --json d)
+        local vnstat_start_time=$(echo "$vnstat_json" | jq -r '.interfaces[0].created.date | "\(.year)-\(.month | tostring | if length == 1 then "0" + . else . end)-\(.day | tostring | if length == 1 then "0" + . else . end)"')
+        
+        if [ -n "$vnstat_start_time" ] && [ "$vnstat_start_time" != "null-null-null" ]; then
+            echo "$(date '+%Y-%m-%d %H:%M:%S') vnstat 统计开始日期: $vnstat_start_time，在此之前的流量不会被纳入统计！" | tee -a "$LOG_FILE"
+        else
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 无法获取 vnstat 统计开始时间" | tee -a "$LOG_FILE"
+            echo "vnstat JSON 输出: $vnstat_json" | tee -a "$LOG_FILE"
+        fi
+    else
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 无法获取主要网络接口" | tee -a "$LOG_FILE"
+    fi
 }
 
 
@@ -117,7 +139,7 @@ get_main_interface() {
 }
 
 # 初始配置函数
-echo "开始初始化配置"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 开始初始化配置"| tee -a "$LOG_FILE"
 initial_config() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') 正在检测主要网络接口..."| tee -a "$LOG_FILE"
     MAIN_INTERFACE=$(get_main_interface)
@@ -224,7 +246,7 @@ get_traffic_usage() {
     local start_date=$(get_period_start_date)
     local end_date=$(get_period_end_date)
     
-    echo "周期开始日期: $start_date, 周期结束日期: $end_date" >&2
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 周期开始日期: $start_date, 周期结束日期: $end_date" >&2
     
     local vnstat_output=$(vnstat -i $MAIN_INTERFACE --begin "$start_date" --end "$end_date" --oneline b)
     #echo "Debug: vnstat output: $vnstat_output" >&2
@@ -269,7 +291,7 @@ check_and_limit_traffic() {
     local current_usage=$(get_traffic_usage)
     local limit_threshold=$(echo "$TRAFFIC_LIMIT - $TRAFFIC_TOLERANCE" | bc)
     
-    echo "当前使用流量: $current_usage GB，限制流量: $limit_threshold GB" | tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 当前使用流量: $current_usage GB，限制流量: $limit_threshold GB" | tee -a "$LOG_FILE"
     
     if (( $(echo "$current_usage > $limit_threshold" | bc -l) )); then
         echo "$(date '+%Y-%m-%d %H:%M:%S') 流量超出限制，开始限速" | tee -a "$LOG_FILE"
@@ -326,33 +348,29 @@ main() {
         echo "$(date '+%Y-%m-%d %H:%M:%S') 开始等待用户输入..." | tee -a "$LOG_FILE"
         
         start_time=$(date +%s.%N)
-        if read -t 5 -n 1 modify_config; then
-            end_time=$(date +%s.%N)
-            duration=$(echo "$end_time - $start_time" | bc)
-            echo ""  # 换行
-            echo "$(date '+%Y-%m-%d %H:%M:%S') 收到用户输入: '${modify_config}' (ASCII: $(printf '%d' "'$modify_config" 2>/dev/null || echo "N/A"))" | tee -a "$LOG_FILE"
-            echo "$(date '+%Y-%m-%d %H:%M:%S') 等待时间: $duration 秒" | tee -a "$LOG_FILE"
-            if [[ $duration < 0.1 ]]; then
-                echo "$(date '+%Y-%m-%d %H:%M:%S') 警告：输入时间过短，可能是自动输入" | tee -a "$LOG_FILE"
-                echo "$(date '+%Y-%m-%d %H:%M:%S') 忽略此输入，保持现有配置。" | tee -a "$LOG_FILE"
-            elif [[ $modify_config =~ [Yy] ]]; then
-                echo "$(date '+%Y-%m-%d %H:%M:%S') 开始修改配置..." | tee -a "$LOG_FILE"
-                initial_config
-                setup_crontab
-                echo "$(date '+%Y-%m-%d %H:%M:%S') 配置已更新，脚本将每分钟自动运行一次" | tee -a "$LOG_FILE"
-            elif [[ -z "$modify_config" ]]; then
-                echo "$(date '+%Y-%m-%d %H:%M:%S') 收到空输入，视为保持现有配置。" | tee -a "$LOG_FILE"
-            else
-                echo "$(date '+%Y-%m-%d %H:%M:%S') 保持现有配置。" | tee -a "$LOG_FILE"
-            fi
-        else
-            end_time=$(date +%s.%N)
-            duration=$(echo "$end_time - $start_time" | bc)
-            echo ""  # 换行
-            echo "$(date '+%Y-%m-%d %H:%M:%S') 等待超时，无用户输入" | tee -a "$LOG_FILE"
-            echo "$(date '+%Y-%m-%d %H:%M:%S') 等待时间: $duration 秒" | tee -a "$LOG_FILE"
-            echo "$(date '+%Y-%m-%d %H:%M:%S') 保持现有配置。" | tee -a "$LOG_FILE"
-        fi
+     if read -t 5 -n 1 modify_config; then
+    end_time=$(date +%s.%N)
+    duration=$(echo "$end_time - $start_time" | bc)
+    echo ""  # 换行
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 收到用户输入: '${modify_config}' (ASCII: $(printf '%d' "'$modify_config" 2>/dev/null || echo "N/A"))" | tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 等待时间: $duration 秒" | tee -a "$LOG_FILE"
+    if [[ $duration < 0.1 ]]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 警告：输入时间过短，可能是自动输入" | tee -a "$LOG_FILE"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 忽略此输入，保持现有配置。" | tee -a "$LOG_FILE"
+    else
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 开始修改配置..." | tee -a "$LOG_FILE"
+        initial_config
+        setup_crontab
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 配置已更新，脚本将每分钟自动运行一次" | tee -a "$LOG_FILE"
+    fi
+else
+    end_time=$(date +%s.%N)
+    duration=$(echo "$end_time - $start_time" | bc)
+    echo ""  # 换行
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 等待超时，无用户输入" | tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 等待时间: $duration 秒" | tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 保持现有配置。" | tee -a "$LOG_FILE"
+fi
     else
         echo "$(date '+%Y-%m-%d %H:%M:%S') 开始初始化配置..." | tee -a "$LOG_FILE"
         initial_config
@@ -367,9 +385,9 @@ main() {
         #echo "Debug: Current usage from get_traffic_usage: $current_usage" | tee -a "$LOG_FILE"
         if [ "$current_usage" != "0" ]; then
             local start_date=$(get_period_start_date)
-            echo "当前统计周期: $TRAFFIC_PERIOD (从 $start_date 开始)" | tee -a "$LOG_FILE"
-            echo "统计模式: $TRAFFIC_MODE" | tee -a "$LOG_FILE"
-            echo "当前使用流量: $current_usage GB" | tee -a "$LOG_FILE"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 当前统计周期: $TRAFFIC_PERIOD (从 $start_date 开始)" | tee -a "$LOG_FILE"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 统计模式: $TRAFFIC_MODE" | tee -a "$LOG_FILE"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 当前使用流量: $current_usage GB" | tee -a "$LOG_FILE"
             echo "$(date '+%Y-%m-%d %H:%M:%S') 检查并限制流量：" | tee -a "$LOG_FILE"
             check_and_limit_traffic
         else
