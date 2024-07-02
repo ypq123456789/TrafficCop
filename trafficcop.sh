@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.25"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.26"| tee -a "$LOG_FILE"
 
 # 检查并安装必要的软件包
 check_and_install_packages() {
@@ -163,17 +163,25 @@ get_period_start_date() {
     case $TRAFFIC_PERIOD in
         monthly)
             if [ $(date +%d) -lt $PERIOD_START_DAY ]; then
-                date -d "${current_year}-${current_month}-01 -1 month" +'%Y-%m-%d'
+                date -d "${current_year}-${current_month}-${PERIOD_START_DAY} -1 month" +'%Y-%m-%d'
             else
                 date -d "${current_year}-${current_month}-${PERIOD_START_DAY}" +%Y-%m-%d 2>/dev/null || date -d "${current_year}-${current_month}-01" +%Y-%m-%d
             fi
             ;;
         quarterly)
             local quarter_month=$(((($(date +%m) - 1) / 3) * 3 + 1))
-            date -d "${current_year}-${quarter_month}-${PERIOD_START_DAY}" +'%Y-%m-%d' 2>/dev/null || date -d "${current_year}-${quarter_month}-01" +%Y-%m-%d
+            if [ $(date +%d) -lt $PERIOD_START_DAY ] || [ $(date +%m) -eq $quarter_month ]; then
+                date -d "${current_year}-${quarter_month}-${PERIOD_START_DAY} -3 month" +'%Y-%m-%d'
+            else
+                date -d "${current_year}-${quarter_month}-${PERIOD_START_DAY}" +'%Y-%m-%d' 2>/dev/null || date -d "${current_year}-${quarter_month}-01" +%Y-%m-%d
+            fi
             ;;
         yearly)
-            date -d "${current_year}-01-${PERIOD_START_DAY}" +'%Y-%m-%d' 2>/dev/null || date -d "${current_year}-01-01" +%Y-%m-%d
+            if [ $(date +%d) -lt $PERIOD_START_DAY ] || [ $(date +%m) -eq 01 ]; then
+                date -d "${current_year}-01-${PERIOD_START_DAY} -1 year" +'%Y-%m-%d'
+            else
+                date -d "${current_year}-01-${PERIOD_START_DAY}" +'%Y-%m-%d' 2>/dev/null || date -d "${current_year}-01-01" +%Y-%m-%d
+            fi
             ;;
     esac
 }
@@ -216,7 +224,6 @@ get_traffic_usage() {
         echo "0"
     fi
 }
-
 
 
 # 检查并限制流量
@@ -291,16 +298,19 @@ main() {
     if read_config; then
         echo "$(date '+%Y-%m-%d %H:%M:%S') 当前配置：" | tee -a "$LOG_FILE"
         show_current_config
-        echo "$(date '+%Y-%m-%d %H:%M:%S') 当前流量使用情况：" | tee -a "$LOG_FILE"
-        local current_usage=$(get_traffic_usage)
+       echo "$(date '+%Y-%m-%d %H:%M:%S') 当前流量使用情况：" | tee -a "$LOG_FILE"
+       local current_usage=$(get_traffic_usage)
         echo "Debug: Current usage from get_traffic_usage: $current_usage" | tee -a "$LOG_FILE"
-        if [ "$current_usage" != "0" ]; then
-            echo "当前使用流量: $current_usage GB" | tee -a "$LOG_FILE"
-            echo "$(date '+%Y-%m-%d %H:%M:%S') 检查并限制流量：" | tee -a "$LOG_FILE"
-            check_and_limit_traffic
-        else
-            echo "$(date '+%Y-%m-%d %H:%M:%S') 无法获取流量数据，请检查 vnstat 配置" | tee -a "$LOG_FILE"
-        fi
+     if [ "$current_usage" != "0" ]; then
+       local start_date=$(get_period_start_date)
+       echo "当前统计周期: $TRAFFIC_PERIOD (从 $start_date 开始)" | tee -a "$LOG_FILE"
+       echo "统计模式: $TRAFFIC_MODE" | tee -a "$LOG_FILE"
+       echo "当前使用流量: $current_usage GB" | tee -a "$LOG_FILE"
+       echo "$(date '+%Y-%m-%d %H:%M:%S') 检查并限制流量：" | tee -a "$LOG_FILE"
+       check_and_limit_traffic
+     else
+       echo "$(date '+%Y-%m-%d %H:%M:%S') 无法获取流量数据，请检查 vnstat 配置" | tee -a "$LOG_FILE"
+    fi
     else
         echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件读取失败，请检查配置" | tee -a "$LOG_FILE"
     fi
