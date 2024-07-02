@@ -1,6 +1,23 @@
 # 一键脚本
+正常一键脚本，刚更新的代码可能会有延迟：
 ```
 curl -fsSL https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/trafficcop.sh -o /root/traffic_monitor.sh && chmod +x /root/traffic_monitor.sh && bash /root/traffic_monitor.sh
+```
+快速更新版本：
+```
+curl -H "Accept: application/vnd.github.v3.raw" -fsSL "https://api.github.com/repos/ypq123456789/TrafficCop/contents/trafficcop.sh" | tr -d '\r' > /root/traffic_monitor.sh && chmod +x /root/traffic_monitor.sh && bash /root/traffic_monitor.sh
+```
+查看日志：
+```
+tail -f -n 30 /root/traffic_monitor.log
+```
+查看当前配置：
+```
+cat traffic_monitor_config.txt
+```
+杀死所有traffic_monitor进程，万一脚本出bug导致cpu爆满时使用：
+```
+pkill -f traffic_monitor.sh
 ```
 # 脚本逻辑
 首先，这个脚本会判断当前主要使用的网卡名称是什么，选择主要网卡进行流量限制。
