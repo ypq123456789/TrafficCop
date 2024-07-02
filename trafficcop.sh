@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.61"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.62"| tee -a "$LOG_FILE"
 
 check_and_install_packages() {
     local flag_file="/root/.traffic_monitor_packages_installed"
@@ -29,16 +29,16 @@ check_and_install_packages() {
     local vnstat_version=$(vnstat --version 2>&1 | head -n 1)
     echo "vnstat 版本: $vnstat_version"| tee -a "$LOG_FILE"
 
-    # 获取主要网络接口
+   # 获取主要网络接口
     local main_interface=$(ip route | grep default | sed -e 's/^.*dev \([^ ]*\).*$/\1/' | head -n 1)
     echo "主要网络接口: $main_interface"| tee -a "$LOG_FILE"
 
     # 获取 vnstat 统计开始时间
     if [ -n "$main_interface" ]; then
-        local vnstat_start_time=$(vnstat -i "$main_interface" --json d | jq -r '.interfaces[0].created | "\(.date) \(.time)"')
+        local vnstat_start_time=$(vnstat -i "$main_interface" --json d | jq -r '.interfaces[0].created | "\(.year)-\(.month | tostring | if length == 1 then "0" + . else . end)-\(.day | tostring | if length == 1 then "0" + . else . end)"')
         
         if [ -n "$vnstat_start_time" ]; then
-            echo "$(date '+%Y-%m-%d %H:%M:%S') vnstat 统计开始时间: $vnstat_start_time" | tee -a "$LOG_FILE"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') vnstat 统计开始日期: $vnstat_start_time" | tee -a "$LOG_FILE"
         else
             echo "$(date '+%Y-%m-%d %H:%M:%S') 无法获取 vnstat 统计开始时间" | tee -a "$LOG_FILE"
         fi
