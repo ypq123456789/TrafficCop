@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.44"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.45"| tee -a "$LOG_FILE"
 
 # 检查并安装必要的软件包
 check_and_install_packages() {
@@ -227,20 +227,19 @@ get_traffic_usage() {
     
     local usage
     case $TRAFFIC_MODE in
-        out)
-            usage=$(echo "$vnstat_output" | cut -d';' -f12)
-            ;;
-        in)
-            usage=$(echo "$vnstat_output" | cut -d';' -f11)
-            ;;
-        total)
-            usage=$(echo "$vnstat_output" | cut -d';' -f13)
-            ;;
-        max)
-            local rx=$(echo "$vnstat_output" | cut -d';' -f11)
-            local tx=$(echo "$vnstat_output" | cut -d';' -f12)
-            usage=$(echo "$rx $tx" | tr ' ' '\n' | sort -rn | head -n1)
-            echo "Debug: rx=$rx, tx=$tx, selected max=$usage" >&2
+       out)
+    usage=$(echo "$vnstat_output" | cut -d';' -f10)
+    ;;
+       in)
+    usage=$(echo "$vnstat_output" | cut -d';' -f9)
+    ;;
+       total)
+    usage=$(echo "$vnstat_output" | cut -d';' -f11)
+    ;;
+       max)
+    local rx=$(echo "$vnstat_output" | cut -d';' -f9)
+    local tx=$(echo "$vnstat_output" | cut -d';' -f10)
+    usage=$(echo "$rx $tx" | tr ' ' '\n' | sort -rn | head -n1)
             ;;
     esac
 
