@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.57"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.58"| tee -a "$LOG_FILE"
 
 check_and_install_packages() {
     local flag_file="/root/.traffic_monitor_packages_installed"
@@ -43,11 +43,16 @@ check_and_install_packages() {
         echo "尝试从文件获取时间"| tee -a "$LOG_FILE"
         local db_file="/var/lib/vnstat/vnstat.db"
         if [ -f "$db_file" ]; then
-            # 修改这里：使用 %y 而不是 %w 来获取文件的修改时间（包括具体时间）
-            local file_time=$(stat -c "%y" "$db_file" 2>&1)
-            echo "文件修改时间: $file_time"| tee -a "$LOG_FILE"
-            # 修改这里：不再截取日期，保留完整的日期和时间
-            vnstat_install_time="$file_time"
+            # 修改这里：使用 stat 命令获取文件的创建时间（包括具体时间）
+            local file_time=$(stat -c "%w" "$db_file" 2>&1)
+            echo "文件创建时间: $file_time"| tee -a "$LOG_FILE"
+            # 如果创建时间不可用，则使用修改时间
+            if [ "$file_time" = "-" ]; then
+                file_time=$(stat -c "%y" "$db_file" 2>&1)
+                echo "文件修改时间: $file_time"| tee -a "$LOG_FILE"
+            fi
+            # 格式化时间
+            vnstat_install_time=$(date -d "$file_time" '+%Y-%m-%d %H:%M:%S')
             echo "提取的安装时间: $vnstat_install_time"| tee -a "$LOG_FILE"
         else
             echo "数据库文件 $db_file 不存在"| tee -a "$LOG_FILE"
@@ -55,7 +60,6 @@ check_and_install_packages() {
         fi
     fi
 
-    # 修改这里：使用 date 命令格式化输出
     echo "$(date '+%Y-%m-%d %H:%M:%S') vnstat 安装时间: $vnstat_install_time" | tee -a "$LOG_FILE"
 }
 
