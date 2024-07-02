@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.19"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.20"| tee -a "$LOG_FILE"
 
 # 检查并安装必要的软件包
 check_and_install_packages() {
@@ -185,33 +185,29 @@ get_traffic_usage() {
     
     echo "Debug: Start date: $start_date, End date: $end_date" >&2
     
-    local vnstat_output=$(vnstat -i $MAIN_INTERFACE --oneline)
+    local vnstat_output=$(vnstat -i $MAIN_INTERFACE --oneline b)
     echo "Debug: vnstat output: $vnstat_output" >&2
     
     case $TRAFFIC_MODE in
         out)
-            local usage=$(echo "$vnstat_output" | grep -oP '(?<=;)[^;]*(?=;0;)')
+            local usage=$(echo "$vnstat_output" | grep -oP '(?<=;)[0-9]+(?=;0;)')
             ;;
         in)
-            local usage=$(echo "$vnstat_output" | grep -oP '(?<=;)[^;]*(?=;[^;]*;0;)')
+            local usage=$(echo "$vnstat_output" | grep -oP '(?<=;)[0-9]+(?=;[0-9]+;0;)')
             ;;
         total)
-            local usage=$(echo "$vnstat_output" | grep -oP '(?<=;0;)[^;]*')
+            local usage=$(echo "$vnstat_output" | grep -oP '(?<=;0;)[0-9]+')
             ;;
         max)
-            local tx=$(echo "$vnstat_output" | grep -oP '(?<=;)[^;]*(?=;0;)')
-            local rx=$(echo "$vnstat_output" | grep -oP '(?<=;)[^;]*(?=;[^;]*;0;)')
-            if (( $(echo "$tx > $rx" | bc -l) )); then
-                local usage=$tx
-            else
-                local usage=$rx
-            fi
+            local tx=$(echo "$vnstat_output" | grep -oP '(?<=;)[0-9]+(?=;0;)')
+            local rx=$(echo "$vnstat_output" | grep -oP '(?<=;)[0-9]+(?=;[0-9]+;0;)')
+            usage=$(echo "$tx $rx" | awk '{print (\$1 > \$2) ? \$1 : \$2}')
             ;;
     esac
     
     echo "Debug: Raw usage value: $usage" >&2
     if [ -n "$usage" ]; then
-        local gb_usage=$(echo "scale=2; $usage / 1024" | bc)
+        local gb_usage=$(echo "scale=2; $usage / 1024 / 1024 / 1024" | bc)
         echo "Debug: Usage in GB: $gb_usage" >&2
         echo $gb_usage
     else
@@ -219,6 +215,7 @@ get_traffic_usage() {
         echo "0"
     fi
 }
+
 
 
 
@@ -319,6 +316,8 @@ main() {
     fi
 }
 
+echo "Debug: Testing vnstat command directly" >&2
+vnstat -i $MAIN_INTERFACE --oneline b
 
 
 # 执行主函数
