@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.24"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.25"| tee -a "$LOG_FILE"
 
 # 检查并安装必要的软件包
 check_and_install_packages() {
@@ -185,7 +185,7 @@ get_traffic_usage() {
     
     echo "Debug: Start date: $start_date, End date: $end_date" >&2
     
-    local vnstat_output=$(vnstat -i $MAIN_INTERFACE --begin "$start_date" --end "$end_date" --oneline)
+    local vnstat_output=$(vnstat -i $MAIN_INTERFACE --begin "$start_date" --end "$end_date" --oneline b)
     echo "Debug: vnstat output: $vnstat_output" >&2
     
     case $TRAFFIC_MODE in
@@ -196,9 +196,7 @@ get_traffic_usage() {
             local usage=$(echo "$vnstat_output" | cut -d';' -f11)
             ;;
         total)
-            local rx=$(echo "$vnstat_output" | cut -d';' -f11)
-            local tx=$(echo "$vnstat_output" | cut -d';' -f12)
-            usage=$(echo "$rx + $tx" | bc)
+            local usage=$(echo "$vnstat_output" | cut -d';' -f13)
             ;;
         max)
             local rx=$(echo "$vnstat_output" | cut -d';' -f11)
@@ -209,15 +207,8 @@ get_traffic_usage() {
     
     echo "Debug: Raw usage value: $usage" >&2
     if [ -n "$usage" ]; then
-        # 检查单位并转换为 GiB（如果需要）
-        if [[ $usage == *"MiB"* ]]; then
-            usage=$(echo "scale=3; ${usage%% *} / 1024" | bc)
-        elif [[ $usage == *"GiB"* ]]; then
-            usage=${usage%% *}
-        else
-            echo "Debug: Unexpected unit in usage data" >&2
-            usage="0"
-        fi
+        # 将字节转换为 GiB
+        usage=$(echo "scale=3; $usage / 1024 / 1024 / 1024" | bc)
         echo "Debug: Usage in GiB: $usage" >&2
         echo $usage
     else
@@ -225,6 +216,7 @@ get_traffic_usage() {
         echo "0"
     fi
 }
+
 
 
 # 检查并限制流量
