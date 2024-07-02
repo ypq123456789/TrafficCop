@@ -2,19 +2,8 @@
 CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
-LOCK_FILE="/var/run/traffic_monitor.lock"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.34"| tee -a "$LOG_FILE"
-
-# 在脚本开始处添加
-if [ -f "$LOCK_FILE" ]; then
-    pid=$(cat "$LOCK_FILE")
-    if kill -0 $pid 2>/dev/null; then
-        echo "脚本已在运行，PID: $pid"
-        exit 1
-    fi
-fi
-echo $$ > "$LOCK_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.35"| tee -a "$LOG_FILE"
 
 # 检查并安装必要的软件包
 check_and_install_packages() {
@@ -313,37 +302,27 @@ main() {
     # 检查配置
     if check_existing_setup; then
         read_config
-        while true; do
-            # 清空输入缓冲区
-            read -n 1 -s -r -p ""
-            read -p "是否需要修改配置？(y/n): " modify_config
-            case $modify_config in
-                [Yy]*)
-                    echo "$(date '+%Y-%m-%d %H:%M:%S') 开始修改配置..." | tee -a "$LOG_FILE"
-                    initial_config
-                    setup_crontab
-                    echo "$(date '+%Y-%m-%d %H:%M:%S') 配置已更新，脚本将每分钟自动运行一次" | tee -a "$LOG_FILE"
-                    break
-                    ;;
-                [Nn]*)
-                    echo "$(date '+%Y-%m-%d %H:%M:%S') 保持现有配置。" | tee -a "$LOG_FILE"
-                    break
-                    ;;
-                *)
-                    echo "$(date '+%Y-%m-%d %H:%M:%S') 无效输入，请输入 y 或 n。" | tee -a "$LOG_FILE"
-                    ;;
-            esac
-        done
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 当前配置：" | tee -a "$LOG_FILE"
+        show_current_config
+
+        read -p "是否需要修改配置？(y/n): " modify_config
+        case $modify_config in
+            [Yy]*)
+                echo "$(date '+%Y-%m-%d %H:%M:%S') 开始修改配置..." | tee -a "$LOG_FILE"
+                initial_config
+                setup_crontab
+                echo "$(date '+%Y-%m-%d %H:%M:%S') 配置已更新，脚本将每分钟自动运行一次" | tee -a "$LOG_FILE"
+                ;;
+            *)
+                echo "$(date '+%Y-%m-%d %H:%M:%S') 保持现有配置。" | tee -a "$LOG_FILE"
+                ;;
+        esac
     else
         echo "$(date '+%Y-%m-%d %H:%M:%S') 开始初始化配置..." | tee -a "$LOG_FILE"
         initial_config
         setup_crontab
         echo "$(date '+%Y-%m-%d %H:%M:%S') 初始配置完成，脚本将每分钟自动运行一次" | tee -a "$LOG_FILE"
     fi
-
-    # 显示当前配置
-    echo "$(date '+%Y-%m-%d %H:%M:%S') 当前配置：" | tee -a "$LOG_FILE"
-    show_current_config
 
     # 显示当前流量使用情况和限制状态
     if read_config; then
@@ -375,11 +354,7 @@ main() {
     fi
 }
 
-
 # 执行主函数
 main "$@"
-
-# 在脚本结束处添加
-trap 'rm -f "$LOCK_FILE"' EXIT
 
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
