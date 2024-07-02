@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.17"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.18"| tee -a "$LOG_FILE"
 
 # 检查并安装必要的软件包
 check_and_install_packages() {
@@ -187,42 +187,50 @@ get_traffic_usage() {
     
     case $TRAFFIC_MODE in
         out)
-            local usage=$(vnstat -i $MAIN_INTERFACE --oneline | awk -F';' '{print \$9}')
+            local usage=$(vnstat -i $MAIN_INTERFACE --oneline | cut -d';' -f9)
             ;;
         in)
-            local usage=$(vnstat -i $MAIN_INTERFACE --oneline | awk -F';' '{print \$8}')
+            local usage=$(vnstat -i $MAIN_INTERFACE --oneline | cut -d';' -f8)
             ;;
         total)
-            local usage=$(vnstat -i $MAIN_INTERFACE --oneline | awk -F';' '{print \$11}')
+            local usage=$(vnstat -i $MAIN_INTERFACE --oneline | cut -d';' -f11)
             ;;
         max)
-            local tx=$(vnstat -i $MAIN_INTERFACE --oneline | awk -F';' '{print \$9}')
-            local rx=$(vnstat -i $MAIN_INTERFACE --oneline | awk -F';' '{print \$8}')
-            local usage=$(echo "if ($tx > $rx) $tx else $rx" | bc)
+            local tx=$(vnstat -i $MAIN_INTERFACE --oneline | cut -d';' -f9)
+            local rx=$(vnstat -i $MAIN_INTERFACE --oneline | cut -d';' -f8)
+            local usage=$(echo "$tx $rx" | awk '{print (\$1 > \$2) ? \$1 : \$2}')
             ;;
     esac
     
     echo "Debug: Raw usage value: $usage" | tee -a "$LOG_FILE"
-    local gb_usage=$(echo "scale=2; $usage / 1024" | bc)
-    echo "Debug: Usage in GB: $gb_usage" | tee -a "$LOG_FILE"
-    echo $gb_usage
+    if [ -n "$usage" ]; then
+        local gb_usage=$(echo "scale=2; $usage / 1024" | bc)
+        echo "Debug: Usage in GB: $gb_usage" | tee -a "$LOG_FILE"
+        echo $gb_usage
+    else
+        echo "Debug: Unable to get usage data" | tee -a "$LOG_FILE"
+        echo "0"
+    fi
 }
+
 
 
 # 检查并限制流量
 check_and_limit_traffic() {
-    local usage=$(get_traffic_usage)
-    local limit=$((TRAFFIC_LIMIT - TRAFFIC_TOLERANCE))
-    echo "$(date '+%Y-%m-%d %H:%M:%S') 当前使用流量: $usage GB，限制流量: $limit GB"| tee -a "$LOG_FILE"
-    if (( $(echo "$usage > $limit" | bc -l) )); then
-        echo "$(date '+%Y-%m-%d %H:%M:%S') 超过流量限制，正在限制带宽..."| tee -a "$LOG_FILE"
-        tc qdisc del dev $MAIN_INTERFACE root 2>/dev/null
+    local current_usage=$(get_traffic_usage)
+    local limit_threshold=$(echo "$TRAFFIC_LIMIT - $TRAFFIC_TOLERANCE" | bc)
+    
+    echo "当前使用流量: $current_usage GB，限制流量: $limit_threshold GB" | tee -a "$LOG_FILE"
+    
+    if (( $(echo "$current_usage > $limit_threshold" | bc -l) )); then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 流量超出限制，开始限速" | tee -a "$LOG_FILE"
         tc qdisc add dev $MAIN_INTERFACE root tbf rate ${LIMIT_SPEED}kbit burst 32kbit latency 400ms
     else
-        echo "$(date '+%Y-%m-%d %H:%M:%S') 流量正常，清除所有限制"| tee -a "$LOG_FILE"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 流量正常，清除所有限制" | tee -a "$LOG_FILE"
         tc qdisc del dev $MAIN_INTERFACE root 2>/dev/null
     fi
 }
+
 
 # 检查是否需要重置限制
 check_reset_limit() {
@@ -276,14 +284,18 @@ main() {
     fi
 
     # 显示当前流量使用情况和限制状态
-      if read_config; then
+       if read_config; then
         echo "$(date '+%Y-%m-%d %H:%M:%S') 当前配置：" | tee -a "$LOG_FILE"
         show_current_config
         echo "$(date '+%Y-%m-%d %H:%M:%S') 当前流量使用情况：" | tee -a "$LOG_FILE"
         local current_usage=$(get_traffic_usage)
-        echo "当前使用流量: $current_usage GB" | tee -a "$LOG_FILE"
-        echo "$(date '+%Y-%m-%d %H:%M:%S') 检查并限制流量：" | tee -a "$LOG_FILE"
-        check_and_limit_traffic
+        if [ "$current_usage" != "0" ]; then
+            echo "当前使用流量: $current_usage GB" | tee -a "$LOG_FILE"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 检查并限制流量：" | tee -a "$LOG_FILE"
+            check_and_limit_traffic
+        else
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 无法获取流量数据，请检查 vnstat 配置" | tee -a "$LOG_FILE"
+        fi
     else
         echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件读取失败，请检查配置" | tee -a "$LOG_FILE"
     fi
