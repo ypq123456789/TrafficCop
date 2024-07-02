@@ -39,3 +39,9 @@ pkill -f traffic_monitor.sh
 - ▪️在脚本运行的最开始提示用户当前流量统计结果。
 - ▪️**使用 tc (Traffic Control) 来限制带宽，而不是完全阻断流量。这样可以确保 SSH 连接始终可用。**
 - ▪️允许自定义设置限制带宽（默认为 20 kbit/s）。
+
+# 预设配置
+阿里云cdt200G：
+```
+curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/%E9%98%BF%E9%87%8C%E4%BA%91cdt%E5%85%B1%E4%BA%AB%E5%B8%A6%E5%AE%BD200g.txt
+```
