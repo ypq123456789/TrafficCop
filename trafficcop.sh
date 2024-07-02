@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.64"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.65"| tee -a "$LOG_FILE"
 
 check_and_install_packages() {
     local flag_file="/root/.traffic_monitor_packages_installed"
@@ -23,15 +23,15 @@ check_and_install_packages() {
         touch "$flag_file"
     fi
 
-    echo "开始获取 vnstat 统计开始时间"| tee -a "$LOG_FILE"
+    #echo "开始获取 vnstat 统计开始时间"| tee -a "$LOG_FILE"
     
     # 获取 vnstat 版本
     local vnstat_version=$(vnstat --version 2>&1 | head -n 1)
-    echo "vnstat 版本: $vnstat_version"| tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') vnstat 版本: $vnstat_version"| tee -a "$LOG_FILE"
 
  # 获取主要网络接口
     local main_interface=$(ip route | grep default | sed -e 's/^.*dev \([^ ]*\).*$/\1/' | head -n 1)
-    echo "主要网络接口: $main_interface"| tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 主要网络接口: $main_interface"| tee -a "$LOG_FILE"
 
     # 获取 vnstat 统计开始时间
     if [ -n "$main_interface" ]; then
@@ -139,7 +139,7 @@ get_main_interface() {
 }
 
 # 初始配置函数
-echo "开始初始化配置"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 开始初始化配置"| tee -a "$LOG_FILE"
 initial_config() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') 正在检测主要网络接口..."| tee -a "$LOG_FILE"
     MAIN_INTERFACE=$(get_main_interface)
@@ -246,7 +246,7 @@ get_traffic_usage() {
     local start_date=$(get_period_start_date)
     local end_date=$(get_period_end_date)
     
-    echo "周期开始日期: $start_date, 周期结束日期: $end_date" >&2
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 周期开始日期: $start_date, 周期结束日期: $end_date" >&2
     
     local vnstat_output=$(vnstat -i $MAIN_INTERFACE --begin "$start_date" --end "$end_date" --oneline b)
     #echo "Debug: vnstat output: $vnstat_output" >&2
@@ -291,7 +291,7 @@ check_and_limit_traffic() {
     local current_usage=$(get_traffic_usage)
     local limit_threshold=$(echo "$TRAFFIC_LIMIT - $TRAFFIC_TOLERANCE" | bc)
     
-    echo "当前使用流量: $current_usage GB，限制流量: $limit_threshold GB" | tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 当前使用流量: $current_usage GB，限制流量: $limit_threshold GB" | tee -a "$LOG_FILE"
     
     if (( $(echo "$current_usage > $limit_threshold" | bc -l) )); then
         echo "$(date '+%Y-%m-%d %H:%M:%S') 流量超出限制，开始限速" | tee -a "$LOG_FILE"
@@ -389,9 +389,9 @@ main() {
         #echo "Debug: Current usage from get_traffic_usage: $current_usage" | tee -a "$LOG_FILE"
         if [ "$current_usage" != "0" ]; then
             local start_date=$(get_period_start_date)
-            echo "当前统计周期: $TRAFFIC_PERIOD (从 $start_date 开始)" | tee -a "$LOG_FILE"
-            echo "统计模式: $TRAFFIC_MODE" | tee -a "$LOG_FILE"
-            echo "当前使用流量: $current_usage GB" | tee -a "$LOG_FILE"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 当前统计周期: $TRAFFIC_PERIOD (从 $start_date 开始)" | tee -a "$LOG_FILE"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 统计模式: $TRAFFIC_MODE" | tee -a "$LOG_FILE"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 当前使用流量: $current_usage GB" | tee -a "$LOG_FILE"
             echo "$(date '+%Y-%m-%d %H:%M:%S') 检查并限制流量：" | tee -a "$LOG_FILE"
             check_and_limit_traffic
         else
