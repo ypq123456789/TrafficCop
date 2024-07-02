@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.67"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.68"| tee -a "$LOG_FILE"
 
 check_and_install_packages() {
     local flag_file="/root/.traffic_monitor_packages_installed"
@@ -144,38 +144,74 @@ initial_config() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') 正在检测主要网络接口..."| tee -a "$LOG_FILE"
     MAIN_INTERFACE=$(get_main_interface)
 
-    echo "$(date '+%Y-%m-%d %H:%M:%S') 请选择流量统计模式："| tee -a "$LOG_FILE"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') 1. 只计算出站流量"| tee -a "$LOG_FILE"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') 2. 只计算进站流量"| tee -a "$LOG_FILE"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') 3. 出进站流量都计算"| tee -a "$LOG_FILE"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') 4. 出站和进站流量只取大"| tee -a "$LOG_FILE"
-    read -p "请输入选择 (1-4): " mode_choice
-    case $mode_choice in
-        1) TRAFFIC_MODE="out" ;;
-        2) TRAFFIC_MODE="in" ;;
-        3) TRAFFIC_MODE="total" ;;
-        4) TRAFFIC_MODE="max" ;;
-        *) TRAFFIC_MODE="total" ;;
-    esac
+    while true; do
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 请选择流量统计模式："| tee -a "$LOG_FILE"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 1. 只计算出站流量"| tee -a "$LOG_FILE"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 2. 只计算进站流量"| tee -a "$LOG_FILE"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 3. 出进站流量都计算"| tee -a "$LOG_FILE"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 4. 出站和进站流量只取大"| tee -a "$LOG_FILE"
+        read -p "请输入选择 (1-4): " mode_choice
+        case $mode_choice in
+            1) TRAFFIC_MODE="out"; break ;;
+            2) TRAFFIC_MODE="in"; break ;;
+            3) TRAFFIC_MODE="total"; break ;;
+            4) TRAFFIC_MODE="max"; break ;;
+            *) echo "无效输入，请重新选择。" ;;
+        esac
+    done
 
-    read -p "请选择流量统计周期 (m/q/y，默认为m): " period_choice
-    case $period_choice in
-        q) TRAFFIC_PERIOD="quarterly" ;;
-        y) TRAFFIC_PERIOD="yearly" ;;
-        *) TRAFFIC_PERIOD="monthly" ;;
-    esac
+    while true; do
+        read -p "请选择流量统计周期 (m/q/y): " period_choice
+        case $period_choice in
+            m) TRAFFIC_PERIOD="monthly"; break ;;
+            q) TRAFFIC_PERIOD="quarterly"; break ;;
+            y) TRAFFIC_PERIOD="yearly"; break ;;
+            *) echo "无效输入，请输入 m, q 或 y。" ;;
+        esac
+    done
 
-    read -p "请输入周期起始日 (1-31，默认为1): " PERIOD_START_DAY
-    PERIOD_START_DAY=${PERIOD_START_DAY:-1}
+    while true; do
+        read -p "请输入周期起始日 (1-31): " PERIOD_START_DAY
+        if [[ "$PERIOD_START_DAY" =~ ^[1-9]$|^[12][0-9]$|^3[01]$ ]]; then
+            break
+        else
+            echo "无效输入，请输入1到31之间的数字。"
+        fi
+    done
 
-    read -p "请输入流量限制 (GB): " TRAFFIC_LIMIT
-    read -p "请输入容错范围 (GB): " TRAFFIC_TOLERANCE
+    while true; do
+        read -p "请输入流量限制 (GB): " TRAFFIC_LIMIT
+        if [[ "$TRAFFIC_LIMIT" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+            break
+        else
+            echo "无效输入，请输入一个有效的数字。"
+        fi
+    done
 
-    read -p "请输入限速 (kbit/s，默认为20): " LIMIT_SPEED
-    LIMIT_SPEED=${LIMIT_SPEED:-20}
+    while true; do
+        read -p "请输入容错范围 (GB): " TRAFFIC_TOLERANCE
+        if [[ "$TRAFFIC_TOLERANCE" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+            break
+        else
+            echo "无效输入，请输入一个有效的数字。"
+        fi
+    done
+
+    while true; do
+        read -p "请输入限速 (kbit/s，默认为20): " LIMIT_SPEED
+        if [[ -z "$LIMIT_SPEED" ]]; then
+            LIMIT_SPEED=20
+            break
+        elif [[ "$LIMIT_SPEED" =~ ^[0-9]+$ ]]; then
+            break
+        else
+            echo "无效输入，请输入一个整数或直接按Enter使用默认值。"
+        fi
+    done
 
     write_config
 }
+
 
 # 获取当前周期的起始日期
 get_period_start_date() {
