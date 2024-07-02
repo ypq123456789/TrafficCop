@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.21"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.22"| tee -a "$LOG_FILE"
 
 # 检查并安装必要的软件包
 check_and_install_packages() {
@@ -190,31 +190,31 @@ get_traffic_usage() {
     
     case $TRAFFIC_MODE in
         out)
-            local usage=$(echo "$vnstat_output" | sed 's/;/ /g' | sed 's/.*;//' | sed 's/;.*//' | sed -n '1s/[^0-9]*\([0-9]*\).*/\1/p')
+            local usage=$(echo "$vnstat_output" | sed 's/;/ /g' | sed -n 's/.*\([0-9.]\+\) GiB.*/\1/p' | sed -n '2p')
             ;;
         in)
-            local usage=$(echo "$vnstat_output" | sed 's/;/ /g' | sed 's/.*;//' | sed 's/;.*//' | sed -n '2s/[^0-9]*\([0-9]*\).*/\1/p')
+            local usage=$(echo "$vnstat_output" | sed 's/;/ /g' | sed -n 's/.*\([0-9.]\+\) GiB.*/\1/p' | sed -n '1p')
             ;;
         total)
-            local usage=$(echo "$vnstat_output" | sed 's/;/ /g' | sed 's/.*;//' | sed 's/;.*//' | sed -n '3s/[^0-9]*\([0-9]*\).*/\1/p')
+            local usage=$(echo "$vnstat_output" | sed 's/;/ /g' | sed -n 's/.*\([0-9.]\+\) GiB.*/\1/p' | sed -n '3p')
             ;;
         max)
-            local tx=$(echo "$vnstat_output" | sed 's/;/ /g' | sed 's/.*;//' | sed 's/;.*//' | sed -n '1s/[^0-9]*\([0-9]*\).*/\1/p')
-            local rx=$(echo "$vnstat_output" | sed 's/;/ /g' | sed 's/.*;//' | sed 's/;.*//' | sed -n '2s/[^0-9]*\([0-9]*\).*/\1/p')
-            usage=$(echo "$tx $rx" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | sed 's/ /\n/' | sort -rn | head -n1)
+            local tx=$(echo "$vnstat_output" | sed 's/;/ /g' | sed -n 's/.*\([0-9.]\+\) GiB.*/\1/p' | sed -n '2p')
+            local rx=$(echo "$vnstat_output" | sed 's/;/ /g' | sed -n 's/.*\([0-9.]\+\) GiB.*/\1/p' | sed -n '1p')
+            usage=$(echo "$tx $rx" | tr ' ' '\n' | sort -rn | head -n1)
             ;;
     esac
     
     echo "Debug: Raw usage value: $usage" >&2
     if [ -n "$usage" ]; then
-        local gb_usage=$(echo "scale=2; $usage / 1024 / 1024 / 1024" | bc)
-        echo "Debug: Usage in GB: $gb_usage" >&2
-        echo $gb_usage
+        echo "Debug: Usage in GB: $usage" >&2
+        echo $usage
     else
         echo "Debug: Unable to get usage data" >&2
         echo "0"
     fi
 }
+
 
 
 
@@ -317,7 +317,7 @@ main() {
 }
 
 echo "Debug: Testing vnstat command directly" >&2
-vnstat -i $MAIN_INTERFACE --oneline b
+vnstat -i $MAIN_INTERFACE --oneline
 
 
 # 执行主函数
