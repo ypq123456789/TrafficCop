@@ -66,3 +66,5 @@ curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq12
 ```
 curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/ali-20g
 ```
+## 支持作者
+![mm_reward_qrcode_1719923713616](https://github.com/ypq123456789/TrafficCop/assets/114487221/d402da68-b37d-4538-8505-1afe704507b2)
