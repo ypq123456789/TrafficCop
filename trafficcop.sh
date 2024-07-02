@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.27"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.28"| tee -a "$LOG_FILE"
 
 # 检查并安装必要的软件包
 check_and_install_packages() {
@@ -306,19 +306,23 @@ main() {
         echo "$(date '+%Y-%m-%d %H:%M:%S') 初始配置完成" | tee -a "$LOG_FILE"
     else
         echo "配置文件已存在且不为空" | tee -a "$LOG_FILE"
-        if check_existing_setup; then
-            read -p "是否需要修改配置？(y/n): " modify_config
-            case $modify_config in
-                [Yy]*)
-                    initial_config
-                    setup_crontab
-                    echo "$(date '+%Y-%m-%d %H:%M:%S') 设置已更新，脚本将每分钟自动运行一次" | tee -a "$LOG_FILE"
-                    ;;
-                *)
-                    echo "$(date '+%Y-%m-%d %H:%M:%S') 保持现有配置。" | tee -a "$LOG_FILE"
-                    ;;
-            esac
-        else
+      if check_existing_setup; then
+        read -p "是否需要修改配置？(y/n): " modify_config
+        case $modify_config in
+            [Yy]*)
+                echo "$(date '+%Y-%m-%d %H:%M:%S') 开始修改配置..." | tee -a "$LOG_FILE"
+                initial_config
+                setup_crontab
+                echo "$(date '+%Y-%m-%d %H:%M:%S') 配置已更新，脚本将每分钟自动运行一次" | tee -a "$LOG_FILE"
+                ;;
+            [Nn]*)
+                echo "$(date '+%Y-%m-%d %H:%M:%S') 保持现有配置。" | tee -a "$LOG_FILE"
+                ;;
+            *)
+                echo "$(date '+%Y-%m-%d %H:%M:%S') 无效输入，保持现有配置。" | tee -a "$LOG_FILE"
+                ;;
+        esac
+    else
             echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件存在但格式不正确，开始重新配置..." | tee -a "$LOG_FILE"
             initial_config
             setup_crontab
@@ -360,7 +364,9 @@ main() {
 
 echo "Debug: Testing vnstat command directly" >&2
 vnstat -i $MAIN_INTERFACE --oneline
-
+   
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前配置：" | tee -a "$LOG_FILE"
+show_current_config
 
 # 执行主函数
 main "$@"
