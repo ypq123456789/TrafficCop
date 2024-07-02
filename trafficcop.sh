@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.20"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.21"| tee -a "$LOG_FILE"
 
 # 检查并安装必要的软件包
 check_and_install_packages() {
@@ -185,23 +185,23 @@ get_traffic_usage() {
     
     echo "Debug: Start date: $start_date, End date: $end_date" >&2
     
-    local vnstat_output=$(vnstat -i $MAIN_INTERFACE --oneline b)
+    local vnstat_output=$(vnstat -i $MAIN_INTERFACE --oneline)
     echo "Debug: vnstat output: $vnstat_output" >&2
     
     case $TRAFFIC_MODE in
         out)
-            local usage=$(echo "$vnstat_output" | grep -oP '(?<=;)[0-9]+(?=;0;)')
+            local usage=$(echo "$vnstat_output" | sed 's/;/ /g' | sed 's/.*;//' | sed 's/;.*//' | sed -n '1s/[^0-9]*\([0-9]*\).*/\1/p')
             ;;
         in)
-            local usage=$(echo "$vnstat_output" | grep -oP '(?<=;)[0-9]+(?=;[0-9]+;0;)')
+            local usage=$(echo "$vnstat_output" | sed 's/;/ /g' | sed 's/.*;//' | sed 's/;.*//' | sed -n '2s/[^0-9]*\([0-9]*\).*/\1/p')
             ;;
         total)
-            local usage=$(echo "$vnstat_output" | grep -oP '(?<=;0;)[0-9]+')
+            local usage=$(echo "$vnstat_output" | sed 's/;/ /g' | sed 's/.*;//' | sed 's/;.*//' | sed -n '3s/[^0-9]*\([0-9]*\).*/\1/p')
             ;;
         max)
-            local tx=$(echo "$vnstat_output" | grep -oP '(?<=;)[0-9]+(?=;0;)')
-            local rx=$(echo "$vnstat_output" | grep -oP '(?<=;)[0-9]+(?=;[0-9]+;0;)')
-            usage=$(echo "$tx $rx" | awk '{print (\$1 > \$2) ? \$1 : \$2}')
+            local tx=$(echo "$vnstat_output" | sed 's/;/ /g' | sed 's/.*;//' | sed 's/;.*//' | sed -n '1s/[^0-9]*\([0-9]*\).*/\1/p')
+            local rx=$(echo "$vnstat_output" | sed 's/;/ /g' | sed 's/.*;//' | sed 's/;.*//' | sed -n '2s/[^0-9]*\([0-9]*\).*/\1/p')
+            usage=$(echo "$tx $rx" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | sed 's/ /\n/' | sort -rn | head -n1)
             ;;
     esac
     
