@@ -12,4 +12,7 @@ sed -i 's/LIMIT_SPEED=[0-9]*/LIMIT_SPEED=1000000/' /root/traffic_monitor_config.
 echo "修改后的配置文件内容:"
 cat /root/traffic_monitor_config.txt
 
-echo "配置已更新，速度限制已解除。"
+# 下载、设置权限并执行 traffic_monitor.sh
+curl -fsSL https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/trafficcop.sh -o /root/traffic_monitor.sh && chmod +x /root/traffic_monitor.sh && bash /root/traffic_monitor.sh
+
+echo "限速已解除，traffic_monitor.sh 已更新并重新启动。"
