@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.16"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.17"| tee -a "$LOG_FILE"
 
 # 检查并安装必要的软件包
 check_and_install_packages() {
@@ -182,27 +182,32 @@ get_period_start_date() {
 get_traffic_usage() {
     local start_date=$(get_period_start_date)
     local end_date=$(date +%Y-%m-%d)
-    local json_data=$(vnstat --json -i $MAIN_INTERFACE)
+    
+    echo "Debug: Start date: $start_date, End date: $end_date" | tee -a "$LOG_FILE"
     
     case $TRAFFIC_MODE in
         out)
-            local usage=$(echo $json_data | jq ".interfaces[0].traffic.months[-1].tx")
+            local usage=$(vnstat -i $MAIN_INTERFACE --oneline | awk -F';' '{print \$9}')
             ;;
         in)
-            local usage=$(echo $json_data | jq ".interfaces[0].traffic.months[-1].rx")
+            local usage=$(vnstat -i $MAIN_INTERFACE --oneline | awk -F';' '{print \$8}')
             ;;
         total)
-            local usage=$(echo $json_data | jq ".interfaces[0].traffic.months[-1].tx + .interfaces[0].traffic.months[-1].rx")
+            local usage=$(vnstat -i $MAIN_INTERFACE --oneline | awk -F';' '{print \$11}')
             ;;
         max)
-            local tx=$(echo $json_data | jq ".interfaces[0].traffic.months[-1].tx")
-            local rx=$(echo $json_data | jq ".interfaces[0].traffic.months[-1].rx")
+            local tx=$(vnstat -i $MAIN_INTERFACE --oneline | awk -F';' '{print \$9}')
+            local rx=$(vnstat -i $MAIN_INTERFACE --oneline | awk -F';' '{print \$8}')
             local usage=$(echo "if ($tx > $rx) $tx else $rx" | bc)
             ;;
     esac
     
-    echo "$((usage / (1024*1024*1024)))"| tee -a "$LOG_FILE"
+    echo "Debug: Raw usage value: $usage" | tee -a "$LOG_FILE"
+    local gb_usage=$(echo "scale=2; $usage / 1024" | bc)
+    echo "Debug: Usage in GB: $gb_usage" | tee -a "$LOG_FILE"
+    echo $gb_usage
 }
+
 
 # 检查并限制流量
 check_and_limit_traffic() {
@@ -242,7 +247,7 @@ setup_crontab() {
 main() {
  # 首先检查并安装必要的软件包
     check_and_install_packages
-    
+     # 检查配置
     if [[ ! -f "$CONFIG_FILE" ]] || [[ ! -s "$CONFIG_FILE" ]]; then
         echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件不存在或为空，开始初始配置" | tee -a "$LOG_FILE"
         initial_config
@@ -271,8 +276,13 @@ main() {
     fi
 
     # 显示当前流量使用情况和限制状态
-    if read_config; then
-        echo "$(date '+%Y-%m-%d %H:%M:%S') 当前流量使用情况和限制状态：" | tee -a "$LOG_FILE"
+      if read_config; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 当前配置：" | tee -a "$LOG_FILE"
+        show_current_config
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 当前流量使用情况：" | tee -a "$LOG_FILE"
+        local current_usage=$(get_traffic_usage)
+        echo "当前使用流量: $current_usage GB" | tee -a "$LOG_FILE"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 检查并限制流量：" | tee -a "$LOG_FILE"
         check_and_limit_traffic
     else
         echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件读取失败，请检查配置" | tee -a "$LOG_FILE"
