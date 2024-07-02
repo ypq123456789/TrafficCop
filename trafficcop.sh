@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.29"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.30"| tee -a "$LOG_FILE"
 
 # 检查并安装必要的软件包
 check_and_install_packages() {
@@ -299,7 +299,7 @@ main() {
  # 首先检查并安装必要的软件包
     check_and_install_packages
      # 检查配置
-   if check_existing_setup; then
+ if check_existing_setup; then
     while true; do
         read -p "是否需要修改配置？(y/n): " modify_config
         case $modify_config in
@@ -320,12 +320,11 @@ main() {
         esac
     done
 else
-            echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件存在但格式不正确，开始重新配置..." | tee -a "$LOG_FILE"
-            initial_config
-            setup_crontab
-            echo "$(date '+%Y-%m-%d %H:%M:%S') 重新配置完成，脚本将每分钟自动运行一次" | tee -a "$LOG_FILE"
-        fi
-    fi
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 开始初始化配置..." | tee -a "$LOG_FILE"
+    initial_config
+    setup_crontab
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 初始配置完成，脚本将每分钟自动运行一次" | tee -a "$LOG_FILE"
+fi
 
     # 显示当前流量使用情况和限制状态
     if read_config; then
@@ -348,15 +347,15 @@ else
         echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件读取失败，请检查配置" | tee -a "$LOG_FILE"
     fi
 
-    if [[ "\$1" == "--run" ]]; then
-        echo "正在以自动化模式运行" | tee -a "$LOG_FILE"
-        if read_config; then
-            check_reset_limit
-            check_and_limit_traffic
-        else
-            echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件读取失败，请检查配置" | tee -a "$LOG_FILE"
-        fi
+if [ "\$1" = "--run" ]; then
+    echo "正在以自动化模式运行" | tee -a "$LOG_FILE"
+    if read_config; then
+        check_reset_limit
+        check_and_limit_traffic
+    else
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件读取失败，请检查配置" | tee -a "$LOG_FILE"
     fi
+fi
 }
 
 echo "Debug: Testing vnstat command directly" >&2
