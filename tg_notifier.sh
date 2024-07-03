@@ -6,7 +6,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 
-echo "版本号：1.4"  
+echo "版本号：1.5"  
 
 # 函数：获取非空输入，带超时
 get_valid_input() {
@@ -137,8 +137,31 @@ main() {
             fi
         fi
         
-        # 执行检查
-        check_and_notify
+        # 新增：持续运行循环
+        while true; do
+            echo "脚本正在运行中。按 'q' 退出，按 'c' 检查流量，按 'r' 重新加载配置，按 't' 发送测试消息。"
+            read -n 1 -s input
+            case $input in
+                q|Q) 
+                    echo "退出脚本。"
+                    break
+                    ;;
+                c|C)
+                    check_and_notify
+                    ;;
+                r|R)
+                    read_config
+                    echo "配置已重新加载。"
+                    ;;
+                t|T)
+                    test_telegram_notification
+                    ;;
+                *)
+                    echo "无效的输入。"
+                    ;;
+            esac
+            echo
+        done
     fi
 }
 
