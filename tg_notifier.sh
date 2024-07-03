@@ -10,7 +10,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 echo "----------------------------------------------"| tee -a "$CRON_LOG"
-echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：6.8"  
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：6.9"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -235,15 +235,34 @@ $correct_entry"
     crontab -l
 }
 
-
-
-
 # 每日报告
 daily_report() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 开始生成每日报告" >> "$CRON_LOG"
     local current_usage=$(grep "当前流量" "$LOG_FILE" | tail -n 1 | cut -d ' ' -f 4)
     local limit=$(grep "流量限制" "$LOG_FILE" | tail -n 1 | cut -d ' ' -f 4)
-    local message="📊 每日流量报告\n当前使用流量：$current_usage\n流量限制：$limit"
-    send_telegram_message "$message"
+    
+    if [[ -z "$current_usage" || -z "$limit" ]]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 无法获取流量信息" >> "$CRON_LOG"
+        return 1
+    fi
+    
+    local message="📊 每日流量报告%0A当前使用流量：$current_usage%0A流量限制：$limit"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 准备发送消息: $message" >> "$CRON_LOG"
+    
+    local url="https://api.telegram.org/bot${BOT_TOKEN}/sendMessage"
+    local response
+
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 尝试发送Telegram消息" >> "$CRON_LOG"
+    
+    response=$(curl -s -X POST "$url" -d "chat_id=$CHAT_ID" -d "text=$message")
+    
+    if echo "$response" | grep -q '"ok":true'; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 每日报告发送成功" >> "$CRON_LOG"
+        return 0
+    else
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 每日报告发送失败. 响应: $response" >> "$CRON_LOG"
+        return 1
+    fi
 }
 
 # 主任务
