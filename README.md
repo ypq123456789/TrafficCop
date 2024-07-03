@@ -126,14 +126,7 @@ sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/
 ```
 sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/az-115g && cat traffic_monitor_config.txt
 ```
-### alice 1500G：
-```
-sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/alice-1500g && cat traffic_monitor_config.txt
-```
-### 亚洲云 300G：
-```
-sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/asia-300g && cat traffic_monitor_config.txt
-```
+
 ### GCP 625G[大流量极致解法](https://www.nodeseek.com/post-115166-1)：
 ```
 sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/GCP-625g && cat traffic_monitor_config.txt
@@ -141,6 +134,14 @@ sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/
 ### GCP 200G(白嫖标准路由200g流量就跑)：
 ```
 sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/GCP-200g && cat traffic_monitor_config.txt
+```
+### alice 1500G：
+```
+sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/alice-1500g && cat traffic_monitor_config.txt
+```
+### 亚洲云 300G：
+```
+sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/asia-300g && cat traffic_monitor_config.txt
 ```
 ## Star History
 
