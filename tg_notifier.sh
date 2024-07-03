@@ -6,20 +6,23 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 
-echo "版本号：1.5"  
+echo "版本号：1.6"  
 
-# 函数：获取非空输入，带超时
+# 函数：获取非空输入
 get_valid_input() {
     local prompt="${1:-"请输入："}"
     local input=""
-    local timeout="${2:-5}"  # 新增：默认超时时间为5秒
-    read -t "$timeout" -p "${prompt}" input
-    if [[ -n "${input}" ]]; then
-        echo "${input}"
-    else
-        echo ""  # 新增：超时返回空字符串
-    fi
+    while true; do
+        read -p "${prompt}" input
+        if [[ -n "${input}" ]]; then
+            echo "${input}"
+            return
+        else
+            echo "输入不能为空，请重新输入。"
+        fi
+    done
 }
+
 
 # 读取配置
 read_config() {
@@ -127,19 +130,13 @@ main() {
         if ! read_config; then
             echo "未找到配置文件，开始初始化配置..."
             initial_config
-        else
-            echo "配置已加载。如需修改配置，请在5秒内按任意键，否则将使用现有配置继续运行。"
-            if read -t 5 -n 1; then
-                echo "开始修改配置..."
-                initial_config
-            else
-                echo "使用现有配置继续运行。"
-            fi
         fi
         
+        # 移除了5秒等待的部分
+
         # 新增：持续运行循环
         while true; do
-            echo "脚本正在运行中。按 'q' 退出，按 'c' 检查流量，按 'r' 重新加载配置，按 't' 发送测试消息。"
+            echo "脚本正在运行中。按 'q' 退出，按 'c' 检查流量，按 'r' 重新加载配置，按 't' 发送测试消息，按 'm' 修改配置。"
             read -n 1 -s input
             case $input in
                 q|Q) 
@@ -156,6 +153,9 @@ main() {
                 t|T)
                     test_telegram_notification
                     ;;
+                m|M)
+                    initial_config
+                    ;;
                 *)
                     echo "无效的输入。"
                     ;;
@@ -164,6 +164,10 @@ main() {
         done
     fi
 }
+
+# 执行主函数
+main "$@"
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 脚本执行完毕，退出" >> "$CRON_LOG"
 
 # 执行主函数
 main "$@"
