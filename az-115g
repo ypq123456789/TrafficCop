@@ -1,8 +1,10 @@
 TRAFFIC_MODE=out
 TRAFFIC_PERIOD=monthly
 TRAFFIC_LIMIT=115
-TRAFFIC_TOLERANCE=0
+TRAFFIC_TOLERANCE=5
 PERIOD_START_DAY=1
 LIMIT_SPEED=1024
 MAIN_INTERFACE=eth0
 LIMIT_MODE=tc
+# 因为az国外教育版本身就只有115g，流量很少，容差可以小一点
+# 因为az国外教育版即使超出国外的115g免费额度还有100美元的赠金，所以流量限速没必要太慢
