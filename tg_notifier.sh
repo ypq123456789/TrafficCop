@@ -6,7 +6,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 
-echo "版本号：1.8"  
+echo "版本号：1.9"  
 
 # 函数：获取非空输入
 get_valid_input() {
@@ -137,22 +137,24 @@ daily_report() {
 
 # 主任务
 main() {
-    if [ "\$1" = "cron" ]; then  # 修改：去掉了转义符
+    if [ "\$1" = "cron" ]; then
         # cron 模式
         check_and_notify false
     else
         # 交互模式
         while true; do
             echo "脚本正在运行中。按 'q' 退出，按 'c' 检查流量，按 'r' 重新加载配置，按 't' 发送测试消息，按 'm' 修改配置。"
-            read -n 1 -s input
-            echo
+            read -n 1 input
+            echo  # 新行
+            echo "您输入的是: $input"  # 调试输出
             case $input in
                 q|Q) 
                     echo "退出脚本。"
                     exit 0
                     ;;
                 c|C)
-                    check_and_notify true  # 修改：移除了额外的 echo 语句
+                    echo "正在检查流量..."
+                    check_and_notify true
                     ;;
                 r|R)
                     read_config
@@ -165,13 +167,13 @@ main() {
                     initial_config
                     ;;
                 *)
-                    echo "无效的输入。"
+                    echo "无效的输入: $input"
                     ;;
             esac
+            echo "处理完成，返回主循环"  # 调试输出
         done
     fi
 }
-
 # 执行主函数
 main "$@"
 echo "$(date '+%Y-%m-%d %H:%M:%S') : 脚本执行完毕，退出" >> "$CRON_LOG"
