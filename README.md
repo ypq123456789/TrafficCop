@@ -126,6 +126,10 @@ sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/
 ```
 sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/az-115g
 ```
+### alice 1500G：
+```
+sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/alice-1500g
+```
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=ypq123456789/TrafficCop&type=Date)](https://star-history.com/#ypq123456789/TrafficCop&Date)
