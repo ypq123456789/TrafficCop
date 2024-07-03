@@ -10,7 +10,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 echo "----------------------------------------------"| tee -a "$CRON_LOG"
-echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：6.9"  
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：7.0"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -238,8 +238,10 @@ $correct_entry"
 # 每日报告
 daily_report() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 开始生成每日报告" >> "$CRON_LOG"
-    local current_usage=$(grep "当前流量" "$LOG_FILE" | tail -n 1 | cut -d ' ' -f 4)
-    local limit=$(grep "流量限制" "$LOG_FILE" | tail -n 1 | cut -d ' ' -f 4)
+    
+    # 获取最新的流量使用情况
+    local current_usage=$(grep "当前使用流量:" "$LOG_FILE" | tail -n 1 | cut -d ':' -f 2 | xargs)
+    local limit=$(grep "限制流量:" "$LOG_FILE" | tail -n 1 | cut -d ':' -f 2 | xargs)
     
     if [[ -z "$current_usage" || -z "$limit" ]]; then
         echo "$(date '+%Y-%m-%d %H:%M:%S') : 无法获取流量信息" >> "$CRON_LOG"
@@ -264,6 +266,7 @@ daily_report() {
         return 1
     fi
 }
+
 
 # 主任务
 main() {
