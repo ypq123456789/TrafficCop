@@ -10,7 +10,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 
-echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：4.3"  
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：4.4"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -197,14 +197,21 @@ main() {
     
     check_running
     
-    # echo "$(date '+%Y-%m-%d %H:%M:%S') : After check_running" >> "$CRON_LOG"
-    
     if [[ "$*" == *"-cron"* ]]; then
         echo "$(date '+%Y-%m-%d %H:%M:%S') : 检测到-cron参数, 进入cron模式" >> "$CRON_LOG"
         # cron 模式代码
-        check_and_notify "false"
+        if read_config; then
+            check_and_notify "false"
+            
+            # 检查是否需要发送每日报告
+            current_time=$(date +%H:%M)
+            if [ "$current_time" == "00:00" ]; then
+                daily_report
+            fi
+        else
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : 配置文件不存在或无法读取，跳过检查" >> "$CRON_LOG"
+        fi
     else
-        echo "$(date '+%Y-%m-%d %H:%M:%S') : 未检测到-cron参数, 进入交互模式" >> "$CRON_LOG"
         # 交互模式
         echo "进入交互模式"
         clear_notification_state
