@@ -2,7 +2,7 @@
 
 
 # 新增：启用调试模式
-set -x
+# set -x
 
 CONFIG_FILE="/root/tg_notifier_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
@@ -10,7 +10,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 
-echo "版本号：3.8"  
+echo "版本号：3.9"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -191,8 +191,15 @@ daily_report() {
 
 # 主任务
 main() {
+    echo "Debug: Entering main function" >> "$CRON_LOG"
+    echo "Debug: First argument is: \$1" >> "$CRON_LOG"
+    
     check_running
+    
+    echo "Debug: After check_running" >> "$CRON_LOG"
+    
     if [ "\$1" = "cron" ]; then
+        echo "Debug: Entering cron mode" >> "$CRON_LOG"
         # cron 模式
         {
             echo "$(date '+%Y-%m-%d %H:%M:%S') : 开始执行 cron 模式"
@@ -200,8 +207,10 @@ main() {
             check_and_notify "false"
             echo "$(date '+%Y-%m-%d %H:%M:%S') : cron 模式执行完毕"
         } >> "$CRON_LOG" 2>&1
+        echo "Debug: Exiting cron mode" >> "$CRON_LOG"
         exit 0
     else
+        echo "Debug: Entering interactive mode" >> "$CRON_LOG"
         # 交互模式
         echo "进入交互模式"
         clear_notification_state
