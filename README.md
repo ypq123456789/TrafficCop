@@ -108,27 +108,27 @@ sudo pkill -f tg_notifier.sh && crontab -l | grep -v "tg_notifier.sh" | crontab 
 ## 预设配置
 ### 阿里云CDT 200G：
 ```
-sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/ali-200g
+sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/ali-200g && cat traffic_monitor_config.txt
 ```
 ### 阿里云CDT 20G：
 ```
-sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/ali-20g
+sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/ali-20g && cat traffic_monitor_config.txt
 ```
 ### 阿里云轻量 1T：
 ```
-sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/ali-1T
+sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/ali-1T && cat traffic_monitor_config.txt
 ```
 ### azure学生 15G：
 ```
-sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/az-15g
+sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/az-15g && cat traffic_monitor_config.txt
 ```
 ### azure学生 115G：
 ```
-sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/az-115g
+sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/az-115g && cat traffic_monitor_config.txt
 ```
 ### alice 1500G：
 ```
-sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/alice-1500g
+sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/alice-1500g && cat traffic_monitor_config.txt
 ```
 ## Star History
 
