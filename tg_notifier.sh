@@ -6,21 +6,19 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 
-echo "版本号：0.9"
+echo "版本号：1.0"  
 
-# 函数：获取非空输入
+# 函数：获取非空输入，带超时
 get_valid_input() {
     local prompt="${1:-"请输入："}"
     local input=""
-    while true; do
-        read -p "${prompt}" input
-        if [[ -n "${input}" ]]; then
-            echo "${input}"
-            return
-        else
-            echo "输入不能为空，请重试。"
-        fi
-    done
+    local timeout="${2:-5}"  # 新增：默认超时时间为5秒
+    read -t "$timeout" -p "${prompt}" input
+    if [[ -n "${input}" ]]; then
+        echo "${input}"
+    else
+        echo ""  # 新增：超时返回空字符串
+    fi
 }
 
 # 读取配置
@@ -46,9 +44,14 @@ EOF
 # 初始配置
 initial_config() {
     TG_BOT_TOKEN=$(get_valid_input "请输入Telegram Bot Token: ")
+    [[ -z "$TG_BOT_TOKEN" ]] && TG_BOT_TOKEN=$(grep "TG_BOT_TOKEN" "$CONFIG_FILE" | cut -d'"' -f2)  # 新增：使用旧值
+
     TG_CHAT_ID=$(get_valid_input "请输入Telegram Chat ID: ")
+    [[ -z "$TG_CHAT_ID" ]] && TG_CHAT_ID=$(grep "TG_CHAT_ID" "$CONFIG_FILE" | cut -d'"' -f2)  # 新增：使用旧值
+
     daily_report_choice=$(get_valid_input "是否启用每日流量报告？(y/n) ")
-    DAILY_REPORT=$([ "$daily_report_choice" = "y" ] && echo "true" || echo "false")
+    [[ -z "$daily_report_choice" ]] && daily_report_choice=$(grep "DAILY_REPORT" "$CONFIG_FILE" | cut -d'"' -f2)  # 新增：使用旧值
+    DAILY_REPORT=$([ "$daily_report_choice" = "y" ] || [ "$daily_report_choice" = "true" ] && echo "true" || echo "false")
     write_config
 }
 
@@ -120,22 +123,21 @@ main() {
         fi
     fi
 
-    TEST_NOTIFY=$(get_valid_input "是否测试Telegram通知功能？(y/n) ")
-    [[ $TEST_NOTIFY =~ ^[Yy]$ ]] && test_telegram_notification
+    # 修改：仅在交互模式下测试通知
+    if [ -z "\$1" ]; then
+        TEST_NOTIFY=$(get_valid_input "是否测试Telegram通知功能？(y/n) ")
+        [[ $TEST_NOTIFY =~ ^[Yy]$ ]] && test_telegram_notification
 
-    if ! crontab -l | grep -q "$SCRIPT_PATH"; then
-        add_to_crontab
-    fi
-
-    # 修改: 使用命令行参数替代 RUN_MODE 环境变量
-    if [ "\$1" = "daily_report" ]; then
+        if ! crontab -l | grep -q "$SCRIPT_PATH"; then
+            add_to_crontab
+        fi
+        echo "脚本已设置。使用 cron 任务运行检查和每日报告。"
+    elif [ "\$1" = "daily_report" ]; then
         daily_report
     elif [ "\$1" = "check" ]; then
         echo "$(date): 开始检查日志文件..." >> "$CRON_LOG"
         check_and_notify
         echo "$(date): 检查完成。" >> "$CRON_LOG"
-    elif [ -z "\$1" ]; then
-        echo "脚本已设置。使用 cron 任务运行检查和每日报告。"
     else
         echo "无效的参数。使用 'check' 或 'daily_report'。"
     fi
