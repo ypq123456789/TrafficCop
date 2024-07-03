@@ -6,7 +6,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 
-echo "版本号：2.9"  
+echo "版本号：3.0"  
 
 # 清除旧的通知状态文件
 clear_notification_state() {
@@ -54,7 +54,7 @@ EOF
 
 # 初始配置
 initial_config() {
-    local new_token new_chat_id new_interval new_threshold
+    local new_token new_chat_id
 
     echo "请输入Telegram Bot Token: "
     read -r new_token
@@ -70,29 +70,14 @@ initial_config() {
         read -r new_chat_id
     done
 
-    echo "请输入检查间隔（分钟）: "
-    read -r new_interval
-    while [[ ! "$new_interval" =~ ^[0-9]+$ ]]; do
-        echo "无效的输入。请输入一个正整数: "
-        read -r new_interval
-    done
-
-    echo "请输入流量阈值（GB）: "
-    read -r new_threshold
-    while [[ ! "$new_threshold" =~ ^[0-9]+(\.[0-9]+)?$ ]]; do
-        echo "无效的输入。请输入一个正数: "
-        read -r new_threshold
-    done
-
     # 更新配置文件
     echo "BOT_TOKEN=$new_token" > "$CONFIG_FILE"
     echo "CHAT_ID=$new_chat_id" >> "$CONFIG_FILE"
-    echo "CHECK_INTERVAL=$new_interval" >> "$CONFIG_FILE"
-    echo "TRAFFIC_THRESHOLD=$new_threshold" >> "$CONFIG_FILE"
 
     echo "配置已更新。"
     read_config
 }
+
 
 
 send_telegram_message() {
