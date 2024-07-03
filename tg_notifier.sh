@@ -10,7 +10,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 echo "----------------------------------------------"| tee -a "$CRON_LOG"
-echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：5.0"  
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：5.1"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -175,28 +175,29 @@ setup_cron() {
     local correct_entry="*/5 * * * * $SCRIPT_PATH -cron"
     local current_crontab=$(crontab -l 2>/dev/null)
     local tg_notifier_entries=$(echo "$current_crontab" | grep "tg_notifier.sh")
-    local correct_entry_exists=$(echo "$tg_notifier_entries" | grep -F "$correct_entry")
+    local correct_entries_count=$(echo "$tg_notifier_entries" | grep -F "$correct_entry" | wc -l)
 
-    if [ -n "$correct_entry_exists" ]; then
-        echo "正确的 crontab 项已存在，无需修改。"
+    if [ "$correct_entries_count" -eq 1 ]; then
+        echo "正确的 crontab 项已存在且只有一个，无需修改。"
     else
         # 删除所有包含 tg_notifier.sh 的条目
         new_crontab=$(echo "$current_crontab" | grep -v "tg_notifier.sh")
         
-        # 添加正确的条目
+        # 添加一个正确的条目
         new_crontab="${new_crontab}
 $correct_entry"
 
         # 更新 crontab
         echo "$new_crontab" | crontab -
 
-        echo "已更新 crontab。删除了所有旧的 tg_notifier.sh 条目，并添加了正确的条目。"
+        echo "已更新 crontab。删除了所有旧的 tg_notifier.sh 条目，并添加了一个正确的条目。"
     fi
 
     # 显示当前的 crontab 内容
     echo "当前的 crontab 内容："
     crontab -l
 }
+
 
 # 每日报告
 daily_report() {
