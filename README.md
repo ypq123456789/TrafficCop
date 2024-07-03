@@ -76,6 +76,8 @@ Chat ID获取方法：https://api.telegram.org/bot${BOT_TOKEN}/getUpdates
 
 ${BOT_TOKEN}是你的 Telegram Bot Token 
 
+Chat ID还可以找bot获取, 更简单, 比如[username_to_id_bot](https://t.me/username_to_id_bot)
+
 ### 相关命令
 一键推送脚本
 ```
