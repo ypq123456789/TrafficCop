@@ -130,6 +130,10 @@ sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/
 ```
 sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/alice-1500g && cat traffic_monitor_config.txt
 ```
+### 亚洲云 300G：
+```
+sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/asia-300g && cat traffic_monitor_config.txt
+```
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=ypq123456789/TrafficCop&type=Date)](https://star-history.com/#ypq123456789/TrafficCop&Date)
