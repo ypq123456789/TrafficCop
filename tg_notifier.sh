@@ -6,7 +6,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 
-echo "版本号：2.7"  
+echo "版本号：2.8"  
 
 # 清除旧的通知状态文件
 clear_notification_state() {
@@ -75,9 +75,18 @@ send_telegram_message() {
 }
 
 test_telegram_notification() {
-    local test_message="🔔 这是一条测试消息。如果您收到这条消息，说明Telegram通知功能正常工作。"
-    send_telegram_message "$test_message"
-    echo "测试消息已发送，请检查您的Telegram。"
+    local message="🔔 这是一条测试消息。如果您收到这条消息，说明Telegram通知功能正常工作。"
+    local response
+    response=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+        -d "chat_id=${CHAT_ID}" \
+        -d "text=${message}" \
+        -d "disable_notification=true")
+    
+    if echo "$response" | grep -q '"ok":true'; then
+        echo "✅ 测试消息已成功发送，请检查您的Telegram。"
+    else
+        echo "❌ 发送测试消息失败。请检查您的BOT_TOKEN和CHAT_ID设置。"
+    fi
 }
 
 check_and_notify() {
