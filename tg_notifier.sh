@@ -6,7 +6,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 
-echo "版本号：2.4"  
+echo "版本号：2.5"  
 
 # 清除旧的通知状态文件
 clear_notification_state() {
@@ -82,7 +82,7 @@ test_telegram_notification() {
 
 check_and_notify() {
     local interactive=\$1
-    
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 开始检查流量状态..." >> "$CRON_LOG"
     if [ "$interactive" = "true" ]; then
         echo "开始检查流量状态..."
     fi
@@ -120,7 +120,7 @@ check_and_notify() {
         echo "✅ 流量状态正常：未触发任何限制或警告。"
     fi
     
-    echo "流量检查完成。"
+     echo "$(date '+%Y-%m-%d %H:%M:%S') : 流量检查完成。" >> "$CRON_LOG"
 }
 
 # 设置定时任务
@@ -149,6 +149,7 @@ daily_report() {
 main() {
     clear_notification_state
     if [ "\$1" = "cron" ]; then
+        read_config
         check_and_notify false
     else
         # 读取配置
@@ -193,7 +194,6 @@ main() {
         done
     fi
 }
-
 # 执行主函数
 main "$@"
 echo "$(date '+%Y-%m-%d %H:%M:%S') : 脚本执行完毕，退出" >> "$CRON_LOG"
