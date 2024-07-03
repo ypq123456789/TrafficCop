@@ -10,7 +10,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 echo "----------------------------------------------"| tee -a "$CRON_LOG"
-echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：5.8"  
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：5.9"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -122,6 +122,7 @@ send_telegram_message() {
 }
 
 
+
 test_telegram_notification() {
     local message="🔔 这是一条测试消息。如果您收到这条消息，说明Telegram通知功能正常工作。"
     local response
@@ -202,6 +203,7 @@ check_and_notify() {
     
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 流量检查完成。" >> "$CRON_LOG"
 }
+
 
 # 设置定时任务
 setup_cron() {
@@ -312,6 +314,7 @@ fi
         done
     fi
 }
+
 
 # 执行主函数
 main "$@"
