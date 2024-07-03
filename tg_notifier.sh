@@ -10,7 +10,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 echo "----------------------------------------------"| tee -a "$CRON_LOG"
-echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：5.9"  
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：6.0"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -91,35 +91,34 @@ initial_config() {
 
 
 
-send_telegram_message() {
-    local message="\$1"
+# 发送限速警告
+send_throttle_warning() {
     local url="https://api.telegram.org/bot${BOT_TOKEN}/sendMessage"
-    local response
-    local curl_exit_code
-
-    echo "$(date '+%Y-%m-%d %H:%M:%S') : 尝试发送 Telegram 消息: $message" >> "$CRON_LOG"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') : 使用的 URL: $url" >> "$CRON_LOG"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') : 使用的 chat_id: $CHAT_ID" >> "$CRON_LOG"
-
-    response=$(curl -s -X POST "$url" -d "chat_id=$CHAT_ID" -d "text=$message" 2>&1)
-    curl_exit_code=$?
-
-    echo "$(date '+%Y-%m-%d %H:%M:%S') : Curl 退出码: $curl_exit_code" >> "$CRON_LOG"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') : Telegram API 响应: $response" >> "$CRON_LOG"
-
-    if [ $curl_exit_code -ne 0 ]; then
-        echo "$(date '+%Y-%m-%d %H:%M:%S') : Curl 命令执行失败" >> "$CRON_LOG"
-        return 1
-    fi
-
-    if echo "$response" | grep -q '"ok":true'; then
-        echo "$(date '+%Y-%m-%d %H:%M:%S') : 消息发送成功" >> "$CRON_LOG"
-        return 0
-    else
-        echo "$(date '+%Y-%m-%d %H:%M:%S') : 消息发送失败，API 返回错误" >> "$CRON_LOG"
-        return 1
-    fi
+    local message="⚠️ 限速警告：流量已达到限制，已启动 TC 模式限速。"
+    curl -s -X POST "$url" -d "chat_id=$CHAT_ID" -d "text=$message"
 }
+
+# 发送限速解除通知
+send_throttle_lifted() {
+    local url="https://api.telegram.org/bot${BOT_TOKEN}/sendMessage"
+    local message="✅ 限速解除：流量已恢复正常，所有限制已清除。"
+    curl -s -X POST "$url" -d "chat_id=$CHAT_ID" -d "text=$message"
+}
+
+# 发送新周期开始通知
+send_new_cycle_notification() {
+    local url="https://api.telegram.org/bot${BOT_TOKEN}/sendMessage"
+    local message="🔄 新周期开始：新的流量统计周期已开始，之前的限速（如果有）已自动解除。"
+    curl -s -X POST "$url" -d "chat_id=$CHAT_ID" -d "text=$message"
+}
+
+# 发送关机警告
+send_shutdown_warning() {
+    local url="https://api.telegram.org/bot${BOT_TOKEN}/sendMessage"
+    local message="🚨 关机警告：流量已达到严重限制，系统将在 1 分钟后关机！"
+    curl -s -X POST "$url" -d "chat_id=$CHAT_ID" -d "text=$message"
+}
+
 
 
 
@@ -149,20 +148,35 @@ check_and_notify() {
     local current_time=$(date '+%Y-%m-%d %H:%M:%S')
     
     # 确定当前状态
-    if echo "$latest_log" | grep -q "使用 TC 模式限速"; then
-        current_status="限速"
-    elif echo "$latest_log" | grep -q "流量正常，清除所有限制"; then
-        current_status="正常"
-    elif echo "$latest_log" | grep -q "系统将在 1 分钟后关机"; then
-        current_status="关机"
-    elif echo "$latest_log" | grep -q "新的流量周期"; then
-        current_status="新周期"
+     if [ "$current_status" = "限速" ] && ([ -z "$last_status" ] || [ "$last_status" = "正常" ]); then
+        if send_throttle_warning; then
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : 限速警告通知发送成功" >> "$CRON_LOG"
+        else
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : 限速警告通知发送失败" >> "$CRON_LOG"
+        fi
+    elif [ "$current_status" = "正常" ] && [ "$last_status" = "限速" ]; then
+        if send_throttle_lifted; then
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : 限速解除通知发送成功" >> "$CRON_LOG"
+        else
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : 限速解除通知发送失败" >> "$CRON_LOG"
+        fi
+    elif [ "$current_status" = "新周期" ]; then
+        if send_new_cycle_notification; then
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : 新周期开始通知发送成功" >> "$CRON_LOG"
+        else
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : 新周期开始通知发送失败" >> "$CRON_LOG"
+        fi
+    elif [ "$current_status" = "关机" ]; then
+        if send_shutdown_warning; then
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : 关机警告通知发送成功" >> "$CRON_LOG"
+        else
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : 关机警告通知发送失败" >> "$CRON_LOG"
+        fi
     else
-        current_status="未知"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 无需发送通知" >> "$CRON_LOG"
     fi
     
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 当前检测到的状态: $current_status" >> "$CRON_LOG"
-    
     local last_status=""
     if [ -f "$LAST_NOTIFICATION_FILE" ]; then
         last_status=$(tail -n 1 "$LAST_NOTIFICATION_FILE" | cut -d' ' -f3-)
