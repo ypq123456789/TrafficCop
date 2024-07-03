@@ -6,7 +6,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 
-echo "版本号：2.8"  
+echo "版本号：2.9"  
 
 # 清除旧的通知状态文件
 clear_notification_state() {
@@ -54,17 +54,46 @@ EOF
 
 # 初始配置
 initial_config() {
-    TG_BOT_TOKEN=$(get_valid_input "请输入Telegram Bot Token: ")
-    [[ -z "$TG_BOT_TOKEN" ]] && TG_BOT_TOKEN=$(grep "TG_BOT_TOKEN" "$CONFIG_FILE" | cut -d'"' -f2)  # 新增：使用旧值
+    local new_token new_chat_id new_interval new_threshold
 
-    TG_CHAT_ID=$(get_valid_input "请输入Telegram Chat ID: ")
-    [[ -z "$TG_CHAT_ID" ]] && TG_CHAT_ID=$(grep "TG_CHAT_ID" "$CONFIG_FILE" | cut -d'"' -f2)  # 新增：使用旧值
+    echo "请输入Telegram Bot Token: "
+    read -r new_token
+    while [[ -z "$new_token" ]]; do
+        echo "Bot Token 不能为空。请重新输入: "
+        read -r new_token
+    done
 
-    daily_report_choice=$(get_valid_input "是否启用每日流量报告？(y/n) ")
-    [[ -z "$daily_report_choice" ]] && daily_report_choice=$(grep "DAILY_REPORT" "$CONFIG_FILE" | cut -d'"' -f2)  # 新增：使用旧值
-    DAILY_REPORT=$([ "$daily_report_choice" = "y" ] || [ "$daily_report_choice" = "true" ] && echo "true" || echo "false")
-    write_config
+    echo "请输入Telegram Chat ID: "
+    read -r new_chat_id
+    while [[ -z "$new_chat_id" ]]; do
+        echo "Chat ID 不能为空。请重新输入: "
+        read -r new_chat_id
+    done
+
+    echo "请输入检查间隔（分钟）: "
+    read -r new_interval
+    while [[ ! "$new_interval" =~ ^[0-9]+$ ]]; do
+        echo "无效的输入。请输入一个正整数: "
+        read -r new_interval
+    done
+
+    echo "请输入流量阈值（GB）: "
+    read -r new_threshold
+    while [[ ! "$new_threshold" =~ ^[0-9]+(\.[0-9]+)?$ ]]; do
+        echo "无效的输入。请输入一个正数: "
+        read -r new_threshold
+    done
+
+    # 更新配置文件
+    echo "BOT_TOKEN=$new_token" > "$CONFIG_FILE"
+    echo "CHAT_ID=$new_chat_id" >> "$CONFIG_FILE"
+    echo "CHECK_INTERVAL=$new_interval" >> "$CONFIG_FILE"
+    echo "TRAFFIC_THRESHOLD=$new_threshold" >> "$CONFIG_FILE"
+
+    echo "配置已更新。"
+    read_config
 }
+
 
 send_telegram_message() {
     local message="${1:-"默认消息"}"
