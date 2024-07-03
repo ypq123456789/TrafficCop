@@ -10,7 +10,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 echo "----------------------------------------------"| tee -a "$CRON_LOG"
-echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：6.6"  
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：6.7"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -161,7 +161,7 @@ check_and_notify() {
     # 确定当前状态
     if echo "$relevant_log" | grep -q "流量超出限制，系统将在 1 分钟后关机"; then
         current_status="关机"
-    elif echo "$relevant_log" | grep -q "使用 TC 模式限速"; then
+    elif echo "$relevant_log" | grep -q "流量超出限制"; then
         current_status="限速"
     elif echo "$relevant_log" | grep -q "新的流量周期开始，重置限制"; then
         current_status="新周期"
