@@ -10,7 +10,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 
-echo "版本号：4.1"  
+echo "版本号：4.2"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -173,7 +173,7 @@ check_and_notify() {
 # 设置定时任务
 setup_cron() {
     if ! crontab -l | grep -q "$SCRIPT_PATH cron"; then
-        (crontab -l 2>/dev/null; echo "*/5 * * * * $SCRIPT_PATH cron") | crontab -
+        (crontab -l 2>/dev/null; echo "*/5 * * * * $SCRIPT_PATH -cron") | crontab -
         echo "已添加 crontab 项。"
     else
         echo "crontab 项已存在，无需添加。"
@@ -194,17 +194,17 @@ main() {
     echo "Debug: Entering main function" >> "$CRON_LOG"
     echo "Debug: Number of arguments: $#" >> "$CRON_LOG"
     echo "Debug: All arguments: $@" >> "$CRON_LOG"
-    echo "Debug: First argument is: '\$1'" >> "$CRON_LOG"
     
     check_running
     
     echo "Debug: After check_running" >> "$CRON_LOG"
     
-    if [ "\$1" = "cron" ]; then
-        echo "Debug: Entering cron mode" >> "$CRON_LOG"
-        # cron 模式代码...
+    if [[ "$*" == *"-cron"* ]]; then
+        echo "Debug: -cron argument detected, entering cron mode" >> "$CRON_LOG"
+        # cron 模式代码
+        check_and_notify "false"
     else
-        echo "Debug: Entering interactive mode" >> "$CRON_LOG"
+        echo "Debug: No -cron argument, entering interactive mode" >> "$CRON_LOG"
         # 交互模式
         echo "进入交互模式"
         clear_notification_state
