@@ -6,7 +6,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 
-echo "版本号：1.9"  
+echo "版本号：2.0"  
 
 # 函数：获取非空输入
 get_valid_input() {
@@ -73,13 +73,13 @@ test_telegram_notification() {
 }
 
 check_and_notify() {
-    local interactive=\$1  # 修改：去掉了转义符
+    local interactive=\$1
     
     if [ "$interactive" = "true" ]; then
         echo "开始检查流量状态..."
     fi
     
-    local status_found=false  # 新增：用于跟踪是否找到任何状态
+    local status_found=false
 
     if grep -q "使用 TC 模式限速" "$LOG_FILE"; then
         local message="⚠️ 流量警告：已达到限制，已启动 TC 模式限速。"
@@ -87,32 +87,31 @@ check_and_notify() {
             send_telegram_message "$message"
             echo "限速" > "$LAST_NOTIFICATION_FILE"
         fi
-        [ "$interactive" = "true" ] && echo "$message"
-        status_found=true  # 新增：标记找到状态
+        echo "$message"
+        status_found=true
     elif grep -q "系统将在 1 分钟后关机" "$LOG_FILE"; then
         local message="🚨 严重警告：流量已严重超出限制，系统将在 1 分钟后关机。"
         if [ ! -f "$LAST_NOTIFICATION_FILE" ] || [ "$(cat "$LAST_NOTIFICATION_FILE")" != "关机" ]; then
             send_telegram_message "$message"
             echo "关机" > "$LAST_NOTIFICATION_FILE"
         fi
-        [ "$interactive" = "true" ] && echo "$message"
-        status_found=true  # 新增：标记找到状态
+        echo "$message"
+        status_found=true
     elif grep -q "流量正常，清除所有限制" "$LOG_FILE"; then
         local message="✅ 通知：流量目前处于正常水平，所有限制已清除。"
         if [ -f "$LAST_NOTIFICATION_FILE" ]; then
             send_telegram_message "$message"
             rm "$LAST_NOTIFICATION_FILE"
         fi
-        [ "$interactive" = "true" ] && echo "$message"
-        status_found=true  # 新增：标记找到状态
+        echo "$message"
+        status_found=true
     fi
     
-    # 新增：如果没有找到任何状态，显示正常状态消息
-    if [ "$interactive" = "true" ] && [ "$status_found" = "false" ]; then
+    if [ "$status_found" = "false" ]; then
         echo "✅ 流量状态正常：未触发任何限制或警告。"
     fi
     
-    [ "$interactive" = "true" ] && echo "流量检查完成。"
+    echo "流量检查完成。"
 }
 
 # 设置定时任务
@@ -138,42 +137,42 @@ daily_report() {
 # 主任务
 main() {
     if [ "\$1" = "cron" ]; then
-        # cron 模式
         check_and_notify false
     else
-        # 交互模式
         while true; do
             echo "脚本正在运行中。按 'q' 退出，按 'c' 检查流量，按 'r' 重新加载配置，按 't' 发送测试消息，按 'm' 修改配置。"
-            read -n 1 input
-            echo  # 新行
-            echo "您输入的是: $input"  # 调试输出
-            case $input in
-                q|Q) 
-                    echo "退出脚本。"
-                    exit 0
-                    ;;
-                c|C)
-                    echo "正在检查流量..."
-                    check_and_notify true
-                    ;;
-                r|R)
-                    read_config
-                    echo "配置已重新加载。"
-                    ;;
-                t|T)
-                    test_telegram_notification
-                    ;;
-                m|M)
-                    initial_config
-                    ;;
-                *)
-                    echo "无效的输入: $input"
-                    ;;
-            esac
-            echo "处理完成，返回主循环"  # 调试输出
+            read -n 1 -r input
+            if [ -n "$input" ]; then
+                echo
+                echo "您输入的是: $input"
+                case $input in
+                    q|Q) 
+                        echo "退出脚本。"
+                        exit 0
+                        ;;
+                    c|C)
+                        check_and_notify true
+                        ;;
+                    r|R)
+                        read_config
+                        echo "配置已重新加载。"
+                        ;;
+                    t|T)
+                        test_telegram_notification
+                        ;;
+                    m|M)
+                        initial_config
+                        ;;
+                    *)
+                        echo "无效的输入: $input"
+                        ;;
+                esac
+                echo "处理完成，返回主循环"
+            fi
         done
     fi
 }
+
 # 执行主函数
 main "$@"
 echo "$(date '+%Y-%m-%d %H:%M:%S') : 脚本执行完毕，退出" >> "$CRON_LOG"
