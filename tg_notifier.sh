@@ -10,7 +10,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 
-echo "版本号：3.7"  
+echo "版本号：3.8"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -172,19 +172,16 @@ check_and_notify() {
 
 # 设置定时任务
 setup_cron() {
-if [ "\$1" = "cron" ]; then
-    # cron 模式
-    {
-        echo "$(date '+%Y-%m-%d %H:%M:%S') : 开始执行 cron 模式"
-        read_config
-        check_and_notify "false"
-        echo "$(date '+%Y-%m-%d %H:%M:%S') : cron 模式执行完毕"
-    } >> "$CRON_LOG" 2>&1
-    exit 0
+    if ! crontab -l | grep -q "$SCRIPT_PATH cron"; then
+        (crontab -l 2>/dev/null; echo "*/5 * * * * $SCRIPT_PATH cron") | crontab -
+        echo "已添加 crontab 项。"
+    else
+        echo "crontab 项已存在，无需添加。"
+    fi
 }
 
 
-
+# 每日报告
 daily_report() {
     local current_usage=$(grep "当前流量" "$LOG_FILE" | tail -n 1 | cut -d ' ' -f 4)
     local limit=$(grep "流量限制" "$LOG_FILE" | tail -n 1 | cut -d ' ' -f 4)
@@ -247,7 +244,6 @@ main() {
         done
     fi
 }
-
 
 # 执行主函数
 main "$@"
