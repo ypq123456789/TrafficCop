@@ -6,7 +6,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 
-echo "版本号：1.3"  
+echo "版本号：1.4"  
 
 # 函数：获取非空输入，带超时
 get_valid_input() {
@@ -116,11 +116,11 @@ main() {
     if [ "\$1" = "cron" ]; then
         # cron 模式：直接读取配置并运行
         if read_config; then
-            echo "$(date): 开始检查日志文件..." >> "$CRON_LOG"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : 开始检查日志文件..." >> "$CRON_LOG"
             check_and_notify
-            echo "$(date): 检查完成。" >> "$CRON_LOG"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : 检查完成。" >> "$CRON_LOG"
         else
-            echo "$(date): 配置读取失败，无法执行检查。" >> "$CRON_LOG"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : 配置读取失败，无法执行检查。" >> "$CRON_LOG"
         fi
     else
         # run 模式（默认）：允许修改配置
@@ -144,4 +144,4 @@ main() {
 
 # 执行主函数
 main "$@"
-echo "$(date): 脚本执行完毕，退出" >> "$CRON_LOG"
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 脚本执行完毕，退出" >> "$CRON_LOG"
