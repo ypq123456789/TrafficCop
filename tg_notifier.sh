@@ -6,7 +6,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 
-echo "版本号：3.0"  
+echo "版本号：3.1"  
 
 # 清除旧的通知状态文件
 clear_notification_state() {
@@ -183,7 +183,8 @@ main() {
 
         echo "脚本正在运行中。按 'q' 退出，按 'c' 检查流量，按 'r' 重新加载配置，按 't' 发送测试消息，按 'm' 修改配置。"
         while true; do
-            if read -n 1 -t 0.1 input; then
+            read -n 1 -t 1 input
+            if [ -n "$input" ]; then
                 echo
                 case $input in
                     q|Q) 
@@ -209,10 +210,10 @@ main() {
                 esac
                 echo "脚本正在运行中。按 'q' 退出，按 'c' 检查流量，按 'r' 重新加载配置，按 't' 发送测试消息，按 'm' 修改配置。"
             fi
-            sleep 1
         done
     fi
 }
+
 
 # 执行主函数
 main "$@"
