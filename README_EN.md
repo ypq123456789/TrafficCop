@@ -1,13 +1,17 @@
+
 # TrafficCop - Intelligent Traffic Monitoring and Limiting Script
-[中文](README.md) | English
+[English](README_EN.md) | [中文](README.md)
+
 ## Special Reminder
-**Traffic statistics start from when you begin installing vnstat**
+**Traffic statistics start from when you install vnstat**
 
-**Traffic statistics start from when you begin installing vnstat**
+**Traffic statistics start from when you install vnstat**
 
-**Traffic statistics start from when you begin installing vnstat**
+**Traffic statistics start from when you install vnstat**
 
 **If you haven't installed vnstat before installing this script, please note: This script is based on vnstat's traffic statistics, and vnstat will only start counting traffic after it's installed!**
+
+**The TC mode of this script cannot prevent DDoS from consuming traffic, and traffic consumption speed is still relatively fast! PR to fix this is welcome (if it can be fixed)**
 
 ## One-Click Installation Script
 
@@ -15,37 +19,42 @@
 ```
 curl -fsSL https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/trafficcop.sh -o /root/traffic_monitor.sh && chmod +x /root/traffic_monitor.sh && bash /root/traffic_monitor.sh
 ```
+
 ### Quick Update Version:
 ```
 curl -H "Accept: application/vnd.github.v3.raw" -fsSL "https://api.github.com/repos/ypq123456789/TrafficCop/contents/trafficcop.sh" | tr -d '\r' > /root/traffic_monitor.sh && chmod +x /root/traffic_monitor.sh && bash /root/traffic_monitor.sh
 ```
+
 ## Useful Commands
 ### View Logs:
 ```
 tail -f -n 30 /root/traffic_monitor.log
 ```
+
 ### View Current Configuration:
 ```
 cat traffic_monitor_config.txt
 ```
-### Emergency Stop All traffic_monitor Processes (for when the script encounters issues):
+
+### Emergency Stop All traffic_monitor Processes (for when the script has issues):
 ```
 pkill -f traffic_monitor.sh
 ```
-### One-Click Speed Limit Removal
+
+### One-Click Remove Speed Limit
 ```
 curl -sSL https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/remove_traffic_limit.sh | sudo bash
 ```
 
 ## Script Logic
-- Automatically detect and select the main network card for traffic limitation.
+- Automatically detects and selects the main network interface for traffic limiting.
 - User selects traffic statistics mode (four options).
 - User sets traffic calculation cycle (month/quarter/year) and start date.
 - User inputs traffic limit and tolerance range.
-- User chooses limitation mode (TC mode or shutdown mode).
+- User selects limiting mode (TC mode or shutdown mode).
 - For TC mode, user can set speed limit value.
 - Script checks traffic consumption every minute, executes corresponding operation when limit is reached.
-- Automatically removes limitation at the start of a new traffic cycle.
+- Automatically removes limit at the start of a new traffic cycle.
 
 ## Script Features
 - Four comprehensive traffic statistics modes, adapting to various VPS billing methods.
@@ -53,15 +62,36 @@ curl -sSL https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/remove_
 - Customizable traffic tolerance range.
 - Interactive configuration, parameters can be modified at any time.
 - Real-time traffic statistics prompts.
-- TC mode ensures SSH connection remains available.
+- TC mode ensures SSH connection remains usable.
 - Shutdown mode provides stricter traffic control.
-- Customizable speed limit bandwidth (TC mode).
+- Customizable bandwidth limit (TC mode).
+
+## Telegram Bot Integration
+TrafficCop now integrates Telegram Bot functionality, which can send the following notifications:
+
+- Speed limit warnings
+- Speed limit removal notifications
+- New cycle start notifications
+- Shutdown warnings
+- Daily traffic reports
+
+To use this feature, please provide your Telegram Bot Token and Chat ID during the script configuration process.
+
+The Telegram Bot Token is displayed when you create the bot.
+
+Method to get Chat ID: https://api.telegram.org/bot${BOT_TOKEN}/getUpdates 
+
+${BOT_TOKEN} is your Telegram Bot Token
+
+Push notification example:
+![image](https://github.com/ypq123456789/TrafficCop/assets/114487221/c3539cdc-b954-47fa-940f-344d86f6b562)
 
 ## Preset Configurations
 ### Alibaba Cloud CDT 200G:
 ```
 curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/ali-200g
 ```
+
 ### Alibaba Cloud CDT 20G:
 ```
 curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/ali-20g
@@ -71,6 +101,28 @@ curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq12
 
 [![Star History Chart](https://api.star-history.com/svg?repos=ypq123456789/TrafficCop&type=Date)](https://star-history.com/#ypq123456789/TrafficCop&Date)
 
+## Telegram Group for Communication:
+https://t.me/+ydvXl1_OBBBiZWM1
+
 ## Support the Author
-![mm_reward_qrcode_1719923713616](https://github.com/ypq123456789/TrafficCop/assets/114487221/d402da68-b37d-4538-8505-1afe704507b2)
-```
+<span><small>Thank you very much for your interest in this project! Maintaining open-source projects indeed requires a lot of time and energy investment. If you feel this project has brought value to you, I hope you can consider giving some support, even if it's just the cost of a cup of coffee.
+Your generous assistance will motivate me to continue improving this project, making it more practical. It will also allow me to focus more on work in the open-source community. If you're willing to provide sponsorship, you can do so through the following channels:</small></span>
+<ul>
+    <li>Star this project &nbsp;<a style="vertical-align: text-bottom;" href="https://github.com/ypq123456789/TrafficCop">
+      <img src="https://img.shields.io/github/stars/ypq123456789/TrafficCop?style=social" alt="Star this project" />
+    </a></li>
+    <li>Follow my Github &nbsp;<a style="vertical-align: text-bottom;"  href="https://github.com/ypq123456789/TrafficCop">
+      <img src="https://img.shields.io/github/followers/ypq123456789?style=social" alt="Follow my Github" />
+    </a></li>
+</ul>
+<table>
+    <thead><tr>
+        <th>WeChat</th>
+        <th>Alipay</th>
+    </tr></thead>
+    <tbody><tr>
+        <td><img style="max-width: 50px" src="https://github.com/ypq123456789/TrafficCop/assets/114487221/fb265eef-e624-4429-b14a-afdf5b2ca9c4" alt="WeChat" /></td>
+        <td><img style="max-width: 50px" src="https://github.com/ypq123456789/TrafficCop/assets/114487221/884b58bd-d76f-4e8f-99f4-cac4b9e97168" alt="Alipay" /></td>
+    </tr></tbody>
+</table>
+
