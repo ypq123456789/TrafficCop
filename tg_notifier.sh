@@ -10,7 +10,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 
-echo "版本号：4.0"  
+echo "版本号：4.1"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
