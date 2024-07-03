@@ -10,7 +10,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 echo "----------------------------------------------"| tee -a "$CRON_LOG"
-echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：7.2"  
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：7.3"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -237,15 +237,15 @@ $correct_entry"
 
 # 每日报告
 daily_report() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') : 开始生成每日报告" >> "$CRON_LOG"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') : BOT_TOKEN=${BOT_TOKEN:0:5}... CHAT_ID=$CHAT_ID" >> "$CRON_LOG"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') : 日志文件路径: $LOG_FILE" >> "$CRON_LOG"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 开始生成每日报告"| tee -a "$CRON_LOG"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : BOT_TOKEN=${BOT_TOKEN:0:5}... CHAT_ID=$CHAT_ID"| tee -a "$CRON_LOG"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 日志文件路径: $LOG_FILE"| tee -a "$CRON_LOG"
 
     # 获取最新的流量使用情况
     local usage_line=$(tail -n 10 "$LOG_FILE" | grep "当前使用流量:" | grep "限制流量:" | tail -n 1)
     
     if [[ -z "$usage_line" ]]; then
-        echo "$(date '+%Y-%m-%d %H:%M:%S') : 无法在最后10行中找到同时包含当前使用流量和限制流量的行" >> "$CRON_LOG"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 无法在最后10行中找到同时包含当前使用流量和限制流量的行"| tee -a "$CRON_LOG"
         return 1
     fi
 
@@ -253,26 +253,26 @@ daily_report() {
     local limit=$(echo "$usage_line" | grep -oP '限制流量:\s*\K[0-9.]+ [GBMKgbmk]+')
 
     if [[ -z "$current_usage" || -z "$limit" ]]; then
-        echo "$(date '+%Y-%m-%d %H:%M:%S') : 无法从行中提取流量信息" >> "$CRON_LOG"
-        echo "$(date '+%Y-%m-%d %H:%M:%S') : 问题行: $usage_line" >> "$CRON_LOG"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 无法从行中提取流量信息"| tee -a "$CRON_LOG"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 问题行: $usage_line"| tee -a "$CRON_LOG"
         return 1
     fi
 
     local message="📊 每日流量报告%0A当前使用流量：$current_usage%0A流量限制：$limit"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') : 准备发送消息: $message" >> "$CRON_LOG"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 准备发送消息: $message"| tee -a "$CRON_LOG"
 
     local url="https://api.telegram.org/bot${BOT_TOKEN}/sendMessage"
     local response
 
-    echo "$(date '+%Y-%m-%d %H:%M:%S') : 尝试发送Telegram消息" >> "$CRON_LOG"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 尝试发送Telegram消息"| tee -a "$CRON_LOG"
 
     response=$(curl -s -X POST "$url" -d "chat_id=$CHAT_ID" -d "text=$message")
 
     if echo "$response" | grep -q '"ok":true'; then
-        echo "$(date '+%Y-%m-%d %H:%M:%S') : 每日报告发送成功" >> "$CRON_LOG"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 每日报告发送成功"| tee -a "$CRON_LOG"
         return 0
     else
-        echo "$(date '+%Y-%m-%d %H:%M:%S') : 每日报告发送失败. 响应: $response" >> "$CRON_LOG"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 每日报告发送失败. 响应: $response"| tee -a "$CRON_LOG"
         return 1
     fi
 }
@@ -317,7 +317,7 @@ fi
 
         setup_cron
 
-        echo "脚本正在运行中。按 'q' 退出，按 'c' 检查流量，按 'r' 重新加载配置，按 't' 发送测试消息，按 'm' 修改配置。"
+        echo "脚本正在运行中。按 'q' 退出，按 'c' 检查流量，按 'd' 手动发送每日报告，按 'r' 重新加载配置，按 't' 发送测试消息，按 'm' 修改配置。"
         while true; do
             read -n 1 -t 1 input
             if [ -n "$input" ]; then
@@ -329,6 +329,9 @@ fi
                         ;;
                     c|C)
                         check_and_notify
+                        ;;
+                    d|D)
+                        daily_report
                         ;;
                     r|R)
                         read_config
@@ -344,7 +347,7 @@ fi
                         echo "无效的输入: $input"
                         ;;
                 esac
-                echo "脚本正在运行中。按 'q' 退出，按 'c' 检查流量，按 'r' 重新加载配置，按 't' 发送测试消息，按 'm' 修改配置。"
+                echo "脚本正在运行中。按 'q' 退出，按 'c' 检查流量，按 'd' 手动发送每日报告，按 'r' 重新加载配置，按 't' 发送测试消息，按 'm' 修改配置。"
             fi
         done
     fi
