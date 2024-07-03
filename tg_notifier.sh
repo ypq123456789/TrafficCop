@@ -6,7 +6,15 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 
-echo "版本号：2.0"  
+echo "版本号：2.1"  
+
+# 清除旧的通知状态文件
+clear_notification_state() {
+    if [ -f "$LAST_NOTIFICATION_FILE" ]; then
+        rm "$LAST_NOTIFICATION_FILE"
+        echo "清除了旧的通知状态文件。"
+    fi
+}
 
 # 函数：获取非空输入
 get_valid_input() {
@@ -80,8 +88,9 @@ check_and_notify() {
     fi
     
     local status_found=false
+    local latest_log=$(tail -n 50 "$LOG_FILE")
 
-    if grep -q "使用 TC 模式限速" "$LOG_FILE"; then
+    if echo "$latest_log" | grep -q "使用 TC 模式限速"; then
         local message="⚠️ 流量警告：已达到限制，已启动 TC 模式限速。"
         if [ ! -f "$LAST_NOTIFICATION_FILE" ] || [ "$(cat "$LAST_NOTIFICATION_FILE")" != "限速" ]; then
             send_telegram_message "$message"
@@ -89,7 +98,7 @@ check_and_notify() {
         fi
         echo "$message"
         status_found=true
-    elif grep -q "系统将在 1 分钟后关机" "$LOG_FILE"; then
+    elif echo "$latest_log" | grep -q "系统将在 1 分钟后关机"; then
         local message="🚨 严重警告：流量已严重超出限制，系统将在 1 分钟后关机。"
         if [ ! -f "$LAST_NOTIFICATION_FILE" ] || [ "$(cat "$LAST_NOTIFICATION_FILE")" != "关机" ]; then
             send_telegram_message "$message"
@@ -97,7 +106,7 @@ check_and_notify() {
         fi
         echo "$message"
         status_found=true
-    elif grep -q "流量正常，清除所有限制" "$LOG_FILE"; then
+    elif echo "$latest_log" | grep -q "流量正常，清除所有限制"; then
         local message="✅ 通知：流量目前处于正常水平，所有限制已清除。"
         if [ -f "$LAST_NOTIFICATION_FILE" ]; then
             send_telegram_message "$message"
@@ -136,6 +145,7 @@ daily_report() {
 
 # 主任务
 main() {
+   clear_notification_state
     if [ "\$1" = "cron" ]; then
         check_and_notify false
     else
