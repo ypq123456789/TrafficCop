@@ -10,7 +10,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 echo "----------------------------------------------"| tee -a "$CRON_LOG"
-echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：5.6"  
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：5.7"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -92,22 +92,35 @@ initial_config() {
 
 
 send_telegram_message() {
-    local message="${1:-"默认消息"}"
+    local message="\$1"
+    local url="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"
+    local response
+    local curl_exit_code
+
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 尝试发送 Telegram 消息: $message" >> "$CRON_LOG"
-    local response=$(curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
-        -d chat_id="${TG_CHAT_ID}" \
-        -d text="${message}" \
-        -d parse_mode="Markdown")
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 使用的 URL: $url" >> "$CRON_LOG"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 使用的 chat_id: $TELEGRAM_CHAT_ID" >> "$CRON_LOG"
+
+    response=$(curl -s -X POST "$url" -d "chat_id=$TELEGRAM_CHAT_ID" -d "text=$message" 2>&1)
+    curl_exit_code=$?
+
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : Curl 退出码: $curl_exit_code" >> "$CRON_LOG"
     echo "$(date '+%Y-%m-%d %H:%M:%S') : Telegram API 响应: $response" >> "$CRON_LOG"
-    
+
+    if [ $curl_exit_code -ne 0 ]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : Curl 命令执行失败" >> "$CRON_LOG"
+        return 1
+    fi
+
     if echo "$response" | grep -q '"ok":true'; then
         echo "$(date '+%Y-%m-%d %H:%M:%S') : 消息发送成功" >> "$CRON_LOG"
         return 0
     else
-        echo "$(date '+%Y-%m-%d %H:%M:%S') : 消息发送失败" >> "$CRON_LOG"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 消息发送失败，API 返回错误" >> "$CRON_LOG"
         return 1
     fi
 }
+
 
 test_telegram_notification() {
     local message="🔔 这是一条测试消息。如果您收到这条消息，说明Telegram通知功能正常工作。"
