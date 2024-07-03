@@ -6,7 +6,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 
-echo "版本号：2.5"  
+echo "版本号：2.6"  
 
 # 清除旧的通知状态文件
 clear_notification_state() {
@@ -125,15 +125,11 @@ check_and_notify() {
 
 # 设置定时任务
 setup_cron() {
-    local cron_job="*/5 * * * * /bin/bash $SCRIPT_PATH cron >> $CRON_LOG 2>&1"
-    
-    # 检查是否已存在正确的定时任务
-    if crontab -l 2>/dev/null | grep -Fq "$cron_job"; then
-        echo "定时任务已存在，无需添加。"
-    else
-        # 添加新的定时任务
-        (crontab -l 2>/dev/null; echo "$cron_job") | crontab -
-        echo "定时任务已添加。脚本将每5分钟执行一次检查。"
+    # 检查是否已经存在crontab项
+    if ! crontab -l | grep -q "$SCRIPT_PATH cron"; then
+        # 如果不存在，则添加新的crontab项
+        (crontab -l 2>/dev/null; echo "*/5 * * * * $SCRIPT_PATH cron") | crontab -
+        echo "已添加 crontab 项。"
     fi
 }
 
@@ -147,26 +143,26 @@ daily_report() {
 
 # 主任务
 main() {
-    clear_notification_state
     if [ "\$1" = "cron" ]; then
+        # cron 模式
         read_config
         check_and_notify false
+        exit 0
     else
-        # 读取配置
+        # 交互模式
+        clear_notification_state
         if ! read_config; then
             echo "配置文件不存在，请进行初始配置。"
             initial_config
         fi
 
-        # 每次运行时检查并设置 crontab
         setup_cron
 
         while true; do
             echo "脚本正在运行中。按 'q' 退出，按 'c' 检查流量，按 'r' 重新加载配置，按 't' 发送测试消息，按 'm' 修改配置。"
-            read -n 1 -r input
+            read -n 1 -r -t 1 input
             if [ -n "$input" ]; then
                 echo
-                echo "您输入的是: $input"
                 case $input in
                     q|Q) 
                         echo "退出脚本。"
@@ -189,11 +185,11 @@ main() {
                         echo "无效的输入: $input"
                         ;;
                 esac
-                echo "处理完成，返回主循环"
             fi
         done
     fi
 }
+
 # 执行主函数
 main "$@"
 echo "$(date '+%Y-%m-%d %H:%M:%S') : 脚本执行完毕，退出" >> "$CRON_LOG"
