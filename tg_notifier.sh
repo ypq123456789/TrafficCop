@@ -10,7 +10,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 echo "----------------------------------------------"| tee -a "$CRON_LOG"
-echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：7.0"  
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：7.1"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -238,26 +238,36 @@ $correct_entry"
 # 每日报告
 daily_report() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 开始生成每日报告" >> "$CRON_LOG"
-    
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : BOT_TOKEN=${BOT_TOKEN:0:5}... CHAT_ID=$CHAT_ID" >> "$CRON_LOG"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 日志文件路径: $LOG_FILE" >> "$CRON_LOG"
+
     # 获取最新的流量使用情况
-    local current_usage=$(grep "当前使用流量:" "$LOG_FILE" | tail -n 1 | cut -d ':' -f 2 | xargs)
-    local limit=$(grep "限制流量:" "$LOG_FILE" | tail -n 1 | cut -d ':' -f 2 | xargs)
+    local usage_line=$(tail -n 10 "$LOG_FILE" | grep "当前使用流量:" | grep "限制流量:" | tail -n 1)
     
-    if [[ -z "$current_usage" || -z "$limit" ]]; then
-        echo "$(date '+%Y-%m-%d %H:%M:%S') : 无法获取流量信息" >> "$CRON_LOG"
+    if [[ -z "$usage_line" ]]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 无法在最后10行中找到同时包含当前使用流量和限制流量的行" >> "$CRON_LOG"
         return 1
     fi
-    
+
+    local current_usage=$(echo "$usage_line" | grep -oP '当前使用流量:\s*\K[0-9.]+ [GBMKgbmk]+')
+    local limit=$(echo "$usage_line" | grep -oP '限制流量:\s*\K[0-9.]+ [GBMKgbmk]+')
+
+    if [[ -z "$current_usage" || -z "$limit" ]]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 无法从行中提取流量信息" >> "$CRON_LOG"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 问题行: $usage_line" >> "$CRON_LOG"
+        return 1
+    fi
+
     local message="📊 每日流量报告%0A当前使用流量：$current_usage%0A流量限制：$limit"
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 准备发送消息: $message" >> "$CRON_LOG"
-    
+
     local url="https://api.telegram.org/bot${BOT_TOKEN}/sendMessage"
     local response
 
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 尝试发送Telegram消息" >> "$CRON_LOG"
-    
+
     response=$(curl -s -X POST "$url" -d "chat_id=$CHAT_ID" -d "text=$message")
-    
+
     if echo "$response" | grep -q '"ok":true'; then
         echo "$(date '+%Y-%m-%d %H:%M:%S') : 每日报告发送成功" >> "$CRON_LOG"
         return 0
@@ -266,6 +276,7 @@ daily_report() {
         return 1
     fi
 }
+
 
 
 # 主任务
@@ -285,7 +296,7 @@ main() {
     
     # 检查是否需要发送每日报告
     current_time=$(date +%H:%M)
-    if [ "$current_time" == "16:18" ]; then
+    if [ "$current_time" == "16:21" ]; then
         if daily_report; then
             echo "$(date '+%Y-%m-%d %H:%M:%S') : 每日报告发送成功" >> "$CRON_LOG"
         else
