@@ -59,6 +59,26 @@ curl -sSL https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/remove_
 - 关机模式提供更严格的流量控制。
 - 自定义限速带宽（TC模式）。
 
+## Telegram Bot 集成
+TrafficCop 现在集成了 Telegram Bot 功能，可以发送以下通知：
+
+- 限速警告
+- 限速解除通知
+- 新周期开始通知
+- 关机警告
+- 每日流量报告
+
+要使用此功能，请在脚本配置过程中提供你的 Telegram Bot Token 和 Chat ID。
+
+Telegram Bot Token 在你创建机器人时会显示。
+
+Chat ID获取方法：https://api.telegram.org/bot${BOT_TOKEN}/getUpdates 
+
+${BOT_TOKEN}是你的 Telegram Bot Token 
+
+推送示意如下：
+![image](https://github.com/ypq123456789/TrafficCop/assets/114487221/c3539cdc-b954-47fa-940f-344d86f6b562)
+
 ## 预设配置
 ### 阿里云CDT 200G：
 ```
