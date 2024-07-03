@@ -10,7 +10,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 echo "----------------------------------------------"| tee -a "$CRON_LOG"
-echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：6.1"  
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：6.2"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -182,9 +182,9 @@ check_and_notify() {
         echo "$(date '+%Y-%m-%d %H:%M:%S') : 无需发送通知" >> "$CRON_LOG"
     fi
     
-    # 每次都更新状态文件
-    echo "$current_time $current_status" > "$LAST_NOTIFICATION_FILE"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') : 已更新状态文件" >> "$CRON_LOG"
+    # 追加新状态到状态文件
+    echo "$current_time $current_status" >> "$LAST_NOTIFICATION_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 已追加新状态到状态文件" >> "$CRON_LOG"
     
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 流量检查完成。" >> "$CRON_LOG"
 }
