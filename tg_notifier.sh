@@ -6,7 +6,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 
-echo "版本号：1.1"  
+echo "版本号：1.2"  
 
 # 函数：获取非空输入，带超时
 get_valid_input() {
@@ -124,17 +124,14 @@ main() {
     fi
 
     # 修改：在没有参数时默认执行检查任务
-    if [ -z "\$1" ]; then
-        echo "没有提供参数，默认执行检查任务。"
-        check_and_notify
-    elif [ "\$1" = "daily_report" ]; then
-        daily_report
-    elif [ "\$1" = "check" ]; then
+    if [ -z "\$1" ] || [ "\$1" = "check" ]; then
         echo "$(date): 开始检查日志文件..." >> "$CRON_LOG"
         check_and_notify
         echo "$(date): 检查完成。" >> "$CRON_LOG"
+    elif [ "\$1" = "daily_report" ]; then
+        daily_report
     else
-        echo "无效的参数。使用 'check' 或 'daily_report'。"
+        echo "无效的参数。使用 'check' 或 'daily_report'，或不带参数执行。"
     fi
 }
 
