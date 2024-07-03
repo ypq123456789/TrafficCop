@@ -3,19 +3,19 @@
 CONFIG_FILE="/root/tg_notifier_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
-SCRIPT_PATH=$(readlink -f "\$0")
+SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 
 echo "版本号：0.6"
 
 # 函数：获取非空输入
 get_valid_input() {
-    local prompt="\$1"
+    local prompt="${1:-"请输入："}"
     local input=""
     while true; do
-        read -p "$prompt" input
-        if [[ -n "$input" ]]; then
-            echo "$input"
+        read -p "${prompt}" input
+        if [[ -n "${input}" ]]; then
+            echo "${input}"
             return
         else
             echo "输入不能为空，请重试。"
@@ -53,10 +53,10 @@ initial_config() {
 }
 
 send_telegram_message() {
-    local message="\$1"
-    curl -s -X POST "https://api.telegram.org/bot$TG_BOT_TOKEN/sendMessage" \
-        -d chat_id="$TG_CHAT_ID" \
-        -d text="$message" \
+    local message="${1:-"默认消息"}"
+    curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+        -d chat_id="${TG_CHAT_ID}" \
+        -d text="${message}" \
         -d parse_mode="Markdown"
 }
 
