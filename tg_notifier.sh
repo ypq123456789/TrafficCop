@@ -9,8 +9,8 @@ LOG_FILE="/root/traffic_monitor.log"
 LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
-
-echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：4.4"  
+echo "----------------------------------------------"| tee -a "$CRON_LOG"
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：4.5"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -257,3 +257,4 @@ main() {
 
 # 执行主函数
 main "$@"
+echo "----------------------------------------------"| tee -a "$CRON_LOG"
