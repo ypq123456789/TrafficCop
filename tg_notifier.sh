@@ -10,7 +10,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 echo "----------------------------------------------"| tee -a "$CRON_LOG"
-echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：4.8"  
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：4.9"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -26,14 +26,6 @@ check_running() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 没有其他实例运行，继续执行" >> "$CRON_LOG"
 }
 
-# 初始化状态文件
-initialize_notification_state() {
-    if [ ! -f "$LAST_NOTIFICATION_FILE" ]; then
-        echo "$(date '+%Y-%m-%d %H:%M:%S')" > "$LAST_NOTIFICATION_FILE"
-        echo "初始状态" >> "$LAST_NOTIFICATION_FILE"
-        echo "初始化了通知状态文件。"
-    fi
-}
 
 # 函数：获取非空输入
 get_valid_input() {
@@ -131,45 +123,46 @@ check_and_notify() {
     local current_status=""
     local current_time=$(date '+%Y-%m-%d %H:%M:%S')
     
+    # 确定当前状态
     if echo "$latest_log" | grep -q "使用 TC 模式限速"; then
         current_status="限速"
     elif echo "$latest_log" | grep -q "系统将在 1 分钟后关机"; then
         current_status="关机"
     elif echo "$latest_log" | grep -q "流量正常，清除所有限制"; then
         current_status="正常"
+    elif echo "$latest_log" | grep -q "新的流量周期"; then
+        current_status="新周期"
     else
         current_status="未知"
     fi
     
     local last_status=""
-    local last_time=""
     if [ -f "$LAST_NOTIFICATION_FILE" ]; then
-        last_status=$(tail -n 1 "$LAST_NOTIFICATION_FILE" | cut -d' ' -f2-)
-        last_time=$(head -n 1 "$LAST_NOTIFICATION_FILE")
+        last_status=$(tail -n 1 "$LAST_NOTIFICATION_FILE" | cut -d' ' -f3-)
     fi
     
-    echo "$current_time" > "$LAST_NOTIFICATION_FILE"
-    echo "$current_status" >> "$LAST_NOTIFICATION_FILE"
-    
-    if [ "$current_status" != "$last_status" ]; then
+    if [ ! -f "$LAST_NOTIFICATION_FILE" ] || [ "$current_status" != "$last_status" ]; then
+        echo "$current_time $current_status" >> "$LAST_NOTIFICATION_FILE"
+
         local message=""
-        case $current_status in
-            "限速")
-                message="⚠️ 限速警告：流量已达到限制，已启动 TC 模式限速。"
-                ;;
-            "关机")
-                message="🚨 关机警告：流量已达到限制，系统将在 1 分钟后关机！"
-                ;;
-            "正常")
-                message="✅ 流量正常：流量目前处于正常水平，所有限制已清除。"
-                ;;
-            *)
-                message="❓ 未知状态：无法确定当前流量状态。"
-                ;;
-        esac
+        if [ "$current_status" = "限速" ] && ([ -z "$last_status" ] || [ "$last_status" = "正常" ]); then
+            message="⚠️ 限速警告：流量已达到限制，已启动 TC 模式限速。"
+        elif [ "$current_status" = "正常" ] && [ "$last_status" = "限速" ]; then
+            message="✅ 限速解除：流量已恢复正常，所有限制已清除。"
+        elif [ "$current_status" = "新周期" ]; then
+            message="🔄 新周期开始：新的流量统计周期已开始，之前的限速（如果有）已自动解除。"
+        elif [ "$current_status" = "关机" ]; then
+            message="🚨 关机警告：流量已达到严重限制，系统将在 1 分钟后关机！"
+        elif [ "$current_status" = "未知" ]; then
+            message="❓ 未知状态：无法确定当前流量状态。"
+        fi
         
-        send_telegram_message "$message"
-        echo "$(date '+%Y-%m-%d %H:%M:%S') : 状态从 '$last_status' 变为 '$current_status'，已发送通知" >> "$CRON_LOG"
+        if [ -n "$message" ]; then
+            send_telegram_message "$message"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : 状态从 '$last_status' 变为 '$current_status'，已发送通知: $message" >> "$CRON_LOG"
+        else
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : 状态从 '$last_status' 变为 '$current_status'，无需发送通知" >> "$CRON_LOG"
+        fi
     else
         echo "$(date '+%Y-%m-%d %H:%M:%S') : 状态未变化，保持为 '$current_status'" >> "$CRON_LOG"
     fi
@@ -221,7 +214,6 @@ main() {
     else
         # 交互模式
         echo "进入交互模式"
-        initialize_notification_state
         if ! read_config; then
             echo "配置文件不存在，请进行初始配置。"
             initial_config
