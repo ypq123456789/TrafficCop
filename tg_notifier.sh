@@ -10,7 +10,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 echo "----------------------------------------------"| tee -a "$CRON_LOG"
-echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：6.5"  
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：6.6"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -141,22 +141,31 @@ test_telegram_notification() {
 check_and_notify() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 开始检查流量状态..." >> "$CRON_LOG"
     
-    # 获取倒数第二行日志
-    local latest_log=$(tail -n 2 "$LOG_FILE" | head -n 1)
+    # 获取最后10行日志
+    local latest_logs=$(tail -n 10 "$LOG_FILE")
     local current_status="未知"
     local current_time=$(date '+%Y-%m-%d %H:%M:%S')
+    local relevant_log=""
     
-    # 记录倒数第二行日志内容
-    echo "$(date '+%Y-%m-%d %H:%M:%S') : 倒数第二行日志内容: $latest_log" >> "$CRON_LOG"
+    # 逐行检查，寻找相关的流量信息
+    while IFS= read -r line; do
+        if echo "$line" | grep -q -E "流量超出限制|使用 TC 模式限速|新的流量周期开始|流量正常，清除所有限制"; then
+            relevant_log="$line"
+            break
+        fi
+    done <<< "$latest_logs"
+    
+    # 记录相关的日志内容
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 相关的日志内容: $relevant_log" >> "$CRON_LOG"
     
     # 确定当前状态
-    if echo "$latest_log" | grep -q "流量超出限制，系统将在 1 分钟后关机"; then
+    if echo "$relevant_log" | grep -q "流量超出限制，系统将在 1 分钟后关机"; then
         current_status="关机"
-    elif echo "$latest_log" | grep -q "使用 TC 模式限速"; then
+    elif echo "$relevant_log" | grep -q "使用 TC 模式限速"; then
         current_status="限速"
-    elif echo "$latest_log" | grep -q "新的流量周期开始，重置限制"; then
+    elif echo "$relevant_log" | grep -q "新的流量周期开始，重置限制"; then
         current_status="新周期"
-    elif echo "$latest_log" | grep -q "流量正常，清除所有限制"; then
+    elif echo "$relevant_log" | grep -q "流量正常，清除所有限制"; then
         current_status="正常"
     fi
     
