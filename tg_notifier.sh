@@ -10,7 +10,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 echo "----------------------------------------------"| tee -a "$CRON_LOG"
-echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：6.2"  
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：6.3"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -141,16 +141,16 @@ test_telegram_notification() {
 check_and_notify() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 开始检查流量状态..." >> "$CRON_LOG"
     
-    local latest_log=$(tail -n 200 "$LOG_FILE")
+    local latest_log=$(tail -n 1 "$LOG_FILE")
     local current_status=""
     local current_time=$(date '+%Y-%m-%d %H:%M:%S')
     
     # 确定当前状态
-    if echo "$latest_log" | grep -q "流量超出限制，系统即将关机"; then
+    if echo "$latest_log" | grep -q "流量超出限制，系统将在 1 分钟后关机"; then
         current_status="关机"
-    elif echo "$latest_log" | grep -q "流量超出限制，已启动 TC 模式限速"; then
+    elif echo "$latest_log" | grep -q "使用 TC 模式限速"; then
         current_status="限速"
-    elif echo "$latest_log" | grep -q "新的统计周期开始"; then
+    elif echo "$latest_log" | grep -q "新的流量周期开始，重置限制"; then
         current_status="新周期"
     else
         current_status="正常"
@@ -188,6 +188,7 @@ check_and_notify() {
     
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 流量检查完成。" >> "$CRON_LOG"
 }
+
 
 
 
