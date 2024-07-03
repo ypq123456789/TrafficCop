@@ -3,10 +3,10 @@
 CONFIG_FILE="/root/tg_notifier_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
-SCRIPT_PATH=$(readlink -f "\$0")
+SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 
-echo "版本号：0.4"
+echo "版本号：0.5"
 
 # 函数：获取非空输入
 get_valid_input() {
@@ -75,7 +75,7 @@ check_and_notify() {
         fi
     elif grep -q "系统将在 1 分钟后关机" "$LOG_FILE"; then
         if [ ! -f "$LAST_NOTIFICATION_FILE" ] || [ "$(cat "$LAST_NOTIFICATION_FILE")" != "关机" ]; then
-            local message="🚨 严重警告：流量已严重超出限制，系统将在 1 分钟后关机。"
+            local message="🚨 流量警告：已达到限制，系统将在 1 分钟后关机！"
             send_telegram_message "$message"
             echo "关机" > "$LAST_NOTIFICATION_FILE"
         fi
@@ -119,16 +119,16 @@ main() {
         fi
     fi
 
-    TEST_NOTIFY=$(get_valid_input "是否测试Telegram通知功能？(y/n) ")
-    [[ $TEST_NOTIFY =~ ^[Yy]$ ]] && test_telegram_notification
-
-    if ! crontab -l | grep -q "$SCRIPT_PATH"; then
-        add_to_crontab
-    fi
-
     if [ "\$1" = "daily_report" ]; then
         daily_report
     else
+        TEST_NOTIFY=$(get_valid_input "是否测试Telegram通知功能？(y/n) ")
+        [[ $TEST_NOTIFY =~ ^[Yy]$ ]] && test_telegram_notification
+
+        if ! crontab -l | grep -q "$SCRIPT_PATH"; then
+            add_to_crontab
+        fi
+
         echo "$(date): 开始检查日志文件..." >> "$CRON_LOG"
         check_and_notify
         echo "$(date): 检查完成。" >> "$CRON_LOG"
