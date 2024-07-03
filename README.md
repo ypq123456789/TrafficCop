@@ -110,7 +110,10 @@ curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq12
 ```
 curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/ali-20g
 ```
-
+### 阿里云轻量 1T：
+```
+curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/ali-1t
+```
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=ypq123456789/TrafficCop&type=Date)](https://star-history.com/#ypq123456789/TrafficCop&Date)
