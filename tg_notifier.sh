@@ -10,7 +10,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 echo "----------------------------------------------"| tee -a "$CRON_LOG"
-echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：6.4"  
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：6.5"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -141,10 +141,13 @@ test_telegram_notification() {
 check_and_notify() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 开始检查流量状态..." >> "$CRON_LOG"
     
-    # 获取最后一行包含汉字的日志
-    local latest_log=$(tac "$LOG_FILE" | grep -m 1 '[一-龥]')
-    local current_status=""
+    # 获取倒数第二行日志
+    local latest_log=$(tail -n 2 "$LOG_FILE" | head -n 1)
+    local current_status="未知"
     local current_time=$(date '+%Y-%m-%d %H:%M:%S')
+    
+    # 记录倒数第二行日志内容
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 倒数第二行日志内容: $latest_log" >> "$CRON_LOG"
     
     # 确定当前状态
     if echo "$latest_log" | grep -q "流量超出限制，系统将在 1 分钟后关机"; then
@@ -153,12 +156,11 @@ check_and_notify() {
         current_status="限速"
     elif echo "$latest_log" | grep -q "新的流量周期开始，重置限制"; then
         current_status="新周期"
-    else
+    elif echo "$latest_log" | grep -q "流量正常，清除所有限制"; then
         current_status="正常"
     fi
     
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 当前检测到的状态: $current_status" >> "$CRON_LOG"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') : 最新日志: $latest_log" >> "$CRON_LOG"
     
     local last_status=""
     if [ -f "$LAST_NOTIFICATION_FILE" ]; then
@@ -180,6 +182,8 @@ check_and_notify() {
     elif [ "$current_status" = "关机" ]; then
         send_shutdown_warning
         echo "$(date '+%Y-%m-%d %H:%M:%S') : 已调用 send_shutdown_warning" >> "$CRON_LOG"
+    elif [ "$current_status" = "未知" ]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 无法识别当前状态，不发送通知" >> "$CRON_LOG"
     else
         echo "$(date '+%Y-%m-%d %H:%M:%S') : 无需发送通知" >> "$CRON_LOG"
     fi
@@ -190,7 +194,6 @@ check_and_notify() {
     
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 流量检查完成。" >> "$CRON_LOG"
 }
-
 
 
 
