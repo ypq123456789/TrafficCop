@@ -10,7 +10,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 echo "----------------------------------------------"| tee -a "$CRON_LOG"
-echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：7.1"  
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：7.2"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -139,7 +139,7 @@ test_telegram_notification() {
 
 # 检查和通知
 check_and_notify() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') : 开始检查流量状态..." >> "$CRON_LOG"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 开始检查流量状态..."| tee -a "$CRON_LOG"
     
     # 获取最后10行日志
     local latest_logs=$(tail -n 10 "$LOG_FILE")
@@ -156,7 +156,7 @@ check_and_notify() {
     done <<< "$latest_logs"
     
     # 记录相关的日志内容
-    echo "$(date '+%Y-%m-%d %H:%M:%S') : 相关的日志内容: $relevant_log" >> "$CRON_LOG"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 相关的日志内容: $relevant_log"| tee -a "$CRON_LOG"
     
     # 确定当前状态
     if echo "$relevant_log" | grep -q "流量超出限制，系统将在 1 分钟后关机"; then
@@ -169,39 +169,39 @@ check_and_notify() {
         current_status="正常"
     fi
     
-    echo "$(date '+%Y-%m-%d %H:%M:%S') : 当前检测到的状态: $current_status" >> "$CRON_LOG"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 当前检测到的状态: $current_status"| tee -a "$CRON_LOG"
     
     local last_status=""
     if [ -f "$LAST_NOTIFICATION_FILE" ]; then
         last_status=$(tail -n 1 "$LAST_NOTIFICATION_FILE" | cut -d' ' -f3-)
     fi
     
-    echo "$(date '+%Y-%m-%d %H:%M:%S') : 上次记录的状态: $last_status" >> "$CRON_LOG"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 上次记录的状态: $last_status"| tee -a "$CRON_LOG"
     
     # 根据状态调用相应的通知函数
     if [ "$current_status" = "限速" ] && [ "$last_status" != "限速" ]; then
         send_throttle_warning
-        echo "$(date '+%Y-%m-%d %H:%M:%S') : 已调用 send_throttle_warning" >> "$CRON_LOG"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 已调用 send_throttle_warning"| tee -a "$CRON_LOG"
     elif [ "$current_status" = "正常" ] && [ "$last_status" = "限速" ]; then
         send_throttle_lifted
-        echo "$(date '+%Y-%m-%d %H:%M:%S') : 已调用 send_throttle_lifted" >> "$CRON_LOG"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 已调用 send_throttle_lifted"| tee -a "$CRON_LOG"
     elif [ "$current_status" = "新周期" ]; then
         send_new_cycle_notification
-        echo "$(date '+%Y-%m-%d %H:%M:%S') : 已调用 send_new_cycle_notification" >> "$CRON_LOG"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 已调用 send_new_cycle_notification"| tee -a "$CRON_LOG"
     elif [ "$current_status" = "关机" ]; then
         send_shutdown_warning
-        echo "$(date '+%Y-%m-%d %H:%M:%S') : 已调用 send_shutdown_warning" >> "$CRON_LOG"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 已调用 send_shutdown_warning"| tee -a "$CRON_LOG"
     elif [ "$current_status" = "未知" ]; then
-        echo "$(date '+%Y-%m-%d %H:%M:%S') : 无法识别当前状态，不发送通知" >> "$CRON_LOG"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 无法识别当前状态，不发送通知"| tee -a "$CRON_LOG"
     else
-        echo "$(date '+%Y-%m-%d %H:%M:%S') : 无需发送通知" >> "$CRON_LOG"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 无需发送通知"| tee -a "$CRON_LOG"
     fi
     
     # 追加新状态到状态文件
     echo "$current_time $current_status" >> "$LAST_NOTIFICATION_FILE"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') : 已追加新状态到状态文件" >> "$CRON_LOG"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 已追加新状态到状态文件"| tee -a "$CRON_LOG"
     
-    echo "$(date '+%Y-%m-%d %H:%M:%S') : 流量检查完成。" >> "$CRON_LOG"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 流量检查完成。"| tee -a "$CRON_LOG"
 }
 
 
@@ -328,7 +328,7 @@ fi
                         exit 0
                         ;;
                     c|C)
-                        check_and_notify "true"
+                        check_and_notify
                         ;;
                     r|R)
                         read_config
