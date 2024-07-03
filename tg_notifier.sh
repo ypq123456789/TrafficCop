@@ -10,7 +10,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 echo "----------------------------------------------"| tee -a "$CRON_LOG"
-echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：6.7"  
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：6.8"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -263,7 +263,7 @@ main() {
     
     # 检查是否需要发送每日报告
     current_time=$(date +%H:%M)
-    if [ "$current_time" == "00:00" ]; then
+    if [ "$current_time" == "16:07" ]; then
         if daily_report; then
             echo "$(date '+%Y-%m-%d %H:%M:%S') : 每日报告发送成功" >> "$CRON_LOG"
         else
