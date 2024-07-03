@@ -91,15 +91,18 @@ check_and_notify() {
     fi
 }
 
-# 增加定时任务
 # 设置定时任务
 setup_cron() {
-    # 删除旧的定时任务
-    crontab -r
+    # 删除旧的与本脚本相关的定时任务
+    current_crontab=$(crontab -l 2>/dev/null)
+    echo "$current_crontab" | grep -v "$SCRIPT_PATH" | crontab -
+
     # 添加新的定时任务，每小时执行一次检查
     (crontab -l 2>/dev/null; echo "0 * * * * /bin/bash $SCRIPT_PATH cron >> $CRON_LOG 2>&1") | crontab -
-    echo "定时任务已设置。脚本将每小时执行一次检查。"
+
+    echo "定时任务已更新。脚本将每小时执行一次检查。"
 }
+
 
 daily_report() {
     local current_usage=$(grep "当前流量" "$LOG_FILE" | tail -n 1 | cut -d ' ' -f 4)
