@@ -10,7 +10,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 
-echo "版本号：4.2"  
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：4.3"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -191,20 +191,20 @@ daily_report() {
 
 # 主任务
 main() {
-    echo "Debug: Entering main function" >> "$CRON_LOG"
-    echo "Debug: Number of arguments: $#" >> "$CRON_LOG"
-    echo "Debug: All arguments: $@" >> "$CRON_LOG"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 进入主任务" >> "$CRON_LOG"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 参数数量: $#" >> "$CRON_LOG"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 所有参数: $@" >> "$CRON_LOG"
     
     check_running
     
-    echo "Debug: After check_running" >> "$CRON_LOG"
+    # echo "$(date '+%Y-%m-%d %H:%M:%S') : After check_running" >> "$CRON_LOG"
     
     if [[ "$*" == *"-cron"* ]]; then
-        echo "Debug: -cron argument detected, entering cron mode" >> "$CRON_LOG"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 检测到-cron参数, 进入cron模式" >> "$CRON_LOG"
         # cron 模式代码
         check_and_notify "false"
     else
-        echo "Debug: No -cron argument, entering interactive mode" >> "$CRON_LOG"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 未检测到-cron参数, 进入交互模式" >> "$CRON_LOG"
         # 交互模式
         echo "进入交互模式"
         clear_notification_state
