@@ -10,7 +10,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 echo "----------------------------------------------"| tee -a "$CRON_LOG"
-echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：6.0"  
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：6.1"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -142,41 +142,22 @@ check_and_notify() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 开始检查流量状态..." >> "$CRON_LOG"
     
     local latest_log=$(tail -n 200 "$LOG_FILE")
-    echo "$(date '+%Y-%m-%d %H:%M:%S') : 最新日志内容长度: $(echo "$latest_log" | wc -l) 行" >> "$CRON_LOG"
-    
     local current_status=""
     local current_time=$(date '+%Y-%m-%d %H:%M:%S')
     
     # 确定当前状态
-     if [ "$current_status" = "限速" ] && ([ -z "$last_status" ] || [ "$last_status" = "正常" ]); then
-        if send_throttle_warning; then
-            echo "$(date '+%Y-%m-%d %H:%M:%S') : 限速警告通知发送成功" >> "$CRON_LOG"
-        else
-            echo "$(date '+%Y-%m-%d %H:%M:%S') : 限速警告通知发送失败" >> "$CRON_LOG"
-        fi
-    elif [ "$current_status" = "正常" ] && [ "$last_status" = "限速" ]; then
-        if send_throttle_lifted; then
-            echo "$(date '+%Y-%m-%d %H:%M:%S') : 限速解除通知发送成功" >> "$CRON_LOG"
-        else
-            echo "$(date '+%Y-%m-%d %H:%M:%S') : 限速解除通知发送失败" >> "$CRON_LOG"
-        fi
-    elif [ "$current_status" = "新周期" ]; then
-        if send_new_cycle_notification; then
-            echo "$(date '+%Y-%m-%d %H:%M:%S') : 新周期开始通知发送成功" >> "$CRON_LOG"
-        else
-            echo "$(date '+%Y-%m-%d %H:%M:%S') : 新周期开始通知发送失败" >> "$CRON_LOG"
-        fi
-    elif [ "$current_status" = "关机" ]; then
-        if send_shutdown_warning; then
-            echo "$(date '+%Y-%m-%d %H:%M:%S') : 关机警告通知发送成功" >> "$CRON_LOG"
-        else
-            echo "$(date '+%Y-%m-%d %H:%M:%S') : 关机警告通知发送失败" >> "$CRON_LOG"
-        fi
+    if echo "$latest_log" | grep -q "流量超出限制，系统即将关机"; then
+        current_status="关机"
+    elif echo "$latest_log" | grep -q "流量超出限制，已启动 TC 模式限速"; then
+        current_status="限速"
+    elif echo "$latest_log" | grep -q "新的统计周期开始"; then
+        current_status="新周期"
     else
-        echo "$(date '+%Y-%m-%d %H:%M:%S') : 无需发送通知" >> "$CRON_LOG"
+        current_status="正常"
     fi
     
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 当前检测到的状态: $current_status" >> "$CRON_LOG"
+    
     local last_status=""
     if [ -f "$LAST_NOTIFICATION_FILE" ]; then
         last_status=$(tail -n 1 "$LAST_NOTIFICATION_FILE" | cut -d' ' -f3-)
@@ -184,29 +165,19 @@ check_and_notify() {
     
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 上次记录的状态: $last_status" >> "$CRON_LOG"
     
-    local should_notify=false
-    local message=""
-
-    if [ "$current_status" = "限速" ] && ([ -z "$last_status" ] || [ "$last_status" = "正常" ]); then
-        should_notify=true
-        message="⚠️ 限速警告：流量已达到限制，已启动 TC 模式限速。"
+    # 根据状态调用相应的通知函数
+    if [ "$current_status" = "限速" ] && [ "$last_status" != "限速" ]; then
+        send_throttle_warning
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 已调用 send_throttle_warning" >> "$CRON_LOG"
     elif [ "$current_status" = "正常" ] && [ "$last_status" = "限速" ]; then
-        should_notify=true
-        message="✅ 限速解除：流量已恢复正常，所有限制已清除。"
+        send_throttle_lifted
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 已调用 send_throttle_lifted" >> "$CRON_LOG"
     elif [ "$current_status" = "新周期" ]; then
-        should_notify=true
-        message="🔄 新周期开始：新的流量统计周期已开始，之前的限速（如果有）已自动解除。"
+        send_new_cycle_notification
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 已调用 send_new_cycle_notification" >> "$CRON_LOG"
     elif [ "$current_status" = "关机" ]; then
-        should_notify=true
-        message="🚨 关机警告：流量已达到严重限制，系统将在 1 分钟后关机！"
-    fi
-    
-    if $should_notify; then
-        if send_telegram_message "$message"; then
-            echo "$(date '+%Y-%m-%d %H:%M:%S') : 通知发送成功: $message" >> "$CRON_LOG"
-        else
-            echo "$(date '+%Y-%m-%d %H:%M:%S') : 发送通知失败: $message" >> "$CRON_LOG"
-        fi
+        send_shutdown_warning
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 已调用 send_shutdown_warning" >> "$CRON_LOG"
     else
         echo "$(date '+%Y-%m-%d %H:%M:%S') : 无需发送通知" >> "$CRON_LOG"
     fi
@@ -217,6 +188,7 @@ check_and_notify() {
     
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 流量检查完成。" >> "$CRON_LOG"
 }
+
 
 
 # 设置定时任务
