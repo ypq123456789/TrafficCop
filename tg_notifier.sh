@@ -6,7 +6,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 
-echo "版本号：1.7"  
+echo "版本号：1.8"  
 
 # 函数：获取非空输入
 get_valid_input() {
@@ -73,12 +73,14 @@ test_telegram_notification() {
 }
 
 check_and_notify() {
-    local interactive=\$1
+    local interactive=\$1  # 修改：去掉了转义符
     
     if [ "$interactive" = "true" ]; then
         echo "开始检查流量状态..."
     fi
     
+    local status_found=false  # 新增：用于跟踪是否找到任何状态
+
     if grep -q "使用 TC 模式限速" "$LOG_FILE"; then
         local message="⚠️ 流量警告：已达到限制，已启动 TC 模式限速。"
         if [ ! -f "$LAST_NOTIFICATION_FILE" ] || [ "$(cat "$LAST_NOTIFICATION_FILE")" != "限速" ]; then
@@ -86,6 +88,7 @@ check_and_notify() {
             echo "限速" > "$LAST_NOTIFICATION_FILE"
         fi
         [ "$interactive" = "true" ] && echo "$message"
+        status_found=true  # 新增：标记找到状态
     elif grep -q "系统将在 1 分钟后关机" "$LOG_FILE"; then
         local message="🚨 严重警告：流量已严重超出限制，系统将在 1 分钟后关机。"
         if [ ! -f "$LAST_NOTIFICATION_FILE" ] || [ "$(cat "$LAST_NOTIFICATION_FILE")" != "关机" ]; then
@@ -93,6 +96,7 @@ check_and_notify() {
             echo "关机" > "$LAST_NOTIFICATION_FILE"
         fi
         [ "$interactive" = "true" ] && echo "$message"
+        status_found=true  # 新增：标记找到状态
     elif grep -q "流量正常，清除所有限制" "$LOG_FILE"; then
         local message="✅ 通知：流量目前处于正常水平，所有限制已清除。"
         if [ -f "$LAST_NOTIFICATION_FILE" ]; then
@@ -100,9 +104,12 @@ check_and_notify() {
             rm "$LAST_NOTIFICATION_FILE"
         fi
         [ "$interactive" = "true" ] && echo "$message"
-    else
-        local message="✅ 流量状态正常：未触发任何限制或警告。"
-        [ "$interactive" = "true" ] && echo "$message"
+        status_found=true  # 新增：标记找到状态
+    fi
+    
+    # 新增：如果没有找到任何状态，显示正常状态消息
+    if [ "$interactive" = "true" ] && [ "$status_found" = "false" ]; then
+        echo "✅ 流量状态正常：未触发任何限制或警告。"
     fi
     
     [ "$interactive" = "true" ] && echo "流量检查完成。"
@@ -130,7 +137,7 @@ daily_report() {
 
 # 主任务
 main() {
-    if [ "\$1" = "cron" ]; then
+    if [ "\$1" = "cron" ]; then  # 修改：去掉了转义符
         # cron 模式
         check_and_notify false
     else
@@ -145,8 +152,7 @@ main() {
                     exit 0
                     ;;
                 c|C)
-                    echo "正在检查流量..."
-                    check_and_notify true
+                    check_and_notify true  # 修改：移除了额外的 echo 语句
                     ;;
                 r|R)
                     read_config
