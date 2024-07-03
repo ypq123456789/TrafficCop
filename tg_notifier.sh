@@ -6,7 +6,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 
-echo "版本号：2.3"  
+echo "版本号：2.4"  
 
 # 清除旧的通知状态文件
 clear_notification_state() {
@@ -91,7 +91,7 @@ check_and_notify() {
     local latest_log=$(tail -n 50 "$LOG_FILE")
 
     if echo "$latest_log" | grep -q "使用 TC 模式限速"; then
-        local message="⚠️ 流量警告：已达到限制，已启动 TC 模式限速。"
+        local message="⚠️ 限速警告：流量已达到限制，已启动 TC 模式限速。"
         if [ ! -f "$LAST_NOTIFICATION_FILE" ] || [ "$(cat "$LAST_NOTIFICATION_FILE")" != "限速" ]; then
             send_telegram_message "$message"
             echo "限速" > "$LAST_NOTIFICATION_FILE"
@@ -99,7 +99,7 @@ check_and_notify() {
         echo "$message"
         status_found=true
     elif echo "$latest_log" | grep -q "系统将在 1 分钟后关机"; then
-        local message="🚨 严重警告：流量已严重超出限制，系统将在 1 分钟后关机。"
+        local message="🚨 关机警告：流量已达到限制，系统将在 1 分钟后关机！"
         if [ ! -f "$LAST_NOTIFICATION_FILE" ] || [ "$(cat "$LAST_NOTIFICATION_FILE")" != "关机" ]; then
             send_telegram_message "$message"
             echo "关机" > "$LAST_NOTIFICATION_FILE"
@@ -107,7 +107,7 @@ check_and_notify() {
         echo "$message"
         status_found=true
     elif echo "$latest_log" | grep -q "流量正常，清除所有限制"; then
-        local message="✅ 通知：流量目前处于正常水平，所有限制已清除。"
+        local message="✅ 流量正常：流量目前处于正常水平，所有限制已清除。"
         if [ -f "$LAST_NOTIFICATION_FILE" ]; then
             send_telegram_message "$message"
             rm "$LAST_NOTIFICATION_FILE"
