@@ -1,0 +1,10 @@
+TRAFFIC_MODE=out
+TRAFFIC_PERIOD=monthly
+TRAFFIC_LIMIT=15
+TRAFFIC_TOLERANCE=0
+PERIOD_START_DAY=15
+LIMIT_SPEED=1024
+MAIN_INTERFACE=eth0
+LIMIT_MODE=tc
+# 因为az国内教育版本身就只有15g，流量很少，没必要设置容差了
+# 因为az国内教育版即使超出国内的15g免费额度还有100美元的赠金，所以流量限速没必要太慢
