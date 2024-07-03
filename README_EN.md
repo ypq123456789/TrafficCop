@@ -1,4 +1,3 @@
-
 # TrafficCop - Intelligent Traffic Monitoring and Limiting Script
 [English](README_EN.md) | [中文](README.md)
 
@@ -83,6 +82,24 @@ Method to get Chat ID: https://api.telegram.org/bot${BOT_TOKEN}/getUpdates
 
 ${BOT_TOKEN} is your Telegram Bot Token
 
+### Related Commands
+One-click push script
+```
+curl -H "Accept: application/vnd.github.v3.raw" -fsSL "https://api.github.com/repos/ypq123456789/TrafficCop/contents/tg_notifier.sh" | tr -d '\r' > /root/tg_notifier.sh && chmod +x /root/tg_notifier.sh && bash /root/tg_notifier.sh
+```
+View TG push scheduled execution log
+```
+tail -f -n 30 /root/tg_notifier_cron.log
+```
+View current status
+```
+tail -f -n 30 /tmp/last_traffic_notification
+```
+Kill all TG push processes
+```
+pkill -f tg_notifier.sh && crontab -l | grep -v "tg_notifier.sh" | crontab -
+```
+
 Push notification example:
 ![image](https://github.com/ypq123456789/TrafficCop/assets/114487221/c3539cdc-b954-47fa-940f-344d86f6b562)
 
@@ -125,4 +142,3 @@ Your generous assistance will motivate me to continue improving this project, ma
         <td><img style="max-width: 50px" src="https://github.com/ypq123456789/TrafficCop/assets/114487221/884b58bd-d76f-4e8f-99f4-cac4b9e97168" alt="Alipay" /></td>
     </tr></tbody>
 </table>
-
