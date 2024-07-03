@@ -282,7 +282,7 @@ main() {
     
     # 检查是否需要发送每日报告
     current_time=$(date +%H:%M)
-    if [ "$current_time" == "16:07" ]; then
+    if [ "$current_time" == "16:13" ]; then
         if daily_report; then
             echo "$(date '+%Y-%m-%d %H:%M:%S') : 每日报告发送成功" >> "$CRON_LOG"
         else
