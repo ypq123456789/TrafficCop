@@ -6,7 +6,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 
-echo "版本号：2.2"  
+echo "版本号：2.3"  
 
 # 清除旧的通知状态文件
 clear_notification_state() {
@@ -155,9 +155,10 @@ main() {
         if ! read_config; then
             echo "配置文件不存在，请进行初始配置。"
             initial_config
-            # 首次运行时添加定时任务
-            setup_cron
         fi
+
+        # 每次运行时检查并设置 crontab
+        setup_cron
 
         while true; do
             echo "脚本正在运行中。按 'q' 退出，按 'c' 检查流量，按 'r' 重新加载配置，按 't' 发送测试消息，按 'm' 修改配置。"
