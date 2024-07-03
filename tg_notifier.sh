@@ -143,3 +143,4 @@ main() {
 
 # 执行主函数
 main "$@"
+echo "$(date): 脚本执行完毕，退出" >> "$CRON_LOG"
