@@ -68,6 +68,8 @@ TrafficCop 现在集成了 Telegram Bot 功能，可以发送以下通知：
 - 关机警告
 - 每日流量报告
 
+**支持自定义主机名，一个机器人就可以统一管理你的所有小鸡！**
+
 要使用此功能，请在脚本配置过程中提供你的 Telegram Bot Token 和 Chat ID。
 
 Telegram Bot Token 在你创建机器人时会显示。
@@ -76,7 +78,7 @@ Chat ID获取方法：https://api.telegram.org/bot${BOT_TOKEN}/getUpdates
 
 ${BOT_TOKEN}是你的 Telegram Bot Token 
 
-Chat ID还可以找bot获取, 更简单, 比如[username_to_id_bot](https://t.me/username_to_id_bot)
+Chat ID还可以通过bot获取，更简单，比如[username_to_id_bot](https://t.me/username_to_id_bot)
 
 ### 相关命令
 一键推送脚本
@@ -97,7 +99,7 @@ pkill -f tg_notifier.sh && crontab -l | grep -v "tg_notifier.sh" | crontab -
 ```
 
 推送示意如下：
-![image](https://github.com/ypq123456789/TrafficCop/assets/114487221/c3539cdc-b954-47fa-940f-344d86f6b562)
+![image](https://github.com/ypq123456789/TrafficCop/assets/114487221/7674bb25-2771-47e3-a999-8701ef160c7c)
 
 ## 预设配置
 ### 阿里云CDT 200G：
