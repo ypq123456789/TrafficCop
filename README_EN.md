@@ -82,6 +82,8 @@ Method to get Chat ID: https://api.telegram.org/bot${BOT_TOKEN}/getUpdates
 
 ${BOT_TOKEN} is your Telegram Bot Token
 
+Chat ID can also be obtained from a bot, which is simpler. For example, you can use [username_to_id_bot](https://t.me/username_to_id_bot).
+
 ### Related Commands
 One-click push script
 ```
