@@ -6,7 +6,15 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 
-echo "版本号：3.2"  
+echo "版本号：3.3"  
+
+# 检查是否有同名的 crontab 正在执行:
+check_running() {
+    if pidof -x "$(basename "\$0")" -o $$ > /dev/null; then
+        echo "另一个脚本实例正在运行，退出脚本"
+        exit 1
+    fi
+}
 
 # 清除旧的通知状态文件
 clear_notification_state() {
@@ -148,13 +156,14 @@ check_and_notify() {
 
 # 设置定时任务
 setup_cron() {
-    # 检查是否已经存在crontab项
     if ! crontab -l | grep -q "$SCRIPT_PATH cron"; then
-        # 如果不存在，则添加新的crontab项
         (crontab -l 2>/dev/null; echo "*/5 * * * * $SCRIPT_PATH cron") | crontab -
         echo "已添加 crontab 项。"
+    else
+        echo "crontab 项已存在，无需添加。"
     fi
 }
+
 
 
 daily_report() {
@@ -166,6 +175,7 @@ daily_report() {
 
 # 主任务
 main() {
+check_running
     if [ "\$1" = "cron" ]; then
         # cron 模式
         echo "$(date '+%Y-%m-%d %H:%M:%S') : 开始执行 cron 模式" >> "$CRON_LOG"
