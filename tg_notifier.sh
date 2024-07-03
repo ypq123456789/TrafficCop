@@ -6,7 +6,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 
-echo "版本号：1.0"  
+echo "版本号：1.1"  
 
 # 函数：获取非空输入，带超时
 get_valid_input() {
@@ -123,15 +123,10 @@ main() {
         fi
     fi
 
-    # 修改：仅在交互模式下测试通知
+    # 修改：在没有参数时默认执行检查任务
     if [ -z "\$1" ]; then
-        TEST_NOTIFY=$(get_valid_input "是否测试Telegram通知功能？(y/n) ")
-        [[ $TEST_NOTIFY =~ ^[Yy]$ ]] && test_telegram_notification
-
-        if ! crontab -l | grep -q "$SCRIPT_PATH"; then
-            add_to_crontab
-        fi
-        echo "脚本已设置。使用 cron 任务运行检查和每日报告。"
+        echo "没有提供参数，默认执行检查任务。"
+        check_and_notify
     elif [ "\$1" = "daily_report" ]; then
         daily_report
     elif [ "\$1" = "check" ]; then
