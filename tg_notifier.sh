@@ -6,7 +6,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 
-echo "版本号：3.1"  
+echo "版本号：3.2"  
 
 # 清除旧的通知状态文件
 clear_notification_state() {
@@ -168,8 +168,10 @@ daily_report() {
 main() {
     if [ "\$1" = "cron" ]; then
         # cron 模式
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 开始执行 cron 模式" >> "$CRON_LOG"
         read_config
         check_and_notify false
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : cron 模式执行完毕" >> "$CRON_LOG"
         exit 0
     else
         # 交互模式
@@ -217,4 +219,3 @@ main() {
 
 # 执行主函数
 main "$@"
-echo "$(date '+%Y-%m-%d %H:%M:%S') : 脚本执行完毕，退出" >> "$CRON_LOG"
