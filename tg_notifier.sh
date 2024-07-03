@@ -1,19 +1,29 @@
 #!/bin/bash
 
+
+# 新增：启用调试模式
+set -x
+
 CONFIG_FILE="/root/tg_notifier_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 
-echo "版本号：3.3"  
+echo "版本号：3.5"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
+    # 新增：添加日志
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 开始检查是否有其他实例运行" >> "$CRON_LOG"
     if pidof -x "$(basename "\$0")" -o $$ > /dev/null; then
+        # 新增：添加日志
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 另一个脚本实例正在运行，退出脚本" >> "$CRON_LOG"
         echo "另一个脚本实例正在运行，退出脚本"
         exit 1
     fi
+    # 新增：添加日志
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 没有其他实例运行，继续执行" >> "$CRON_LOG"
 }
 
 # 清除旧的通知状态文件
@@ -118,6 +128,12 @@ check_and_notify() {
         echo "开始检查流量状态..."
     fi
     
+    # 新增：添加日志
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 读取最新的日志内容" >> "$CRON_LOG"
+    local latest_log=$(tail -n 50 "$LOG_FILE")
+    # 新增：添加日志
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 最新日志内容长度: $(echo "$latest_log" | wc -l) 行" >> "$CRON_LOG"
+    
     local status_found=false
     local latest_log=$(tail -n 50 "$LOG_FILE")
 
@@ -175,13 +191,16 @@ daily_report() {
 
 # 主任务
 main() {
-check_running
+    check_running
     if [ "\$1" = "cron" ]; then
         # cron 模式
-        echo "$(date '+%Y-%m-%d %H:%M:%S') : 开始执行 cron 模式" >> "$CRON_LOG"
-        read_config
-        check_and_notify false
-        echo "$(date '+%Y-%m-%d %H:%M:%S') : cron 模式执行完毕" >> "$CRON_LOG"
+        # 修改：将所有输出重定向到日志文件
+        {
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : 开始执行 cron 模式"
+            read_config
+            check_and_notify false
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : cron 模式执行完毕"
+        } >> "$CRON_LOG" 2>&1
         exit 0
     else
         # 交互模式
