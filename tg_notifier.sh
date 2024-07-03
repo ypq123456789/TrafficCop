@@ -6,7 +6,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 
-echo "版本号：1.2"  
+echo "版本号：1.3"  
 
 # 函数：获取非空输入，带超时
 get_valid_input() {
@@ -92,13 +92,13 @@ check_and_notify() {
 }
 
 # 增加定时任务
-add_to_crontab() {
-    (crontab -l 2>/dev/null; echo "*/5 * * * * $SCRIPT_PATH check >> $CRON_LOG 2>&1") | crontab -
-    if [ "$DAILY_REPORT" = "true" ]; then
-        (crontab -l 2>/dev/null; echo "0 0 * * * $SCRIPT_PATH daily_report >> $CRON_LOG 2>&1") | crontab -
-    fi
-    echo "脚本已添加到 crontab，将每5分钟执行一次。"
-    [ "$DAILY_REPORT" = "true" ] && echo "每日流量报告将在每天 00:00 执行。"
+# 设置定时任务
+setup_cron() {
+    # 删除旧的定时任务
+    crontab -r
+    # 添加新的定时任务，每小时执行一次检查
+    (crontab -l 2>/dev/null; echo "0 * * * * /bin/bash $SCRIPT_PATH cron >> $CRON_LOG 2>&1") | crontab -
+    echo "定时任务已设置。脚本将每小时执行一次检查。"
 }
 
 daily_report() {
@@ -110,28 +110,32 @@ daily_report() {
 
 # 主任务
 main() {
-    if ! read_config; then
-        echo "未找到配置文件，开始初始化配置..."
-        initial_config
+    if [ "\$1" = "cron" ]; then
+        # cron 模式：直接读取配置并运行
+        if read_config; then
+            echo "$(date): 开始检查日志文件..." >> "$CRON_LOG"
+            check_and_notify
+            echo "$(date): 检查完成。" >> "$CRON_LOG"
+        else
+            echo "$(date): 配置读取失败，无法执行检查。" >> "$CRON_LOG"
+        fi
     else
-        echo "配置已加载。如需修改配置，请在5秒内按任意键，否则将使用现有配置继续运行。"
-        if read -t 5 -n 1; then
-            echo "开始修改配置..."
+        # run 模式（默认）：允许修改配置
+        if ! read_config; then
+            echo "未找到配置文件，开始初始化配置..."
             initial_config
         else
-            echo "使用现有配置继续运行。"
+            echo "配置已加载。如需修改配置，请在5秒内按任意键，否则将使用现有配置继续运行。"
+            if read -t 5 -n 1; then
+                echo "开始修改配置..."
+                initial_config
+            else
+                echo "使用现有配置继续运行。"
+            fi
         fi
-    fi
-
-    # 修改：在没有参数时默认执行检查任务
-    if [ -z "\$1" ] || [ "\$1" = "check" ]; then
-        echo "$(date): 开始检查日志文件..." >> "$CRON_LOG"
+        
+        # 执行检查
         check_and_notify
-        echo "$(date): 检查完成。" >> "$CRON_LOG"
-    elif [ "\$1" = "daily_report" ]; then
-        daily_report
-    else
-        echo "无效的参数。使用 'check' 或 'daily_report'，或不带参数执行。"
     fi
 }
 
