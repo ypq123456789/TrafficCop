@@ -118,6 +118,10 @@ sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/
 ```
 sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/az-15g
 ```
+### azure学生 115G：
+```
+sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/az-115g
+```
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=ypq123456789/TrafficCop&type=Date)](https://star-history.com/#ypq123456789/TrafficCop&Date)
