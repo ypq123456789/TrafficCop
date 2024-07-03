@@ -10,7 +10,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 echo "----------------------------------------------"| tee -a "$CRON_LOG"
-echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：4.7"  
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：4.8"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -26,11 +26,12 @@ check_running() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 没有其他实例运行，继续执行" >> "$CRON_LOG"
 }
 
-# 清除旧的通知状态文件
-clear_notification_state() {
-    if [ -f "$LAST_NOTIFICATION_FILE" ]; then
-        rm "$LAST_NOTIFICATION_FILE"
-        echo "清除了旧的通知状态文件。"
+# 初始化状态文件
+initialize_notification_state() {
+    if [ ! -f "$LAST_NOTIFICATION_FILE" ]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S')" > "$LAST_NOTIFICATION_FILE"
+        echo "初始状态" >> "$LAST_NOTIFICATION_FILE"
+        echo "初始化了通知状态文件。"
     fi
 }
 
@@ -220,7 +221,7 @@ main() {
     else
         # 交互模式
         echo "进入交互模式"
-        clear_notification_state
+        initialize_notification_state
         if ! read_config; then
             echo "配置文件不存在，请进行初始配置。"
             initial_config
