@@ -10,7 +10,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 
-echo "版本号：3.5"  
+echo "版本号：3.6"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -194,6 +194,7 @@ main() {
     check_running
     if [ "\$1" = "cron" ]; then
         # cron 模式
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 进入cron模式"
         # 修改：将所有输出重定向到日志文件
         {
             echo "$(date '+%Y-%m-%d %H:%M:%S') : 开始执行 cron 模式"
@@ -204,6 +205,7 @@ main() {
         exit 0
     else
         # 交互模式
+        echo "进入交互模式"
         clear_notification_state
         if ! read_config; then
             echo "配置文件不存在，请进行初始配置。"
