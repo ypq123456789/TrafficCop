@@ -10,7 +10,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 echo "----------------------------------------------"| tee -a "$CRON_LOG"
-echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：5.3"  
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：5.4"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -99,6 +99,14 @@ send_telegram_message() {
         -d text="${message}" \
         -d parse_mode="Markdown")
     echo "$(date '+%Y-%m-%d %H:%M:%S') : Telegram API 响应: $response" >> "$CRON_LOG"
+    
+    if echo "$response" | grep -q '"ok":true'; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 消息发送成功" >> "$CRON_LOG"
+        return 0
+    else
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 消息发送失败" >> "$CRON_LOG"
+        return 1
+    fi
 }
 
 test_telegram_notification() {
@@ -160,15 +168,15 @@ check_and_notify() {
             message="❓ 未知状态：无法确定当前流量状态。"
         fi
         
-          if [ -n "$message" ]; then
-            if send_telegram_message "$message"; then
-                echo "$(date '+%Y-%m-%d %H:%M:%S') : 通知发送成功: $message" >> "$CRON_LOG"
-            else
-                echo "$(date '+%Y-%m-%d %H:%M:%S') : 发送通知失败: $message" >> "$CRON_LOG"
-            fi
-        else
-            echo "$(date '+%Y-%m-%d %H:%M:%S') : 状态从 '$last_status' 变为 '$current_status'，无需发送通知" >> "$CRON_LOG"
-        fi
+   if [ -n "$message" ]; then
+    if send_telegram_message "$message"; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 通知发送成功: $message" >> "$CRON_LOG"
+    else
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 发送通知失败: $message" >> "$CRON_LOG"
+    fi
+else
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 状态从 '$last_status' 变为 '$current_status'，无需发送通知" >> "$CRON_LOG"
+fi
     else
         echo "$(date '+%Y-%m-%d %H:%M:%S') : 状态未变化，保持为 '$current_status'" >> "$CRON_LOG"
     fi
@@ -233,7 +241,11 @@ main() {
     # 检查是否需要发送每日报告
     current_time=$(date +%H:%M)
     if [ "$current_time" == "00:00" ]; then
-        daily_report
+        if daily_report; then
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : 每日报告发送成功" >> "$CRON_LOG"
+        else
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : 每日报告发送失败" >> "$CRON_LOG"
+        fi
     fi
 else
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 配置文件不存在或无法读取，跳过检查" >> "$CRON_LOG"
