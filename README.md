@@ -15,28 +15,28 @@
 
 ### 标准安装（可能有几分钟延迟）：
 ```
-curl -fsSL https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/trafficcop.sh -o /root/traffic_monitor.sh && chmod +x /root/traffic_monitor.sh && bash /root/traffic_monitor.sh
+sudo curl -fsSL https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/trafficcop.sh -o /root/traffic_monitor.sh && chmod +x /root/traffic_monitor.sh && bash /root/traffic_monitor.sh
 ```
 ### 快速更新版本：
 ```
-curl -H "Accept: application/vnd.github.v3.raw" -fsSL "https://api.github.com/repos/ypq123456789/TrafficCop/contents/trafficcop.sh" | tr -d '\r' > /root/traffic_monitor.sh && chmod +x /root/traffic_monitor.sh && bash /root/traffic_monitor.sh
+sudo curl -H "Accept: application/vnd.github.v3.raw" -fsSL "https://api.github.com/repos/ypq123456789/TrafficCop/contents/trafficcop.sh" | tr -d '\r' > /root/traffic_monitor.sh && chmod +x /root/traffic_monitor.sh && bash /root/traffic_monitor.sh
 ```
 ## 实用命令
 ### 查看日志：
 ```
-tail -f -n 30 /root/traffic_monitor.log
+sudo tail -f -n 30 /root/traffic_monitor.log
 ```
 ### 查看当前配置：
 ```
-cat traffic_monitor_config.txt
+sudo cat traffic_monitor_config.txt
 ```
 ### 紧急停止所有traffic_monitor进程（用于脚本出现问题时）：
 ```
-pkill -f traffic_monitor.sh
+sudo pkill -f traffic_monitor.sh
 ```
 ### 一键解除限速
 ```
-curl -sSL https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/remove_traffic_limit.sh | sudo bash
+sudo curl -sSL https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/remove_traffic_limit.sh | sudo bash
 ```
 
 ## 脚本逻辑
@@ -83,19 +83,19 @@ Chat ID还可以通过bot获取，更简单，比如[username_to_id_bot](https:/
 ### 相关命令
 一键推送脚本
 ```
-curl -H "Accept: application/vnd.github.v3.raw" -fsSL "https://api.github.com/repos/ypq123456789/TrafficCop/contents/tg_notifier.sh" | tr -d '\r' > /root/tg_notifier.sh && chmod +x /root/tg_notifier.sh && bash /root/tg_notifier.sh
+sudo curl -H "Accept: application/vnd.github.v3.raw" -fsSL "https://api.github.com/repos/ypq123456789/TrafficCop/contents/tg_notifier.sh" | tr -d '\r' > /root/tg_notifier.sh && chmod +x /root/tg_notifier.sh && bash /root/tg_notifier.sh
 ```
 查看tg推送定时执行日志
 ```
-tail -f -n 30 /root/tg_notifier_cron.log
+sudo tail -f -n 30 /root/tg_notifier_cron.log
 ```
 查看当前状态
 ```
-tail -f -n 30 /tmp/last_traffic_notification
+sudo tail -f -n 30 /tmp/last_traffic_notification
 ```
 杀死所有TG推送进程
 ```
-pkill -f tg_notifier.sh && crontab -l | grep -v "tg_notifier.sh" | crontab -
+sudo pkill -f tg_notifier.sh && crontab -l | grep -v "tg_notifier.sh" | crontab -
 ```
 
 推送示意如下：
@@ -104,15 +104,15 @@ pkill -f tg_notifier.sh && crontab -l | grep -v "tg_notifier.sh" | crontab -
 ## 预设配置
 ### 阿里云CDT 200G：
 ```
-curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/ali-200g
+sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/ali-200g
 ```
 ### 阿里云CDT 20G：
 ```
-curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/ali-20g
+sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/ali-20g
 ```
 ### 阿里云轻量 1T：
 ```
-curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/ali-1T
+sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/ali-1T
 ```
 ## Star History
 
