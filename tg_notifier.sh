@@ -6,7 +6,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 
-echo "版本号：0.8"
+echo "版本号：0.9"
 
 # 函数：获取非空输入
 get_valid_input() {
