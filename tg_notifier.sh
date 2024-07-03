@@ -10,7 +10,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 echo "----------------------------------------------"| tee -a "$CRON_LOG"
-echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：6.3"  
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：6.4"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -141,7 +141,8 @@ test_telegram_notification() {
 check_and_notify() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 开始检查流量状态..." >> "$CRON_LOG"
     
-    local latest_log=$(tail -n 1 "$LOG_FILE")
+    # 获取最后一行包含汉字的日志
+    local latest_log=$(tac "$LOG_FILE" | grep -m 1 '[一-龥]')
     local current_status=""
     local current_time=$(date '+%Y-%m-%d %H:%M:%S')
     
@@ -157,6 +158,7 @@ check_and_notify() {
     fi
     
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 当前检测到的状态: $current_status" >> "$CRON_LOG"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 最新日志: $latest_log" >> "$CRON_LOG"
     
     local last_status=""
     if [ -f "$LAST_NOTIFICATION_FILE" ]; then
@@ -188,6 +190,7 @@ check_and_notify() {
     
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 流量检查完成。" >> "$CRON_LOG"
 }
+
 
 
 
