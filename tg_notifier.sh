@@ -10,7 +10,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 echo "----------------------------------------------"| tee -a "$CRON_LOG"
-echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：7.3"  
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：7.4"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -59,9 +59,11 @@ write_config() {
 TG_BOT_TOKEN="$TG_BOT_TOKEN"
 TG_CHAT_ID="$TG_CHAT_ID"
 DAILY_REPORT="$DAILY_REPORT"
+MACHINE_NAME="$MACHINE_NAME"
 EOF
     echo "配置已保存到 $CONFIG_FILE"
 }
+
 
 # 初始配置
 initial_config() {
@@ -81,41 +83,48 @@ initial_config() {
         read -r new_chat_id
     done
 
+    echo "请输入机器名称: "
+    read -r new_machine_name
+    while [[ -z "$new_machine_name" ]]; do
+        echo "机器名称不能为空。请重新输入: "
+        read -r new_machine_name
+    done
+
     # 更新配置文件
     echo "BOT_TOKEN=$new_token" > "$CONFIG_FILE"
     echo "CHAT_ID=$new_chat_id" >> "$CONFIG_FILE"
+    echo "MACHINE_NAME=$new_machine_name" >> "$CONFIG_FILE"
 
     echo "配置已更新。"
     read_config
 }
 
 
-
 # 发送限速警告
 send_throttle_warning() {
     local url="https://api.telegram.org/bot${BOT_TOKEN}/sendMessage"
-    local message="⚠️ 限速警告：流量已达到限制，已启动 TC 模式限速。"
+    local message="⚠️ [${MACHINE_NAME}]限速警告：流量已达到限制，已启动 TC 模式限速。"
     curl -s -X POST "$url" -d "chat_id=$CHAT_ID" -d "text=$message"
 }
 
 # 发送限速解除通知
 send_throttle_lifted() {
     local url="https://api.telegram.org/bot${BOT_TOKEN}/sendMessage"
-    local message="✅ 限速解除：流量已恢复正常，所有限制已清除。"
+    local message="✅ [${MACHINE_NAME}]限速解除：流量已恢复正常，所有限制已清除。"
     curl -s -X POST "$url" -d "chat_id=$CHAT_ID" -d "text=$message"
 }
 
 # 发送新周期开始通知
 send_new_cycle_notification() {
     local url="https://api.telegram.org/bot${BOT_TOKEN}/sendMessage"
-    local message="🔄 新周期开始：新的流量统计周期已开始，之前的限速（如果有）已自动解除。"
+    local message="🔄 [${MACHINE_NAME}]新周期开始：新的流量统计周期已开始，之前的限速（如果有）已自动解除。"
     curl -s -X POST "$url" -d "chat_id=$CHAT_ID" -d "text=$message"
 }
 
 # 发送关机警告
 send_shutdown_warning() {
     local url="https://api.telegram.org/bot${BOT_TOKEN}/sendMessage"
-    local message="🚨 关机警告：流量已达到严重限制，系统将在 1 分钟后关机！"
+    local message="🚨 [${MACHINE_NAME}]关机警告：流量已达到严重限制，系统将在 1 分钟后关机！"
     curl -s -X POST "$url" -d "chat_id=$CHAT_ID" -d "text=$message"
 }
 
@@ -123,7 +132,7 @@ send_shutdown_warning() {
 
 
 test_telegram_notification() {
-    local message="🔔 这是一条测试消息。如果您收到这条消息，说明Telegram通知功能正常工作。"
+    local message="🔔 [${MACHINE_NAME}]这是一条测试消息。如果您收到这条消息，说明Telegram通知功能正常工作。"
     local response
     response=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
         -d "chat_id=${CHAT_ID}" \
@@ -131,9 +140,9 @@ test_telegram_notification() {
         -d "disable_notification=true")
     
     if echo "$response" | grep -q '"ok":true'; then
-        echo "✅ 测试消息已成功发送，请检查您的Telegram。"
+        echo "✅ [${MACHINE_NAME}]测试消息已成功发送，请检查您的Telegram。"
     else
-        echo "❌ 发送测试消息失败。请检查您的BOT_TOKEN和CHAT_ID设置。"
+        echo "❌ [${MACHINE_NAME}]发送测试消息失败。请检查您的BOT_TOKEN和CHAT_ID设置。"
     fi
 }
 
@@ -258,7 +267,7 @@ daily_report() {
         return 1
     fi
 
-    local message="📊 每日流量报告%0A当前使用流量：$current_usage%0A流量限制：$limit"
+    local message="📊 [${MACHINE_NAME}]每日流量报告%0A当前使用流量：$current_usage%0A流量限制：$limit"
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 准备发送消息: $message"| tee -a "$CRON_LOG"
 
     local url="https://api.telegram.org/bot${BOT_TOKEN}/sendMessage"
