@@ -1,16 +1,49 @@
 # TrafficCop - 智能流量监控与限制脚本
 [English](README_EN.md) | 中文
-## 特别提醒
-**流量统计是从你开始安装vnstat开始的**
+## 注意事项
 
-**流量统计是从你开始安装vnstat开始的**
+1. 本脚本是基于vnstat的流量统计,vnstat只会在安装后开始统计流量!
 
-**流量统计是从你开始安装vnstat开始的**
+2. TC模式无法防止DDoS消耗流量,流量消耗速度仍然较快!欢迎PR修复(如果可以修复的话)。
 
-**如果你在安装本脚本之前没有安装过vnstat，请注意：本脚本基于vnstat的流量统计，而vnstat只会从它安装好之后开始统计流量！**
+3. 如果遇到GitHub API速率限制问题,可以尝试以下解决方案:
+   - 使用原始内容URL下载脚本
+   - 等待API限制重置(通常1小时)
+   - 使用个人访问令牌增加API限额
+   - 手动下载脚本并运行
 
-**本脚本TC模式无法防止ddos消耗流量，流量消耗速度仍然较快！欢迎PR修复（如果可修复的话）**
+4. 脚本默认使用root权限运行。如需非root用户运行,请确保该用户有sudo权限,并将所有命令前加sudo。
 
+5. 如果遇到问题，可以查看日志文件(/root/traffic_monitor.log)获取更多信息。
+
+6. 定期检查脚本更新以获取新功能和bug修复。
+
+7. 对于特定VPS提供商，可能需要调整配置以适应其计费模式。
+
+8. TC模式下的速度限制可能不是精确的，实际速度可能略有偏差。
+
+9. 关机模式会完全切断网络连接，请谨慎使用。
+
+10. 建议定期备份配置文件(traffic_monitor_config.txt)。
+
+## 常见问题
+
+Q: 为什么我的流量统计似乎不准确?
+A: 确保vnstat已正确安装并运行一段时间。新安装的vnstat需要时间来收集准确的数据。
+
+Q: 如何更改已设置的配置?
+A: 重新运行脚本，它会提示你是否要修改现有配置。
+
+Q: TC模式下SSH连接变慢怎么办?
+A: 尝试增加TC模式下的速度限制值。
+
+Q: 如何完全卸载脚本?
+A: 使用以下命令:
+```
+sudo pkill -f traffic_monitor.sh
+sudo rm /root/traffic_monitor.sh /root/traffic_monitor_config.txt /root/traffic_monitor.log
+sudo tc qdisc del dev (ip route | awk '/default/ {print \5}') root
+```
 ## 一键安装脚本
 
 ### 一键全家桶（调用api，版本最新，可能会被限流）：
