@@ -3,7 +3,7 @@ CONFIG_FILE="/root/traffic_monitor_config.txt"
 LOG_FILE="/root/traffic_monitor.log"
 SCRIPT_PATH="/root/traffic_monitor.sh"
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.71"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.74"| tee -a "$LOG_FILE"
 
 check_and_install_packages() {
     local flag_file="/root/.traffic_monitor_packages_installed"
@@ -296,42 +296,38 @@ get_traffic_usage() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') 周期开始日期: $start_date, 周期结束日期: $end_date" >&2
     
     local vnstat_output=$(vnstat -i $MAIN_INTERFACE --begin "$start_date" --end "$end_date" --oneline b)
-    #echo "Debug: vnstat output: $vnstat_output" >&2
-    
-    # 输出每个字段的内容以进行调试
-    #echo "Debug: Field 11 (supposed rx): $(echo "$vnstat_output" | cut -d';' -f11)" >&2
-    #echo "Debug: Field 12 (supposed tx): $(echo "$vnstat_output" | cut -d';' -f12)" >&2
-    #echo "Debug: Field 13 (supposed total): $(echo "$vnstat_output" | cut -d';' -f13)" >&2
+    # echo "vnstat输出: $vnstat_output" >&2
     
     local usage
     case $TRAFFIC_MODE in
-       out)
-    usage=$(echo "$vnstat_output" | cut -d';' -f10)
-    ;;
-       in)
-    usage=$(echo "$vnstat_output" | cut -d';' -f9)
-    ;;
-       total)
-    usage=$(echo "$vnstat_output" | cut -d';' -f11)
-    ;;
-       max)
-    local rx=$(echo "$vnstat_output" | cut -d';' -f9)
-    local tx=$(echo "$vnstat_output" | cut -d';' -f10)
-    usage=$(echo "$rx $tx" | tr ' ' '\n' | sort -rn | head -n1)
+        out)
+            usage=$(echo "$vnstat_output" | cut -d';' -f10)
+            ;;
+        in)
+            usage=$(echo "$vnstat_output" | cut -d';' -f9)
+            ;;
+        total)
+            usage=$(echo "$vnstat_output" | cut -d';' -f11)
+            ;;
+        max)
+            local rx=$(echo "$vnstat_output" | cut -d';' -f9)
+            local tx=$(echo "$vnstat_output" | cut -d';' -f10)
+            usage=$(echo "$rx $tx" | tr ' ' '\n' | sort -rn | head -n1)
             ;;
     esac
 
-    #echo "Debug: Raw usage value: $usage" >&2
+    # echo "用量字节数: $usage" >&2
     if [ -n "$usage" ]; then
-        # 将字节转换为 GiB
-        usage=$(echo "scale=3; $usage / 1024 / 1024 / 1024" | bc)
-        #echo "Debug: Usage in GiB: $usage" >&2
+        # 将字节转换为 GiB，并确保结果至少有一位小数
+        usage=$(echo "scale=3; x=$usage/1024/1024/1024; if(x<1) print 0; x" | bc)
+        # echo "将字节转换为 GiB: $usage" >&2
         echo $usage
     else
-        #echo "Debug: Unable to get usage data" >&2
-        echo "0"
+        # echo "无法获取用量字节数" >&2
+        echo "0.000"
     fi
 }
+
 
 # 修改 check_and_limit_traffic 函数
 check_and_limit_traffic() {
