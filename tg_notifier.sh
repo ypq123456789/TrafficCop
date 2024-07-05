@@ -17,7 +17,7 @@ LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
 SCRIPT_PATH="/root/tg_notifier.sh"
 CRON_LOG="/root/tg_notifier_cron.log"
 echo "----------------------------------------------"| tee -a "$CRON_LOG"
-echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：9.2"  
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：9.4"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -347,7 +347,14 @@ if [[ "$*" == *"-cron"* ]]; then
         fi
         
         setup_cron
-
+        
+# 直接显示当前配置摘要
+        echo "当前配置摘要："
+        echo "机器名称: $MACHINE_NAME"
+        echo "每日报告时间: $DAILY_REPORT_TIME"
+        echo "Bot Token: ${BOT_TOKEN:0:10}..." # 只显示前10个字符
+        echo "Chat ID: $CHAT_ID"
+        
         echo "脚本正在运行中。按 'q' 退出，按 'c' 检查流量，按 'd' 手动发送每日报告，按 'r' 重新加载配置，按 't' 发送测试消息，按 'm' 修改配置，按 'h' 修改每日报告时间。"
         while true; do
             read -n 1 -t 1 input
