@@ -2,11 +2,11 @@
 
 
 # 新增：启用调试模式
-if read -t 0 line; then
-    echo "DEBUG: 检测到预设的标准输入: '$line'"
-fi
-echo "DEBUG: 环境变量 MACHINE_NAME=$MACHINE_NAME"
-echo "DEBUG: 环境变量 DAILY_REPORT_TIME=$DAILY_REPORT_TIME"
+#if read -t 0 line; then
+#    echo "DEBUG: 检测到预设的标准输入: '$line'"
+#fi
+#echo "DEBUG: 环境变量 MACHINE_NAME=$MACHINE_NAME"
+#echo "DEBUG: 环境变量 DAILY_REPORT_TIME=$DAILY_REPORT_TIME"
 
 # 设置时区为上海（东八区）
 export TZ='Asia/Shanghai'
