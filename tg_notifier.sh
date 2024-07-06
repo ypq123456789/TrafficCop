@@ -1,23 +1,62 @@
 #!/bin/bash
 
+# 设置新的工作目录
+WORK_DIR="/root/TrafficCop"
+mkdir -p "$WORK_DIR"
 
-# 新增：启用调试模式
-#if read -t 0 line; then
-#    echo "DEBUG: 检测到预设的标准输入: '$line'"
-#fi
-#echo "DEBUG: 环境变量 MACHINE_NAME=$MACHINE_NAME"
-#echo "DEBUG: 环境变量 DAILY_REPORT_TIME=$DAILY_REPORT_TIME"
+# 更新文件路径
+CONFIG_FILE="$WORK_DIR/tg_notifier_config.txt"
+LOG_FILE="$WORK_DIR/traffic_monitor.log"
+LAST_NOTIFICATION_FILE="$WORK_DIR/last_traffic_notification"
+SCRIPT_PATH="$WORK_DIR/tg_notifier.sh"
+CRON_LOG="$WORK_DIR/tg_notifier_cron.log"
+
+# 文件迁移函数
+migrate_files() {
+    # 迁移配置文件
+    if [ -f "/root/tg_notifier_config.txt" ]; then
+        mv "/root/tg_notifier_config.txt" "$CONFIG_FILE"
+    fi
+
+    # 迁移日志文件
+    if [ -f "/root/traffic_monitor.log" ]; then
+        mv "/root/traffic_monitor.log" "$LOG_FILE"
+    fi
+
+    # 迁移最后通知文件
+    if [ -f "/tmp/last_traffic_notification" ]; then
+        mv "/tmp/last_traffic_notification" "$LAST_NOTIFICATION_FILE"
+    fi
+
+    # 迁移脚本文件
+    if [ -f "/root/tg_notifier.sh" ]; then
+        mv "/root/tg_notifier.sh" "$SCRIPT_PATH"
+    fi
+
+    # 迁移 cron 日志文件
+    if [ -f "/root/tg_notifier_cron.log" ]; then
+        mv "/root/tg_notifier_cron.log" "$CRON_LOG"
+    fi
+
+    # 更新 crontab 中的脚本路径
+    if crontab -l | grep -q "/root/tg_notifier.sh"; then
+        crontab -l | sed "s|/root/tg_notifier.sh|$SCRIPT_PATH|g" | crontab -
+    fi
+
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 文件已迁移到新的工作目录: $WORK_DIR" | tee -a "$CRON_LOG"
+}
+
+# 在脚本开始时调用迁移函数
+migrate_files
+
+# 切换到工作目录
+cd "$WORK_DIR" || exit 1
 
 # 设置时区为上海（东八区）
 export TZ='Asia/Shanghai'
 
-CONFIG_FILE="/root/tg_notifier_config.txt"
-LOG_FILE="/root/traffic_monitor.log"
-LAST_NOTIFICATION_FILE="/tmp/last_traffic_notification"
-SCRIPT_PATH="/root/tg_notifier.sh"
-CRON_LOG="/root/tg_notifier_cron.log"
 echo "----------------------------------------------"| tee -a "$CRON_LOG"
-echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：9.4"  
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：9.5"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
