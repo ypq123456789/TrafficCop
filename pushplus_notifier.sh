@@ -18,7 +18,7 @@ cd "$WORK_DIR" || exit 1
 export TZ='Asia/Shanghai'
 
 echo "----------------------------------------------"| tee -a "$CRON_LOG"
-echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：1.6"  
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：1.7"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -435,41 +435,42 @@ main() {
             read -n 1 -t 1 input
             if [ -n "$input" ]; then
                 echo
-                case $input in
-                    q|Q) 
-                        echo "退出脚本。"
-                        exit 0
-                        ;;
-                    c|C)
-                        check_and_notify "true"
-                        ;;
-                    d|D)
-                        daily_report
-                        ;;
-                    r|R)
-                        read_config
-                        echo "配置已重新加载。"
-                        ;;
-                    t|T)
-                        send_pushplus_notification "🔔 测试通知" "这是一条测试消息，如果您收到此消息，则 PushPlus 通知功能正常。"
-                        ;;
-                    m|M)
-                        initial_config
-                        ;;
-                    h|H)
-                        echo "请输入新的每日报告时间 (HH:MM): "
-                        read -r new_time
-                        if [[ $new_time =~ ^([0-1][0-9]|2[0-3]):[0-5][0-9]$ ]]; then
-                            sed -i "s/DAILY_REPORT_TIME=.*/DAILY_REPORT_TIME=$new_time/" "$CONFIG_FILE"
-                            echo "每日报告时间已更新为 $new_time"
-                        else
-                            echo "无效的时间格式。未更改。"
-                        fi
-                        ;;
-                    *)
-                        echo "无效的输入: $input"
-                        ;;
-                esac
+               case $input in
+    q|Q) 
+        echo "退出脚本。"
+        exit 0
+        ;;
+    c|C)
+        check_and_notify "true"
+        ;;
+    d|D)
+        daily_report
+        ;;
+    r|R)
+        read_config
+        echo "配置已重新加载。"
+        ;;
+    t|T)
+        test_pushplus_notification
+        ;;
+    m|M)
+        initial_config
+        ;;
+    h|H)
+        echo "请输入新的每日报告时间 (HH:MM): "
+        read -r new_time
+        if [[ $new_time =~ ^([0-1][0-9]|2[0-3]):[0-5][0-9]$ ]]; then
+            sed -i "s/DAILY_REPORT_TIME=.*/DAILY_REPORT_TIME=$new_time/" "$CONFIG_FILE"
+            echo "每日报告时间已更新为 $new_time"
+        else
+            echo "无效的时间格式。未更改。"
+        fi
+        ;;
+    *)
+        echo "无效的输入: $input"
+        ;;
+esac
+
 
                 echo "脚本正在运行中。按 'q' 退出，按 'c' 检查流量，按 'd' 手动发送每日报告，按 'r' 重新加载配置，按 't' 发送测试消息，按 'm' 修改配置，按 'h' 修改每日报告时间。"
             fi
