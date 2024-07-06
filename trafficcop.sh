@@ -6,7 +6,10 @@ SCRIPT_PATH="$WORK_DIR/traffic_monitor.sh"
 LOCK_FILE="$WORK_DIR/traffic_monitor.lock"
 
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.76"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.77"| tee -a "$LOG_FILE"
+
+# 创建锁文件（如果不存在）
+touch "${LOCK_FILE}"
 
 # 尝试获取文件锁
 exec 9>"${LOCK_FILE}"
@@ -514,6 +517,6 @@ fi
 main "$@"
 
 # 确保脚本退出时释放锁
-trap 'rm -f ${LOCK_FILE}' EXIT
+trap 'flock -u 9; rm -f ${LOCK_FILE}' EXIT
 
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
