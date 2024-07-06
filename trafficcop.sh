@@ -1,12 +1,58 @@
 #!/bin/bash
-CONFIG_FILE="/root/traffic_monitor_config.txt"
-LOG_FILE="/root/traffic_monitor.log"
-SCRIPT_PATH="/root/traffic_monitor.sh"
+WORK_DIR="/root/TrafficCop"
+CONFIG_FILE="$WORK_DIR/traffic_monitor_config.txt"
+LOG_FILE="$WORK_DIR/traffic_monitor.log"
+SCRIPT_PATH="$WORK_DIR/traffic_monitor.sh"
+
+migrate_files() {
+    # 创建新的工作目录
+    mkdir -p "$WORK_DIR"
+
+    # 迁移配置文件
+    if [ -f "/root/traffic_monitor_config.txt" ]; then
+        mv "/root/traffic_monitor_config.txt" "$CONFIG_FILE"
+    fi
+
+    # 迁移日志文件
+    if [ -f "/root/traffic_monitor.log" ]; then
+        mv "/root/traffic_monitor.log" "$LOG_FILE"
+    fi
+
+    # 迁移脚本文件
+    if [ -f "/root/traffic_monitor.sh" ]; then
+        mv "/root/traffic_monitor.sh" "$SCRIPT_PATH"
+    fi
+
+    # 迁移软件包安装标志文件
+    if [ -f "/root/.traffic_monitor_packages_installed" ]; then
+        mv "/root/.traffic_monitor_packages_installed" "$WORK_DIR/.traffic_monitor_packages_installed"
+    fi
+
+    # 迁移其他可能存在的相关文件
+    for file in /root/traffic_monitor_*.txt /root/traffic_monitor_*.log; do
+        if [ -f "$file" ]; then
+            mv "$file" "$WORK_DIR/"
+        fi
+    done
+
+    # 更新 crontab 中的脚本路径
+    if crontab -l | grep -q "/root/traffic_monitor.sh"; then
+        crontab -l | sed "s|/root/traffic_monitor.sh|$SCRIPT_PATH|g" | crontab -
+    fi
+
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 文件已迁移到新的工作目录: $WORK_DIR" | tee -a "$LOG_FILE"
+}
+# 在脚本开始时调用迁移函数
+migrate_files
+
+# 切换到工作目录
+cd "$WORK_DIR" || exit 1
+
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.74"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.75"| tee -a "$LOG_FILE"
 
 check_and_install_packages() {
-    local flag_file="/root/.traffic_monitor_packages_installed"
+    local flag_file="/$WORK_DIR/.traffic_monitor_packages_installed"
     if [ -f "$flag_file" ]; then
         echo "$(date '+%Y-%m-%d %H:%M:%S') 必要的软件包已安装" | tee -a "$LOG_FILE"
     else
