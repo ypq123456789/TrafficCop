@@ -18,7 +18,7 @@ cd "$WORK_DIR" || exit 1
 export TZ='Asia/Shanghai'
 
 echo "----------------------------------------------"| tee -a "$CRON_LOG"
-echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：1.7"  
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：1.8"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -329,57 +329,56 @@ $correct_entry"
 }
 
 # 每日报告
-daily_report() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') : 开始生成每日报告..."| tee -a "$CRON_LOG"
+# 每日报告 (PushPlus 版本)
+daily_report_pushplus() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 开始生成每日报告"| tee -a "$CRON_LOG"
     echo "$(date '+%Y-%m-%d %H:%M:%S') : DAILY_REPORT_TIME=$DAILY_REPORT_TIME"| tee -a "$CRON_LOG"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : PUSHPLUS_TOKEN=${PUSHPLUS_TOKEN:0:5}..."| tee -a "$CRON_LOG"
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 日志文件路径: $LOG_FILE"| tee -a "$CRON_LOG"
-    
-    # 获取今天的日期
-    local today=$(date '+%Y-%m-%d')
-    
-    # 从日志文件中提取今天的流量数据
-    local traffic_data=$(grep "$today" "$LOG_FILE" | grep "当前流量")
-    
-    if [ -z "$traffic_data" ]; then
-        echo "$(date '+%Y-%m-%d %H:%M:%S') : 今天没有流量数据。"| tee -a "$CRON_LOG"
-        return
+
+    # 反向读取日志文件，查找第一个同时包含"当前使用流量"和"限制流量"的行
+    local usage_line=$(tac "$LOG_FILE" | grep -m 1 -E "当前使用流量:.*限制流量:")
+
+    if [[ -z "$usage_line" ]]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 无法在日志中找到同时包含当前使用流量和限制流量的行"| tee -a "$CRON_LOG"
+        return 1
     fi
-    
-    # 提取最新的流量数据
-    local latest_data=$(echo "$traffic_data" | tail -n 1)
-    local current_traffic=$(echo "$latest_data" | grep -oP '当前流量：\K[0-9.]+[KMGT]?')
-    local daily_limit=$(echo "$latest_data" | grep -oP '每日限制：\K[0-9.]+[KMGT]?')
-    
-    # 计算流量使用百分比
-    local usage_percent=$(echo "$latest_data" | grep -oP '使用百分比：\K[0-9.]+')
-    
-    # 生成报告内容
-    local title="📊 [${MACHINE_NAME}]每日流量报告"
-    local content="<h2>每日流量报告</h2>
-    <p>日期：$today</p>
-    <p>当前流量：$current_traffic</p>
-    <p>每日限制：$daily_limit</p>
-    <p>使用百分比：$usage_percent%</p>"
-    
-    # 发送报告
+
+    local current_usage=$(echo "$usage_line" | grep -oP '当前使用流量:\s*\K[0-9.]+ [GBMKgbmk]+')
+    local limit=$(echo "$usage_line" | grep -oP '限制流量:\s*\K[0-9.]+ [GBMKgbmk]+')
+
+    if [[ -z "$current_usage" || -z "$limit" ]]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 无法从行中提取流量信息"| tee -a "$CRON_LOG"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 问题行: $usage_line"| tee -a "$CRON_LOG"
+        return 1
+    fi
+
+    local title="[${MACHINE_NAME}]每日流量报告"
+    local content="📊 每日流量报告<br>当前使用流量：$current_usage<br>流量限制：$limit"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 准备发送消息: $content"| tee -a "$CRON_LOG"
+
     local url="http://www.pushplus.plus/send"
     local response
+
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 尝试发送PushPlus消息"| tee -a "$CRON_LOG"
 
     response=$(curl -s -X POST "$url" \
         -H "Content-Type: application/json" \
         -d "{
             \"token\": \"$PUSHPLUS_TOKEN\",
             \"title\": \"$title\",
-            \"content\": \"$content\",
-            \"template\": \"html\"
+            \"content\": \"$content\"
         }")
 
     if echo "$response" | grep -q '"code":200'; then
-        echo "$(date '+%Y-%m-%d %H:%M:%S') : 每日报告已成功发送。"| tee -a "$CRON_LOG"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 每日报告发送成功"| tee -a "$CRON_LOG"
+        return 0
     else
-        echo "$(date '+%Y-%m-%d %H:%M:%S') : 发送每日报告失败。响应: $response"| tee -a "$CRON_LOG"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 每日报告发送失败. 响应: $response"| tee -a "$CRON_LOG"
+        return 1
     fi
 }
+
 
 
 # 主任务
