@@ -18,7 +18,7 @@ cd "$WORK_DIR" || exit 1
 export TZ='Asia/Shanghai'
 
 echo "----------------------------------------------"| tee -a "$CRON_LOG"
-echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：1.3"  
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：1.4"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -245,19 +245,40 @@ check_and_notify() {
 # 设置定时任务
 setup_cron() {
     local correct_entry="* * * * * $SCRIPT_PATH -cron"
-    (crontab -l 2>/dev/null | grep -v "pushplus_notifier.sh"; echo "$correct_entry") | crontab -
-    echo "已更新 crontab，添加了正确的定时任务。"
-
     local daily_report_minute=$(echo "$DAILY_REPORT_TIME" | cut -d':' -f2)
     local daily_report_hour=$(echo "$DAILY_REPORT_TIME" | cut -d':' -f1)
     local daily_report_entry="$daily_report_minute $daily_report_hour * * * $SCRIPT_PATH -daily"
-    (crontab -l 2>/dev/null | grep -v "$SCRIPT_PATH -daily"; echo "$daily_report_entry") | crontab -
-    if [ $? -eq 0 ]; then
-        echo "已添加每日报告的 cron 任务。"
+    
+    local current_crontab=$(crontab -l 2>/dev/null)
+    local pushplus_entries=$(echo "$current_crontab" | grep "pushplus_notifier.sh")
+    local correct_entries_count=$(echo "$pushplus_entries" | grep -F "$correct_entry" | wc -l)
+    local daily_entries_count=$(echo "$pushplus_entries" | grep -F "$SCRIPT_PATH -daily" | wc -l)
+
+    if [ "$correct_entries_count" -eq 1 ] && [ "$daily_entries_count" -eq 1 ]; then
+        echo "正确的 crontab 项已存在且数量正确，无需修改。"
     else
-        echo "添加 cron 任务失败。错误代码：$?"
+        # 删除所有包含 pushplus_notifier.sh 的条目
+        new_crontab=$(echo "$current_crontab" | grep -v "pushplus_notifier.sh")
+        
+        # 添加正确的条目
+        new_crontab="${new_crontab}
+$correct_entry
+$daily_report_entry"
+
+        # 更新 crontab
+        echo "$new_crontab" | crontab -
+
+        echo "已更新 crontab。删除了所有旧的 pushplus_notifier.sh 条目，并添加了新的条目。"
     fi
+
+    # 显示当前的 crontab 内容
+    echo "当前的 crontab 内容："
     crontab -l
+
+    # 记录日志
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : Crontab 更新完成" | tee -a "$CRON_LOG"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 每分钟任务: $correct_entry" | tee -a "$CRON_LOG"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 每日报告任务: $daily_report_entry" | tee -a "$CRON_LOG"
 }
 
 # 生成每日报告
