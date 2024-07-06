@@ -14,7 +14,7 @@
 
 4. 脚本默认使用root权限运行。如需非root用户运行，请确保该用户有sudo权限，并将所有命令前加sudo。
 
-5. 如果遇到问题，可以查看日志文件(/root/traffic_monitor.log)获取更多信息。
+5. 如果遇到问题，可以查看日志文件(/root/TrafficCop/traffic_monitor.log)获取更多信息。
 
 6. 定期检查脚本更新以获取新功能和bug修复。
 
@@ -41,27 +41,27 @@ Q: 如何完全卸载脚本?
 A: 使用以下命令:
 ```
 sudo pkill -f traffic_monitor.sh
-sudo rm /root/traffic_monitor.sh /root/traffic_monitor_config.txt /root/traffic_monitor.log
-sudo tc qdisc del dev (ip route | awk '/default/ {print \5}') root
+sudo rm -rf /root/TrafficCop
+sudo tc qdisc del dev $(ip route | grep default | cut -d ' ' -f 5) root
 ```
 ## 一键安装脚本
 
 ### 一键全家桶（调用api，版本最新，可能会403）：
 ```
-sudo apt update && curl -H "Accept: application/vnd.github.v3.raw" -fsSL "https://api.github.com/repos/ypq123456789/TrafficCop/contents/trafficcop.sh" | tr -d '\r' > /root/traffic_monitor.sh && chmod +x /root/traffic_monitor.sh && bash /root/traffic_monitor.sh && sudo curl -H "Accept: application/vnd.github.v3.raw" -fsSL "https://api.github.com/repos/ypq123456789/TrafficCop/contents/tg_notifier.sh" | tr -d '\r' > /root/tg_notifier.sh && chmod +x /root/tg_notifier.sh && bash /root/tg_notifier.sh
+sudo apt update && curl -H "Accept: application/vnd.github.v3.raw" -fsSL "https://api.github.com/repos/ypq123456789/TrafficCop/contents/trafficcop.sh" | tr -d '\r' > /root/TrafficCop/traffic_monitor.sh && chmod +x /root/TrafficCop/traffic_monitor.sh && bash /root/TrafficCop/traffic_monitor.sh && sudo curl -H "Accept: application/vnd.github.v3.raw" -fsSL "https://api.github.com/repos/ypq123456789/TrafficCop/contents/tg_notifier.sh" | tr -d '\r' > /root/TrafficCop/tg_notifier.sh && chmod +x /root/TrafficCop/tg_notifier.sh && bash /root/TrafficCop/tg_notifier.sh
 ```
 ### 一键全家桶（从原始内容下载，版本可能落后）：
 ```
-sudo apt update && curl -fsSL "https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/trafficcop.sh" | tr -d '\r' > /root/traffic_monitor.sh && chmod +x /root/traffic_monitor.sh && bash /root/traffic_monitor.sh && sudo curl -fsSL "https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/tg_notifier.sh" | tr -d '\r' > /root/tg_notifier.sh && chmod +x /root/tg_notifier.sh && bash /root/tg_notifier.sh
+sudo apt update && curl -fsSL "https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/trafficcop.sh" | tr -d '\r' > /root/TrafficCop/traffic_monitor.sh && chmod +x /root/TrafficCop/traffic_monitor.sh && bash /root/TrafficCop/traffic_monitor.sh && sudo curl -fsSL "https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/tg_notifier.sh" | tr -d '\r' > /root/TrafficCop/tg_notifier.sh && chmod +x /root/TrafficCop/tg_notifier.sh && bash /root/TrafficCop/tg_notifier.sh
 ```
 ### 我只要监控，不要TG推送：
 ```
-sudo apt update && curl -H "Accept: application/vnd.github.v3.raw" -fsSL "https://api.github.com/repos/ypq123456789/TrafficCop/contents/trafficcop.sh" | tr -d '\r' > /root/traffic_monitor.sh && chmod +x /root/traffic_monitor.sh && bash /root/traffic_monitor.sh
+sudo apt update && curl -H "Accept: application/vnd.github.v3.raw" -fsSL "https://api.github.com/repos/ypq123456789/TrafficCop/contents/trafficcop.sh" | tr -d '\r' > /root/TrafficCop/traffic_monitor.sh && chmod +x /root/TrafficCop/traffic_monitor.sh && bash /root/TrafficCop/traffic_monitor.sh
 ```
 ## 实用命令
 ### 查看日志：
 ```
-sudo tail -f -n 30 /root/traffic_monitor.log
+sudo tail -f -n 30 /root/TrafficCop/traffic_monitor.log
 ```
 ### 查看当前配置：
 ```
@@ -122,19 +122,19 @@ Chat ID还可以通过bot获取，更简单，比如[username_to_id_bot](https:/
 ### 相关命令
 一键推送脚本（调用api，版本最新，可能会403）：
 ```
-sudo apt update && curl -H "Accept: application/vnd.github.v3.raw" -fsSL "https://api.github.com/repos/ypq123456789/TrafficCop/contents/tg_notifier.sh" | tr -d '\r' > /root/tg_notifier.sh && chmod +x /root/tg_notifier.sh && bash /root/tg_notifier.sh
+sudo apt update && curl -H "Accept: application/vnd.github.v3.raw" -fsSL "https://api.github.com/repos/ypq123456789/TrafficCop/contents/tg_notifier.sh" | tr -d '\r' > /root/TrafficCop/tg_notifier.sh && chmod +x /root/TrafficCop/tg_notifier.sh && bash /root/TrafficCop/tg_notifier.sh
 ```
 一键推送脚本（从原始内容下载，版本可能落后）：
 ```
-curl -fsSL "https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/tg_notifier.sh" | tr -d '\r' > /root/tg_notifier.sh && chmod +x /root/tg_notifier.sh && bash /root/tg_notifier.sh
+curl -fsSL "https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/tg_notifier.sh" | tr -d '\r' > /root/TrafficCop/tg_notifier.sh && chmod +x /root/TrafficCop/tg_notifier.sh && bash /root/TrafficCop/tg_notifier.sh
 ```
 查看tg推送定时执行日志
 ```
-sudo tail -f -n 30 /root/tg_notifier_cron.log
+sudo tail -f -n 30 /root/TrafficCop/tg_notifier_cron.log
 ```
 查看当前状态
 ```
-sudo tail -f -n 30 /tmp/last_traffic_notification
+sudo tail -f -n 30 /root/TrafficCop/last_traffic_notification
 ```
 杀死所有TG推送进程
 ```
@@ -147,40 +147,40 @@ sudo pkill -f tg_notifier.sh && crontab -l | grep -v "tg_notifier.sh" | crontab 
 ## 预设配置
 ### 阿里云CDT 200G：
 ```
-sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/ali-200g && cat traffic_monitor_config.txt
+sudo curl -o /root/TrafficCop/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/ali-200g && cat /root/TrafficCop/traffic_monitor_config.txt
 ```
 ### 阿里云CDT 20G：
 ```
-sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/ali-20g && cat traffic_monitor_config.txt
+sudo curl -o /root/TrafficCop/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/ali-20g && cat /root/TrafficCop/traffic_monitor_config.txt
 ```
 ### 阿里云轻量 1T：
 ```
-sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/ali-1T && cat traffic_monitor_config.txt
+sudo curl -o /root/TrafficCop/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/ali-1T && cat /root/TrafficCop/traffic_monitor_config.txt
 ```
 ### azure学生 15G：
 ```
-sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/az-15g && cat traffic_monitor_config.txt
+sudo curl -o /root/TrafficCop/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/az-15g && cat /root/TrafficCop/traffic_monitor_config.txt
 ```
 ### azure学生 115G：
 ```
-sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/az-115g && cat traffic_monitor_config.txt
+sudo curl -o /root/TrafficCop/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/az-115g && cat /root/TrafficCop/traffic_monitor_config.txt
 ```
 
 ### GCP 625G[大流量极致解法](https://www.nodeseek.com/post-115166-1)：
 ```
-sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/GCP-625g && cat traffic_monitor_config.txt
+sudo curl -o /root/TrafficCop/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/GCP-625g && cat /root/TrafficCop/traffic_monitor_config.txt
 ```
 ### GCP 200G(白嫖标准路由200g流量就跑)：
 ```
-sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/GCP-200g && cat traffic_monitor_config.txt
+sudo curl -o /root/TrafficCop/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/GCP-200g && cat /root/TrafficCop/traffic_monitor_config.txt
 ```
 ### alice 1500G：
 ```
-sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/alice-1500g && cat traffic_monitor_config.txt
+sudo curl -o /root/TrafficCop/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/alice-1500g && cat /root/TrafficCop/traffic_monitor_config.txt
 ```
 ### 亚洲云 300G：
 ```
-sudo curl -o /root/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/asia-300g && cat traffic_monitor_config.txt
+sudo curl -o /root/TrafficCop/traffic_monitor_config.txt https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/asia-300g && cat /root/TrafficCop/traffic_monitor_config.txt
 ```
 ## Star History
 
