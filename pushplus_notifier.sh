@@ -18,7 +18,7 @@ cd "$WORK_DIR" || exit 1
 export TZ='Asia/Shanghai'
 
 echo "----------------------------------------------"| tee -a "$CRON_LOG"
-echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：1.0"  
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：1.1"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -29,6 +29,14 @@ check_running() {
         exit 1
     fi
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 没有其他实例运行，继续执行" >> "$CRON_LOG"
+}
+
+
+configure() {
+    echo "开始配置..."
+    initial_config
+    setup_cron
+    echo "配置完成。"
 }
 
 # 函数：获取非空输入
@@ -105,9 +113,11 @@ initial_config() {
     echo "PUSHPLUS_TOKEN=$new_token" > "$CONFIG_FILE"
     echo "MACHINE_NAME=$new_machine_name" >> "$CONFIG_FILE"
     echo "DAILY_REPORT_TIME=$new_daily_report_time" >> "$CONFIG_FILE"
-
+    write_config
+    
     echo "配置已更新。"
     read_config
+      
 }
 
 # 发送 PushPlus 通知
@@ -235,36 +245,14 @@ check_and_notify() {
 # 设置定时任务
 setup_cron() {
     local correct_entry="* * * * * $SCRIPT_PATH -cron"
-    local current_crontab=$(crontab -l 2>/dev/null)
-    local pushplus_notifier_entries=$(echo "$current_crontab" | grep "pushplus_notifier.sh")
-    local correct_entries_count=$(echo "$pushplus_notifier_entries" | grep -F "$correct_entry" | wc -l)
+    (crontab -l 2>/dev/null | grep -v "pushplus_notifier.sh"; echo "$correct_entry") | crontab -
+    echo "已更新 crontab，添加了正确的定时任务。"
 
-    if [ "$correct_entries_count" -eq 1 ]; then
-        echo "正确的 crontab 项已存在且只有一个，无需修改。"
-    else
-        # 删除所有包含 pushplus_notifier.sh 的条目
-        new_crontab=$(echo "$current_crontab" | grep -v "pushplus_notifier.sh")
-        
-        # 添加一个正确的条目
-        new_crontab="${new_crontab}
-$correct_entry"
-
-        # 更新 crontab
-        echo "$new_crontab" | crontab -
-      echo "已更新 crontab，添加了正确的定时任务。"
-    fi
-
-    # 添加每日报告的 cron 任务
     local daily_report_minute=$(echo "$DAILY_REPORT_TIME" | cut -d':' -f2)
     local daily_report_hour=$(echo "$DAILY_REPORT_TIME" | cut -d':' -f1)
     local daily_report_entry="$daily_report_minute $daily_report_hour * * * $SCRIPT_PATH -daily"
-
-    if ! crontab -l | grep -q "$daily_report_entry"; then
-        (crontab -l 2>/dev/null; echo "$daily_report_entry") | crontab -
-        echo "已添加每日报告的 cron 任务。"
-    else
-        echo "每日报告的 cron 任务已存在，无需添加。"
-    fi
+    (crontab -l 2>/dev/null | grep -v "$SCRIPT_PATH -daily"; echo "$daily_report_entry") | crontab -
+    echo "已添加每日报告的 cron 任务。"
 }
 
 # 生成每日报告
@@ -316,8 +304,10 @@ main() {
     
     if [[ "$*" == *"-cron"* ]]; then
         echo "$(date '+%Y-%m-%d %H:%M:%S') : 检测到-cron参数, 进入cron模式" >> "$CRON_LOG"
-        if read_config; then
-            echo "$(date '+%Y-%m-%d %H:%M:%S') : 成功读取配置文件" >> "$CRON_LOG"
+ if ! read_config; then
+    echo "需要进行初始化配置。"
+    configure
+fi
             # 继续执行其他操作
             check_and_notify "false"
             
