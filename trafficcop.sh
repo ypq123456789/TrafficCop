@@ -6,7 +6,7 @@ SCRIPT_PATH="$WORK_DIR/traffic_monitor.sh"
 LOCK_FILE="$WORK_DIR/traffic_monitor.lock"
 
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.79"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.80"| tee -a "$LOG_FILE"
 
 # 在脚本开始时杀死所有其他 traffic_monitor.sh 进程
 kill_other_instances() {
@@ -20,18 +20,9 @@ kill_other_instances() {
     done
 }
 
-# 调用函数来杀死其他实例
-kill_other_instances
 
-# 创建锁文件（如果不存在）
-touch "${LOCK_FILE}"
 
-# 尝试获取文件锁
-exec 9>"${LOCK_FILE}"
-if ! flock -n 9; then
-    echo "$(date '+%Y-%m-%d %H:%M:%S') 另一个脚本实例正在运行，退出。" | tee -a "$LOG_FILE"
-    exit 1
-fi
+
 
 migrate_files() {
     # 创建新的工作目录
@@ -74,11 +65,7 @@ migrate_files() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') 文件已迁移到新的工作目录: $WORK_DIR" | tee -a "$LOG_FILE"
 }
 
-# 在脚本开始时调用迁移函数
-migrate_files
 
-# 切换到工作目录
-cd "$WORK_DIR" || exit 1
 
 
 
@@ -454,7 +441,24 @@ setup_crontab() {
 
 # 主函数
 main() {
-   
+   # 调用函数来杀死其他实例
+   kill_other_instances
+  
+  # 在脚本开始时调用迁移函数
+   migrate_files
+
+  # 切换到工作目录
+   cd "$WORK_DIR" || exit 1
+
+# 创建锁文件（如果不存在）
+touch "${LOCK_FILE}"
+
+# 尝试获取文件锁
+exec 9>"${LOCK_FILE}"
+if ! flock -n 9; then
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 另一个脚本实例正在运行，退出。" | tee -a "$LOG_FILE"
+    exit 1
+fi
 
     # 检查是否以 --run 模式运行
     if [ "\$1" = "--run" ]; then
@@ -527,6 +531,9 @@ fi
     else
         echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件读取失败，请检查配置" | tee -a "$LOG_FILE"
     fi
+    
+# 确保脚本退出时释放锁
+trap 'flock -u 9; rm -f ${LOCK_FILE}' EXIT
 }
 
 
@@ -534,7 +541,6 @@ fi
 # 执行主函数
 main "$@"
 
-# 确保脚本退出时释放锁
-trap 'flock -u 9; rm -f ${LOCK_FILE}' EXIT
+
 
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
