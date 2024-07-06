@@ -7,7 +7,7 @@ mkdir -p "$WORK_DIR"
 # 更新文件路径
 CONFIG_FILE="$WORK_DIR/pushplus_notifier_config.txt"
 LOG_FILE="$WORK_DIR/traffic_monitor.log"
-LAST_NOTIFICATION_FILE="$WORK_DIR/last_traffic_notification"
+LAST_NOTIFICATION_FILE="$WORK_DIR/last_pushplus_notification"
 SCRIPT_PATH="$WORK_DIR/pushplus_notifier.sh"
 CRON_LOG="$WORK_DIR/pushplus_notifier_cron.log"
 
@@ -251,5 +251,94 @@ $correct_entry"
 
         # 更新 crontab
         echo "$new_crontab" | crontab -
+      echo "已更新 crontab，添加了正确的定时任务。"
+    fi
 
-        echo "已更新 
+    # 添加每日报告的 cron 任务
+    local daily_report_minute=$(echo "$DAILY_REPORT_TIME" | cut -d':' -f2)
+    local daily_report_hour=$(echo "$DAILY_REPORT_TIME" | cut -d':' -f1)
+    local daily_report_entry="$daily_report_minute $daily_report_hour * * * $SCRIPT_PATH -daily"
+
+    if ! crontab -l | grep -q "$daily_report_entry"; then
+        (crontab -l 2>/dev/null; echo "$daily_report_entry") | crontab -
+        echo "已添加每日报告的 cron 任务。"
+    else
+        echo "每日报告的 cron 任务已存在，无需添加。"
+    fi
+}
+
+# 生成每日报告
+generate_daily_report() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 开始生成每日报告..."| tee -a "$CRON_LOG"
+    
+    # 获取今天的日期
+    local today=$(date '+%Y-%m-%d')
+    
+    # 从日志文件中提取今天的流量数据
+    local traffic_data=$(grep "$today" "$LOG_FILE" | grep "当前流量")
+    
+    if [ -z "$traffic_data" ]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 今天没有流量数据。"| tee -a "$CRON_LOG"
+        return
+    fi
+    
+    # 提取最新的流量数据
+    local latest_data=$(echo "$traffic_data" | tail -n 1)
+    local current_traffic=$(echo "$latest_data" | grep -oP '当前流量：\K[0-9.]+[KMGT]?')
+    local daily_limit=$(echo "$latest_data" | grep -oP '每日限制：\K[0-9.]+[KMGT]?')
+    
+    # 计算流量使用百分比
+    local usage_percent=$(echo "$latest_data" | grep -oP '使用百分比：\K[0-9.]+')
+    
+    # 生成报告内容
+    local title="📊 [${MACHINE_NAME}]每日流量报告"
+    local content="<h2>每日流量报告</h2>
+    <p>日期：$today</p>
+    <p>当前流量：$current_traffic</p>
+    <p>每日限制：$daily_limit</p>
+    <p>使用百分比：$usage_percent%</p>"
+    
+    # 发送报告
+    if send_pushplus_notification "$title" "$content"; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 每日报告已成功发送。"| tee -a "$CRON_LOG"
+    else
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 发送每日报告失败。"| tee -a "$CRON_LOG"
+    fi
+}
+
+# 主程序
+main() {
+    check_running
+
+    if ! read_config; then
+        initial_config
+    fi
+
+    case "\$1" in
+        -c)
+            check_and_notify
+            ;;
+        -d)
+            generate_daily_report
+            ;;
+        -t)
+            test_pushplus_notification
+            ;;
+        -co)
+            initial_config
+            ;;
+        *)
+            echo "用法: \$0 [-cron|-daily|-test|-config]"
+            echo "  -cron   : 执行定时检查和通知"
+            echo "  -daily  : 生成并发送每日报告"
+            echo "  -test   : 发送测试通知"
+            echo "  -config : 重新配置脚本"
+            ;;
+    esac
+}
+
+# 设置 cron 任务
+setup_cron
+
+# 运行主程序
+main "$@"
