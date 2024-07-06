@@ -306,39 +306,100 @@ generate_daily_report() {
     fi
 }
 
-# 主程序
+# 主任务
 main() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 进入主任务" >> "$CRON_LOG"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 参数数量: $#" >> "$CRON_LOG"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 所有参数: $@" >> "$CRON_LOG"
+    
     check_running
+    
+    if [[ "$*" == *"-cron"* ]]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 检测到-cron参数, 进入cron模式" >> "$CRON_LOG"
+        if read_config; then
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : 成功读取配置文件" >> "$CRON_LOG"
+            # 继续执行其他操作
+            check_and_notify "false"
+            
+            # 检查是否需要发送每日报告
+            current_time=$(TZ='Asia/Shanghai' date +%H:%M)
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : 当前时间: $current_time, 设定的报告时间: $DAILY_REPORT_TIME" >> "$CRON_LOG"
+            if [ "$current_time" == "$DAILY_REPORT_TIME" ]; then
+                echo "$(date '+%Y-%m-%d %H:%M:%S') : 时间匹配，准备发送每日报告" >> "$CRON_LOG"
+                if generate_daily_report; then
+                    echo "$(date '+%Y-%m-%d %H:%M:%S') : 每日报告发送成功" >> "$CRON_LOG"
+                else
+                    echo "$(date '+%Y-%m-%d %H:%M:%S') : 每日报告发送失败" >> "$CRON_LOG"
+                fi
+            else
+                echo "$(date '+%Y-%m-%d %H:%M:%S') : 当前时间与报告时间不匹配，不发送报告" >> "$CRON_LOG"
+            fi
+        else
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : 配置文件不存在或不完整，跳过检查" >> "$CRON_LOG"
+            exit 1
+        fi
+    else
+        # 交互模式
+        echo "进入交互模式"
+        if ! read_config; then
+            echo "需要进行初始化配置。"
+            configure
+        fi
+        
+        setup_cron
+        
+        # 直接显示当前配置摘要
+        echo "当前配置摘要："
+        echo "机器名称: $MACHINE_NAME"
+        echo "每日报告时间: $DAILY_REPORT_TIME"
+        echo "PushPlus Token: ${PUSHPLUS_TOKEN:0:10}..." # 只显示前10个字符
+        
+        echo "脚本正在运行中。按 'q' 退出，按 'c' 检查流量，按 'd' 手动发送每日报告，按 'r' 重新加载配置，按 't' 发送测试消息，按 'm' 修改配置，按 'h' 修改每日报告时间。"
+        while true; do
+            read -n 1 -t 1 input
+            if [ -n "$input" ]; then
+                echo
+                case $input in
+                    q|Q) 
+                        echo "退出脚本。"
+                        exit 0
+                        ;;
+                    c|C)
+                        check_and_notify "true"
+                        ;;
+                    d|D)
+                        generate_daily_report
+                        ;;
+                    r|R)
+                        read_config
+                        echo "配置已重新加载。"
+                        ;;
+                    t|T)
+                        send_pushplus_notification "🔔 测试通知" "这是一条测试消息，如果您收到此消息，则 PushPlus 通知功能正常。"
+                        ;;
+                    m|M)
+                        configure
+                        ;;
+                    h|H)
+                        echo "请输入新的每日报告时间 (HH:MM): "
+                        read -r new_time
+                        if [[ $new_time =~ ^([0-1][0-9]|2[0-3]):[0-5][0-9]$ ]]; then
+                            sed -i "s/DAILY_REPORT_TIME=.*/DAILY_REPORT_TIME=$new_time/" "$CONFIG_FILE"
+                            echo "每日报告时间已更新为 $new_time"
+                        else
+                            echo "无效的时间格式。未更改。"
+                        fi
+                        ;;
+                    *)
+                        echo "无效的输入: $input"
+                        ;;
+                esac
 
-    if ! read_config; then
-        initial_config
+                echo "脚本正在运行中。按 'q' 退出，按 'c' 检查流量，按 'd' 手动发送每日报告，按 'r' 重新加载配置，按 't' 发送测试消息，按 'm' 修改配置，按 'h' 修改每日报告时间。"
+            fi
+        done
     fi
-
-    case "\$1" in
-        -c)
-            check_and_notify
-            ;;
-        -d)
-            generate_daily_report
-            ;;
-        -t)
-            test_pushplus_notification
-            ;;
-        -co)
-            initial_config
-            ;;
-        *)
-            echo "用法: \$0 [-cron|-daily|-test|-config]"
-            echo "  -cron   : 执行定时检查和通知"
-            echo "  -daily  : 生成并发送每日报告"
-            echo "  -test   : 发送测试通知"
-            echo "  -config : 重新配置脚本"
-            ;;
-    esac
 }
-
-# 设置 cron 任务
-setup_cron
 
 # 运行主程序
 main "$@"
