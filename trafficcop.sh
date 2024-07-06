@@ -6,7 +6,22 @@ SCRIPT_PATH="$WORK_DIR/traffic_monitor.sh"
 LOCK_FILE="$WORK_DIR/traffic_monitor.lock"
 
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.78"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.79"| tee -a "$LOG_FILE"
+
+# 在脚本开始时杀死所有其他 traffic_monitor.sh 进程
+kill_other_instances() {
+    local current_pid=$$
+    local script_name=$(basename "\$0")
+    for pid in $(pgrep -f "$script_name"); do
+        if [ "$pid" != "$current_pid" ]; then
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 终止其他脚本实例 (PID: $pid)" | tee -a "$LOG_FILE"
+            kill $pid
+        fi
+    done
+}
+
+# 调用函数来杀死其他实例
+kill_other_instances
 
 # 创建锁文件（如果不存在）
 touch "${LOCK_FILE}"
