@@ -173,6 +173,9 @@ sudo tail -f -n 30 /root/TrafficCop/last_pushplus_notification
 sudo pkill -f pushplus_notifier.sh && crontab -l | grep -v "pushplus_notifier.sh" | crontab -
 ```
 
+推送示意如下：
+![Screenshot_20240707_022328_com tencent mm](https://github.com/ypq123456789/TrafficCop/assets/114487221/c32c1ba1-1082-4f01-a26c-25608e9e3c29)
+
 ## 预设配置
 ### 阿里云CDT 200G：
 ```
