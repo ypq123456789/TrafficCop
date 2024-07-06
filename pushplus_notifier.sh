@@ -18,7 +18,7 @@ cd "$WORK_DIR" || exit 1
 export TZ='Asia/Shanghai'
 
 echo "----------------------------------------------"| tee -a "$CRON_LOG"
-echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：1.5"  
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：1.6"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -113,10 +113,11 @@ initial_config() {
       
 }
 
-# 发送 PushPlus 通知
-send_pushplus_notification() {
-    local title="\$1"
-    local content="\$2"
+
+# 发送限速警告
+send_throttle_warning() {
+    local title="⚠️ [${MACHINE_NAME}]限速警告"
+    local content="流量已达到限制，已启动 TC 模式限速。"
     local url="http://www.pushplus.plus/send"
     local response
 
@@ -138,43 +139,107 @@ send_pushplus_notification() {
     fi
 }
 
-# 发送限速警告
-send_throttle_warning() {
-    local title="⚠️ [${MACHINE_NAME}]限速警告"
-    local content="流量已达到限制，已启动 TC 模式限速。"
-    send_pushplus_notification "$title" "$content"
-}
-
 # 发送限速解除通知
 send_throttle_lifted() {
     local title="✅ [${MACHINE_NAME}]限速解除"
     local content="流量已恢复正常，所有限制已清除。"
-    send_pushplus_notification "$title" "$content"
+    local url="http://www.pushplus.plus/send"
+    local response
+
+    response=$(curl -s -X POST "$url" \
+        -H "Content-Type: application/json" \
+        -d "{
+            \"token\": \"$PUSHPLUS_TOKEN\",
+            \"title\": \"$title\",
+            \"content\": \"$content\",
+            \"template\": \"html\"
+        }")
+
+    if echo "$response" | grep -q '"code":200'; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : PushPlus 通知发送成功"| tee -a "$CRON_LOG"
+        return 0
+    else
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : PushPlus 通知发送失败. 响应: $response"| tee -a "$CRON_LOG"
+        return 1
+    fi
 }
 
 # 发送新周期开始通知
 send_new_cycle_notification() {
     local title="🔄 [${MACHINE_NAME}]新周期开始"
     local content="新的流量统计周期已开始，之前的限速（如果有）已自动解除。"
-    send_pushplus_notification "$title" "$content"
+        local url="http://www.pushplus.plus/send"
+    local response
+
+    response=$(curl -s -X POST "$url" \
+        -H "Content-Type: application/json" \
+        -d "{
+            \"token\": \"$PUSHPLUS_TOKEN\",
+            \"title\": \"$title\",
+            \"content\": \"$content\",
+            \"template\": \"html\"
+        }")
+
+    if echo "$response" | grep -q '"code":200'; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : PushPlus 通知发送成功"| tee -a "$CRON_LOG"
+        return 0
+    else
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : PushPlus 通知发送失败. 响应: $response"| tee -a "$CRON_LOG"
+        return 1
+    fi
 }
 
 # 发送关机警告
 send_shutdown_warning() {
     local title="🚨 [${MACHINE_NAME}]关机警告"
     local content="流量已达到严重限制，系统将在 1 分钟后关机！"
-    send_pushplus_notification "$title" "$content"
+    local url="http://www.pushplus.plus/send"
+    local response
+
+    response=$(curl -s -X POST "$url" \
+        -H "Content-Type: application/json" \
+        -d "{
+            \"token\": \"$PUSHPLUS_TOKEN\",
+            \"title\": \"$title\",
+            \"content\": \"$content\",
+            \"template\": \"html\"
+        }")
+
+    if echo "$response" | grep -q '"code":200'; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : PushPlus 通知发送成功"| tee -a "$CRON_LOG"
+        return 0
+    else
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : PushPlus 通知发送失败. 响应: $response"| tee -a "$CRON_LOG"
+        return 1
+    fi
 }
 
 test_pushplus_notification() {
     local title="🔔 [${MACHINE_NAME}]测试消息"
     local content="这是一条测试消息。如果您收到这条消息，说明PushPlus通知功能正常工作。"
-    if send_pushplus_notification "$title" "$content"; then
+    local url="http://www.pushplus.plus/send"
+    local response
+
+    response=$(curl -s -X POST "$url" \
+        -H "Content-Type: application/json" \
+        -d "{
+            \"token\": \"$PUSHPLUS_TOKEN\",
+            \"title\": \"$title\",
+            \"content\": \"$content\",
+            \"template\": \"html\"
+        }")
+
+    if echo "$response" | grep -q '"code":200'; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : PushPlus 通知发送成功"| tee -a "$CRON_LOG"
         echo "✅ [${MACHINE_NAME}]测试消息已成功发送，请检查您的PushPlus。"
+        return 0
     else
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : PushPlus 通知发送失败. 响应: $response"| tee -a "$CRON_LOG"
         echo "❌ [${MACHINE_NAME}]发送测试消息失败。请检查您的PUSHPLUS_TOKEN设置。"
+        return 1
     fi
 }
+
 
 check_and_notify() { 
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 开始检查流量状态..."| tee -a "$CRON_LOG"
@@ -267,7 +332,6 @@ $correct_entry"
 daily_report() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 开始生成每日报告..."| tee -a "$CRON_LOG"
     echo "$(date '+%Y-%m-%d %H:%M:%S') : DAILY_REPORT_TIME=$DAILY_REPORT_TIME"| tee -a "$CRON_LOG"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') : BOT_TOKEN=${BOT_TOKEN:0:5}... CHAT_ID=$CHAT_ID"| tee -a "$CRON_LOG"
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 日志文件路径: $LOG_FILE"| tee -a "$CRON_LOG"
     
     # 获取今天的日期
@@ -298,12 +362,25 @@ daily_report() {
     <p>使用百分比：$usage_percent%</p>"
     
     # 发送报告
-    if send_pushplus_notification "$title" "$content"; then
+    local url="http://www.pushplus.plus/send"
+    local response
+
+    response=$(curl -s -X POST "$url" \
+        -H "Content-Type: application/json" \
+        -d "{
+            \"token\": \"$PUSHPLUS_TOKEN\",
+            \"title\": \"$title\",
+            \"content\": \"$content\",
+            \"template\": \"html\"
+        }")
+
+    if echo "$response" | grep -q '"code":200'; then
         echo "$(date '+%Y-%m-%d %H:%M:%S') : 每日报告已成功发送。"| tee -a "$CRON_LOG"
     else
-        echo "$(date '+%Y-%m-%d %H:%M:%S') : 发送每日报告失败。"| tee -a "$CRON_LOG"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 发送每日报告失败。响应: $response"| tee -a "$CRON_LOG"
     fi
 }
+
 
 # 主任务
 main() {
