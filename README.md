@@ -144,6 +144,35 @@ sudo pkill -f tg_notifier.sh && crontab -l | grep -v "tg_notifier.sh" | crontab 
 推送示意如下：
 ![image](https://github.com/ypq123456789/TrafficCop/assets/114487221/7674bb25-2771-47e3-a999-8701ef160c7c)
 
+## pushplus 集成
+TrafficCop 现在集成了pushplus推送功能。
+
+可发送的通知类型同上、支持自定义主机名、支持自定义每日流量报告的时间。
+
+要使用此功能，请在脚本配置过程中提供你的pushplus token。
+
+### 相关命令
+一键推送脚本（调用api，版本最新，可能会403）：
+```
+sudo bash -c "mkdir -p /root/TrafficCop && curl -sSfL -H 'Accept: application/vnd.github.v3.raw' -o /root/TrafficCop/pushplus_notifier.sh https://api.github.com/repos/ypq123456789/TrafficCop/contents/pushplus_notifier.sh && chmod +x /root/TrafficCop/pushplus_notifier.sh && /root/TrafficCop/pushplus_notifier.sh"
+```
+一键推送脚本（从原始内容下载，版本可能落后）：
+```
+sudo mkdir -p /root/TrafficCop && curl -sSfL -o /root/TrafficCop/pushplus_notifier.sh https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/pushplus_notifier.sh && chmod +x /root/TrafficCop/pushplus_notifier.sh && /root/TrafficCop/pushplus_notifier.sh
+```
+查看pushplus推送定时执行日志
+```
+sudo tail -f -n 30 /root/TrafficCop/pushplus_notifier_cron.log
+```
+查看当前状态
+```
+sudo tail -f -n 30 /root/TrafficCop/last_pushplus_notification
+```
+杀死所有pushplus推送进程
+```
+sudo pkill -f pushplus_notifier.sh && crontab -l | grep -v "pushplus_notifier.sh" | crontab -
+```
+
 ## 预设配置
 ### 阿里云CDT 200G：
 ```
