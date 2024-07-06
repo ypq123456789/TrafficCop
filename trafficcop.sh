@@ -6,7 +6,7 @@ SCRIPT_PATH="$WORK_DIR/traffic_monitor.sh"
 LOCK_FILE="$WORK_DIR/traffic_monitor.lock"
 
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.77"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.78"| tee -a "$LOG_FILE"
 
 # 创建锁文件（如果不存在）
 touch "${LOCK_FILE}"
@@ -32,9 +32,10 @@ migrate_files() {
         mv "/root/traffic_monitor.log" "$LOG_FILE"
     fi
 
-    # 迁移脚本文件
+    # 删除旧的脚本文件，而不是迁移
     if [ -f "/root/traffic_monitor.sh" ]; then
-        mv "/root/traffic_monitor.sh" "$SCRIPT_PATH"
+        rm "/root/traffic_monitor.sh"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 旧的脚本文件已删除" | tee -a "$LOG_FILE"
     fi
 
     # 迁移软件包安装标志文件
@@ -52,10 +53,12 @@ migrate_files() {
     # 更新 crontab 中的脚本路径
     if crontab -l | grep -q "/root/traffic_monitor.sh"; then
         crontab -l | sed "s|/root/traffic_monitor.sh|$SCRIPT_PATH|g" | crontab -
+        echo "$(date '+%Y-%m-%d %H:%M:%S') Crontab 已更新为新的脚本路径" | tee -a "$LOG_FILE"
     fi
 
     echo "$(date '+%Y-%m-%d %H:%M:%S') 文件已迁移到新的工作目录: $WORK_DIR" | tee -a "$LOG_FILE"
 }
+
 # 在脚本开始时调用迁移函数
 migrate_files
 
