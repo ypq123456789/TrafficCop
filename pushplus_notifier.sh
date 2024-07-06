@@ -18,7 +18,7 @@ cd "$WORK_DIR" || exit 1
 export TZ='Asia/Shanghai'
 
 echo "----------------------------------------------"| tee -a "$CRON_LOG"
-echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：1.4"  
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：1.5"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -31,13 +31,6 @@ check_running() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 没有其他实例运行，继续执行" >> "$CRON_LOG"
 }
 
-
-configure() {
-    echo "开始配置..."
-    initial_config
-    setup_cron
-    echo "配置完成。"
-}
 
 # 函数：获取非空输入
 get_valid_input() {
@@ -113,7 +106,7 @@ initial_config() {
     echo "PUSHPLUS_TOKEN=$new_token" > "$CONFIG_FILE"
     echo "MACHINE_NAME=$new_machine_name" >> "$CONFIG_FILE"
     echo "DAILY_REPORT_TIME=$new_daily_report_time" >> "$CONFIG_FILE"
-    write_config
+
     
     echo "配置已更新。"
     read_config
@@ -245,16 +238,11 @@ check_and_notify() {
 # 设置定时任务
 setup_cron() {
     local correct_entry="* * * * * $SCRIPT_PATH -cron"
-    local daily_report_minute=$(echo "$DAILY_REPORT_TIME" | cut -d':' -f2)
-    local daily_report_hour=$(echo "$DAILY_REPORT_TIME" | cut -d':' -f1)
-    local daily_report_entry="$daily_report_minute $daily_report_hour * * * $SCRIPT_PATH -daily"
-    
     local current_crontab=$(crontab -l 2>/dev/null)
     local pushplus_entries=$(echo "$current_crontab" | grep "pushplus_notifier.sh")
     local correct_entries_count=$(echo "$pushplus_entries" | grep -F "$correct_entry" | wc -l)
-    local daily_entries_count=$(echo "$pushplus_entries" | grep -F "$SCRIPT_PATH -daily" | wc -l)
 
-    if [ "$correct_entries_count" -eq 1 ] && [ "$daily_entries_count" -eq 1 ]; then
+    if [ "$correct_entries_count" -eq 1 ]; then
         echo "正确的 crontab 项已存在且数量正确，无需修改。"
     else
         # 删除所有包含 pushplus_notifier.sh 的条目
@@ -262,8 +250,7 @@ setup_cron() {
         
         # 添加正确的条目
         new_crontab="${new_crontab}
-$correct_entry
-$daily_report_entry"
+$correct_entry"
 
         # 更新 crontab
         echo "$new_crontab" | crontab -
@@ -274,16 +261,14 @@ $daily_report_entry"
     # 显示当前的 crontab 内容
     echo "当前的 crontab 内容："
     crontab -l
-
-    # 记录日志
-    echo "$(date '+%Y-%m-%d %H:%M:%S') : Crontab 更新完成" | tee -a "$CRON_LOG"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') : 每分钟任务: $correct_entry" | tee -a "$CRON_LOG"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') : 每日报告任务: $daily_report_entry" | tee -a "$CRON_LOG"
 }
 
-# 生成每日报告
-generate_daily_report() {
+# 每日报告
+daily_report() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 开始生成每日报告..."| tee -a "$CRON_LOG"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : DAILY_REPORT_TIME=$DAILY_REPORT_TIME"| tee -a "$CRON_LOG"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : BOT_TOKEN=${BOT_TOKEN:0:5}... CHAT_ID=$CHAT_ID"| tee -a "$CRON_LOG"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 日志文件路径: $LOG_FILE"| tee -a "$CRON_LOG"
     
     # 获取今天的日期
     local today=$(date '+%Y-%m-%d')
@@ -333,14 +318,14 @@ main() {
         if read_config; then
             echo "$(date '+%Y-%m-%d %H:%M:%S') : 成功读取配置文件" >> "$CRON_LOG"
             # 继续执行其他操作
-            check_and_notify "false"
+            check_and_notify
             
             # 检查是否需要发送每日报告
             current_time=$(TZ='Asia/Shanghai' date +%H:%M)
             echo "$(date '+%Y-%m-%d %H:%M:%S') : 当前时间: $current_time, 设定的报告时间: $DAILY_REPORT_TIME" >> "$CRON_LOG"
             if [ "$current_time" == "$DAILY_REPORT_TIME" ]; then
                 echo "$(date '+%Y-%m-%d %H:%M:%S') : 时间匹配，准备发送每日报告" >> "$CRON_LOG"
-                if generate_daily_report; then
+                if daily_report; then
                     echo "$(date '+%Y-%m-%d %H:%M:%S') : 每日报告发送成功" >> "$CRON_LOG"
                 else
                     echo "$(date '+%Y-%m-%d %H:%M:%S') : 每日报告发送失败" >> "$CRON_LOG"
@@ -357,7 +342,7 @@ main() {
         echo "进入交互模式"
         if ! read_config; then
             echo "需要进行初始化配置。"
-            configure
+             initial_config
         fi
         
         setup_cron
@@ -382,7 +367,7 @@ main() {
                         check_and_notify "true"
                         ;;
                     d|D)
-                        generate_daily_report
+                        daily_report
                         ;;
                     r|R)
                         read_config
@@ -392,7 +377,7 @@ main() {
                         send_pushplus_notification "🔔 测试通知" "这是一条测试消息，如果您收到此消息，则 PushPlus 通知功能正常。"
                         ;;
                     m|M)
-                        configure
+                        initial_config
                         ;;
                     h|H)
                         echo "请输入新的每日报告时间 (HH:MM): "
