@@ -18,7 +18,7 @@ cd "$WORK_DIR" || exit 1
 export TZ='Asia/Shanghai'
 
 echo "----------------------------------------------"| tee -a "$CRON_LOG"
-echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：1.2"  
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：1.3"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -252,7 +252,12 @@ setup_cron() {
     local daily_report_hour=$(echo "$DAILY_REPORT_TIME" | cut -d':' -f1)
     local daily_report_entry="$daily_report_minute $daily_report_hour * * * $SCRIPT_PATH -daily"
     (crontab -l 2>/dev/null | grep -v "$SCRIPT_PATH -daily"; echo "$daily_report_entry") | crontab -
-    echo "已添加每日报告的 cron 任务。"
+    if [ $? -eq 0 ]; then
+        echo "已添加每日报告的 cron 任务。"
+    else
+        echo "添加 cron 任务失败。错误代码：$?"
+    fi
+    crontab -l
 }
 
 # 生成每日报告
