@@ -65,7 +65,7 @@ sudo tail -f -n 30 /root/TrafficCop/traffic_monitor.log
 ```
 ### 查看当前配置：
 ```
-sudo cat traffic_monitor_config.txt
+sudo cat /root/TrafficCop/traffic_monitor_config.txt
 ```
 ### 紧急停止所有traffic_monitor进程（用于脚本出现问题时）：
 ```
