@@ -18,7 +18,7 @@ cd "$WORK_DIR" || exit 1
 export TZ='Asia/Shanghai'
 
 echo "----------------------------------------------"| tee -a "$CRON_LOG"
-echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：1.1"  
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：1.2"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -304,10 +304,8 @@ main() {
     
     if [[ "$*" == *"-cron"* ]]; then
         echo "$(date '+%Y-%m-%d %H:%M:%S') : 检测到-cron参数, 进入cron模式" >> "$CRON_LOG"
- if ! read_config; then
-    echo "需要进行初始化配置。"
-    configure
-fi
+        if read_config; then
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : 成功读取配置文件" >> "$CRON_LOG"
             # 继续执行其他操作
             check_and_notify "false"
             
@@ -390,6 +388,7 @@ fi
         done
     fi
 }
+
 
 # 运行主程序
 main "$@"
