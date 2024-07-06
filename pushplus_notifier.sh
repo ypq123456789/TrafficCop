@@ -18,7 +18,7 @@ cd "$WORK_DIR" || exit 1
 export TZ='Asia/Shanghai'
 
 echo "----------------------------------------------"| tee -a "$CRON_LOG"
-echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：1.8"  
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：1.9"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -329,8 +329,7 @@ $correct_entry"
 }
 
 # 每日报告
-# 每日报告 (PushPlus 版本)
-daily_report_pushplus() {
+daily_report() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 开始生成每日报告"| tee -a "$CRON_LOG"
     echo "$(date '+%Y-%m-%d %H:%M:%S') : DAILY_REPORT_TIME=$DAILY_REPORT_TIME"| tee -a "$CRON_LOG"
     echo "$(date '+%Y-%m-%d %H:%M:%S') : PUSHPLUS_TOKEN=${PUSHPLUS_TOKEN:0:5}..."| tee -a "$CRON_LOG"
