@@ -1,5 +1,5 @@
 #!/bin/bash
-echo "版本：0.1"
+echo "版本：0.2"
 
 # 备份原始文件
 cp /root/TrafficCop/traffic_monitor_config.txt /root/TrafficCop/traffic_monitor_config.txt.bak
