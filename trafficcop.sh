@@ -9,7 +9,7 @@ LOCK_FILE="$WORK_DIR/traffic_monitor.lock"
 export TZ='Asia/Shanghai'
 
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.83"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.84"| tee -a "$LOG_FILE"
 
 # 在脚本开始时杀死所有其他 traffic_monitor.sh 进程
 kill_other_instances() {
@@ -73,7 +73,7 @@ migrate_files() {
 
 
 check_and_install_packages() {
-    local packages=("vnstat" "jq" "bc" "tc")
+    local packages=("vnstat" "jq" "bc" "iproute2")
     local need_install=false
 
     for package in "${packages[@]}"; do
@@ -106,6 +106,11 @@ check_and_install_packages() {
         echo "$(date '+%Y-%m-%d %H:%M:%S') 所有必要的软件包已安装" | tee -a "$LOG_FILE"
     fi
 
+    # 验证 tc 命令是否可用
+    if ! command -v tc &> /dev/null; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 警告：'tc' 命令不可用，可能影响限速功能。" | tee -a "$LOG_FILE"
+    fi
+
     # 获取 vnstat 版本
     local vnstat_version=$(vnstat --version 2>&1 | head -n 1)
     echo "$(date '+%Y-%m-%d %H:%M:%S') vnstat 版本: $vnstat_version" | tee -a "$LOG_FILE"
@@ -129,6 +134,7 @@ check_and_install_packages() {
         echo "$(date '+%Y-%m-%d %H:%M:%S') 无法获取主要网络接口" | tee -a "$LOG_FILE"
     fi
 }
+
 
 # 检查配置和定时任务
 check_existing_setup() {
