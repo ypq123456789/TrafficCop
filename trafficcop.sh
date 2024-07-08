@@ -9,7 +9,8 @@ LOCK_FILE="$WORK_DIR/traffic_monitor.lock"
 export TZ='Asia/Shanghai'
 
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.82"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.84"| tee -a "$LOG_FILE"
+
 
 # 在脚本开始时杀死所有其他 traffic_monitor.sh 进程
 kill_other_instances() {
@@ -73,32 +74,51 @@ migrate_files() {
 
 
 check_and_install_packages() {
-    local flag_file="/$WORK_DIR/.traffic_monitor_packages_installed"
-    if [ -f "$flag_file" ]; then
-        echo "$(date '+%Y-%m-%d %H:%M:%S') 必要的软件包已安装" | tee -a "$LOG_FILE"
-    else
-        local packages=("vnstat" "jq" "bc" "tc")
+    local packages=("vnstat" "jq" "bc" "iproute2")
+    local need_install=false
+
+    for package in "${packages[@]}"; do
+        if ! dpkg -s "$package" >/dev/null 2>&1; then
+            echo "$(date '+%Y-%m-%d %H:%M:%S') $package 未安装，将进行安装..." | tee -a "$LOG_FILE"
+            need_install=true
+            break
+        fi
+    done
+
+    if $need_install; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 正在更新软件包列表..." | tee -a "$LOG_FILE"
+        if ! sudo apt-get update; then
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 更新软件包列表失败，请检查网络连接和系统状态。" | tee -a "$LOG_FILE"
+            return 1
+        fi
+
         for package in "${packages[@]}"; do
-            if ! command -v $package &> /dev/null; then
-                echo "$(date '+%Y-%m-%d %H:%M:%S') $package 未安装，正在安装..."| tee -a "$LOG_FILE"
-                sudo apt-get update && sudo apt-get install -y $package
-                echo "$(date '+%Y-%m-%d %H:%M:%S') $package 安装完成"| tee -a "$LOG_FILE"
-            else
-                echo "$(date '+%Y-%m-%d %H:%M:%S') $package 已安装"| tee -a "$LOG_FILE"
+            if ! dpkg -s "$package" >/dev/null 2>&1; then
+                echo "$(date '+%Y-%m-%d %H:%M:%S') 正在安装 $package..." | tee -a "$LOG_FILE"
+                if sudo apt-get install -y "$package"; then
+                    echo "$(date '+%Y-%m-%d %H:%M:%S') $package 安装成功" | tee -a "$LOG_FILE"
+                else
+                    echo "$(date '+%Y-%m-%d %H:%M:%S') $package 安装失败，请手动检查并安装。" | tee -a "$LOG_FILE"
+                    return 1
+                fi
             fi
         done
-        touch "$flag_file"
+    else
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 所有必要的软件包已安装" | tee -a "$LOG_FILE"
     fi
 
-    #echo "开始获取 vnstat 统计开始时间"| tee -a "$LOG_FILE"
-    
+    # 验证 tc 命令是否可用
+    if ! command -v tc &> /dev/null; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 警告：'tc' 命令不可用，可能影响限速功能。" | tee -a "$LOG_FILE"
+    fi
+
     # 获取 vnstat 版本
     local vnstat_version=$(vnstat --version 2>&1 | head -n 1)
-    echo "$(date '+%Y-%m-%d %H:%M:%S') vnstat 版本: $vnstat_version"| tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') vnstat 版本: $vnstat_version" | tee -a "$LOG_FILE"
 
- # 获取主要网络接口
+    # 获取主要网络接口
     local main_interface=$(ip route | grep default | sed -e 's/^.*dev \([^ ]*\).*$/\1/' | head -n 1)
-    echo "$(date '+%Y-%m-%d %H:%M:%S') 主要网络接口: $main_interface"| tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 主要网络接口: $main_interface" | tee -a "$LOG_FILE"
 
     # 获取 vnstat 统计开始时间
     if [ -n "$main_interface" ]; then
