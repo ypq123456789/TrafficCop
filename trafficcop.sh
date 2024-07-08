@@ -11,6 +11,7 @@ export TZ='Asia/Shanghai'
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
 echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.84"| tee -a "$LOG_FILE"
 
+
 # 在脚本开始时杀死所有其他 traffic_monitor.sh 进程
 kill_other_instances() {
     local current_pid=$$
