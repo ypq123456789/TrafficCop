@@ -9,7 +9,7 @@ LOCK_FILE="$WORK_DIR/traffic_monitor.lock"
 export TZ='Asia/Shanghai'
 
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.82"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.83"| tee -a "$LOG_FILE"
 
 # 在脚本开始时杀死所有其他 traffic_monitor.sh 进程
 kill_other_instances() {
@@ -78,17 +78,30 @@ check_and_install_packages() {
         echo "$(date '+%Y-%m-%d %H:%M:%S') 必要的软件包已安装" | tee -a "$LOG_FILE"
     else
         local packages=("vnstat" "jq" "bc" "tc")
+        local all_installed=true
         for package in "${packages[@]}"; do
             if ! command -v $package &> /dev/null; then
                 echo "$(date '+%Y-%m-%d %H:%M:%S') $package 未安装，正在安装..."| tee -a "$LOG_FILE"
-                sudo apt-get update && sudo apt-get install -y $package
-                echo "$(date '+%Y-%m-%d %H:%M:%S') $package 安装完成"| tee -a "$LOG_FILE"
+                if sudo apt-get update && sudo apt-get install -y $package; then
+                    echo "$(date '+%Y-%m-%d %H:%M:%S') $package 安装完成"| tee -a "$LOG_FILE"
+                else
+                    echo "$(date '+%Y-%m-%d %H:%M:%S') $package 安装失败"| tee -a "$LOG_FILE"
+                    all_installed=false
+                    break
+                fi
             else
                 echo "$(date '+%Y-%m-%d %H:%M:%S') $package 已安装"| tee -a "$LOG_FILE"
             fi
         done
-        touch "$flag_file"
+        if $all_installed; then
+            touch "$flag_file"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 所有必要的软件包已成功安装"| tee -a "$LOG_FILE"
+        else
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 某些软件包安装失败，请检查并重试"| tee -a "$LOG_FILE"
+            exit 1
+        fi
     fi
+}
 
     #echo "开始获取 vnstat 统计开始时间"| tee -a "$LOG_FILE"
     
