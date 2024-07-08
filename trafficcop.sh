@@ -3,6 +3,29 @@ WORK_DIR="/root/TrafficCop"
 CONFIG_FILE="$WORK_DIR/traffic_monitor_config.txt"
 LOG_FILE="$WORK_DIR/traffic_monitor.log"
 SCRIPT_PATH="$WORK_DIR/traffic_monitor.sh"
+LOCK_FILE="$WORK_DIR/traffic_monitor.lock"
+
+# 设置时区为上海（东八区）
+export TZ='Asia/Shanghai'
+
+echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.83"| tee -a "$LOG_FILE"
+
+# 在脚本开始时杀死所有其他 traffic_monitor.sh 进程
+kill_other_instances() {
+    local current_pid=$$
+    local script_name=$(basename "\$0")
+    for pid in $(pgrep -f "$script_name"); do
+        if [ "$pid" != "$current_pid" ]; then
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 终止其他脚本实例 (PID: $pid)" | tee -a "$LOG_FILE"
+            kill $pid
+        fi
+    done
+}
+
+
+
+
 
 migrate_files() {
     # 创建新的工作目录
@@ -18,9 +41,10 @@ migrate_files() {
         mv "/root/traffic_monitor.log" "$LOG_FILE"
     fi
 
-    # 迁移脚本文件
+    # 删除旧的脚本文件，而不是迁移
     if [ -f "/root/traffic_monitor.sh" ]; then
-        mv "/root/traffic_monitor.sh" "$SCRIPT_PATH"
+        rm "/root/traffic_monitor.sh"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 旧的脚本文件已删除" | tee -a "$LOG_FILE"
     fi
 
     # 迁移软件包安装标志文件
@@ -38,46 +62,57 @@ migrate_files() {
     # 更新 crontab 中的脚本路径
     if crontab -l | grep -q "/root/traffic_monitor.sh"; then
         crontab -l | sed "s|/root/traffic_monitor.sh|$SCRIPT_PATH|g" | crontab -
+        echo "$(date '+%Y-%m-%d %H:%M:%S') Crontab 已更新为新的脚本路径" | tee -a "$LOG_FILE"
     fi
 
     echo "$(date '+%Y-%m-%d %H:%M:%S') 文件已迁移到新的工作目录: $WORK_DIR" | tee -a "$LOG_FILE"
 }
-# 在脚本开始时调用迁移函数
-migrate_files
 
-# 切换到工作目录
-cd "$WORK_DIR" || exit 1
 
-echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.75"| tee -a "$LOG_FILE"
+
+
 
 check_and_install_packages() {
-    local flag_file="/$WORK_DIR/.traffic_monitor_packages_installed"
-    if [ -f "$flag_file" ]; then
-        echo "$(date '+%Y-%m-%d %H:%M:%S') 必要的软件包已安装" | tee -a "$LOG_FILE"
-    else
-        local packages=("vnstat" "jq" "bc" "tc")
+    local packages=("vnstat" "jq" "bc" "tc")
+    local need_install=false
+
+    for package in "${packages[@]}"; do
+        if ! dpkg -s "$package" >/dev/null 2>&1; then
+            echo "$(date '+%Y-%m-%d %H:%M:%S') $package 未安装，将进行安装..." | tee -a "$LOG_FILE"
+            need_install=true
+            break
+        fi
+    done
+
+    if $need_install; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 正在更新软件包列表..." | tee -a "$LOG_FILE"
+        if ! sudo apt-get update; then
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 更新软件包列表失败，请检查网络连接和系统状态。" | tee -a "$LOG_FILE"
+            return 1
+        fi
+
         for package in "${packages[@]}"; do
-            if ! command -v $package &> /dev/null; then
-                echo "$(date '+%Y-%m-%d %H:%M:%S') $package 未安装，正在安装..."| tee -a "$LOG_FILE"
-                sudo apt-get update && sudo apt-get install -y $package
-                echo "$(date '+%Y-%m-%d %H:%M:%S') $package 安装完成"| tee -a "$LOG_FILE"
-            else
-                echo "$(date '+%Y-%m-%d %H:%M:%S') $package 已安装"| tee -a "$LOG_FILE"
+            if ! dpkg -s "$package" >/dev/null 2>&1; then
+                echo "$(date '+%Y-%m-%d %H:%M:%S') 正在安装 $package..." | tee -a "$LOG_FILE"
+                if sudo apt-get install -y "$package"; then
+                    echo "$(date '+%Y-%m-%d %H:%M:%S') $package 安装成功" | tee -a "$LOG_FILE"
+                else
+                    echo "$(date '+%Y-%m-%d %H:%M:%S') $package 安装失败，请手动检查并安装。" | tee -a "$LOG_FILE"
+                    return 1
+                fi
             fi
         done
-        touch "$flag_file"
+    else
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 所有必要的软件包已安装" | tee -a "$LOG_FILE"
     fi
 
-    #echo "开始获取 vnstat 统计开始时间"| tee -a "$LOG_FILE"
-    
     # 获取 vnstat 版本
     local vnstat_version=$(vnstat --version 2>&1 | head -n 1)
-    echo "$(date '+%Y-%m-%d %H:%M:%S') vnstat 版本: $vnstat_version"| tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') vnstat 版本: $vnstat_version" | tee -a "$LOG_FILE"
 
- # 获取主要网络接口
+    # 获取主要网络接口
     local main_interface=$(ip route | grep default | sed -e 's/^.*dev \([^ ]*\).*$/\1/' | head -n 1)
-    echo "$(date '+%Y-%m-%d %H:%M:%S') 主要网络接口: $main_interface"| tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 主要网络接口: $main_interface" | tee -a "$LOG_FILE"
 
     # 获取 vnstat 统计开始时间
     if [ -n "$main_interface" ]; then
@@ -94,7 +129,6 @@ check_and_install_packages() {
         echo "$(date '+%Y-%m-%d %H:%M:%S') 无法获取主要网络接口" | tee -a "$LOG_FILE"
     fi
 }
-
 
 # 检查配置和定时任务
 check_existing_setup() {
@@ -423,7 +457,26 @@ setup_crontab() {
 
 # 主函数
 main() {
-   
+
+
+   # 调用函数来杀死其他实例
+   kill_other_instances
+  
+  # 在脚本开始时调用迁移函数
+   migrate_files
+
+  # 切换到工作目录
+   cd "$WORK_DIR" || exit 1
+
+# 创建锁文件（如果不存在）
+touch "${LOCK_FILE}"
+
+# 尝试获取文件锁
+exec 9>"${LOCK_FILE}"
+if ! flock -n 9; then
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 另一个脚本实例正在运行，退出。" | tee -a "$LOG_FILE"
+    exit 1
+fi
 
     # 检查是否以 --run 模式运行
     if [ "\$1" = "--run" ]; then
@@ -496,11 +549,16 @@ fi
     else
         echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件读取失败，请检查配置" | tee -a "$LOG_FILE"
     fi
+    
+# 确保脚本退出时释放锁
+trap 'flock -u 9; rm -f ${LOCK_FILE}' EXIT
 }
 
 
 
 # 执行主函数
 main "$@"
+
+
 
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
