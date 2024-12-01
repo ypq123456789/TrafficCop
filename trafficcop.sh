@@ -74,7 +74,7 @@ migrate_files() {
 
 
 check_and_install_packages() {
-    local packages=("vnstat" "jq" "bc" "iproute2")
+    local packages=("vnstat" "jq" "bc" "iproute2" "cron")
     local need_install=false
 
     for package in "${packages[@]}"; do
