@@ -1,7 +1,9 @@
 # TrafficCop - 智能流量监控与限制脚本
 [English](README_EN.md) | 中文
 
-[![image](https://github.com/user-attachments/assets/00b54ab5-9e5c-4268-a11d-98d85634b369)](https://yxvm.com/)
+
+[![image](https://github.com/user-attachments/assets/b1712474-1c08-49f9-a252-43caa33809d1)](https://yxvm.com/)
+
 [NodeSupport](https://github.com/NodeSeekDev/NodeSupport)赞助了本项目
 
 ## 注意事项
