@@ -50,7 +50,34 @@ sudo pkill -f traffic_monitor.sh
 sudo rm -rf /root/TrafficCop
 sudo tc qdisc del dev $(ip route | grep default | cut -d ' ' -f 5) root
 ```
+
+
+
 ## 一键安装脚本
+### 一键安装交互式脚本
+```
+bash <(curl -sL https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/trafficcop-manager.sh)
+```
+#### 功能
+
+1. 安装流量监控 - 下载并安装基础的流量监控功能
+2. 安装Telegram通知功能 - 添加Telegram推送通知
+3. 安装PushPlus通知功能 - 添加PushPlus推送通知
+4. 解除流量限制 - 一键解除当前的流量限制
+5. 查看日志 - 查看各种服务的日志文件
+6. 查看当前配置 - 查看各种服务的配置文件
+7. 使用预设配置 - 应用针对不同服务商优化的预设配置
+8. 停止所有服务 - 停止所有TrafficCop相关服务
+
+#### 优势
+1. 一站式管理 - 用户只需记住一个命令，即可管理所有TrafficCop功能
+2. 交互式体验 - 通过数字菜单选择，无需记忆复杂命令
+3. 可视化界面 - 使用彩色输出增强用户体验
+4. 灵活操作 - 完成一项操作后返回主菜单，可继续选择其他操作
+5. 用户友好 - 每个操作都有确认提示，避免误操作
+   
+![image](https://github.com/user-attachments/assets/bc12c7e6-bba3-498d-a0bc-6ed8ce561e84)
+
 
 ### 一键全家桶TG推送（调用api，版本最新，可能会403）：
 ```
