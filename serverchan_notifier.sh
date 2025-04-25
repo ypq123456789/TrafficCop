@@ -254,7 +254,7 @@ daily_report() {
     fi
 
     local title="📊 [${MACHINE_NAME}]每日流量报告"
-    local desp="当前使用流量：$current_usage\n流量限制：$limit"
+    local desp="当前使用流量：$current_usage%0A流量限制：$limit"
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 准备发送消息: $title $desp"| tee -a "$CRON_LOG"
 
     local url="https://sctapi.ftqq.com/${SENDKEY}.send"
