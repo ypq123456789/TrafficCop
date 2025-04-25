@@ -63,13 +63,19 @@ EOF
 # 初始配置
 initial_config() {
     echo "开始初始化配置..."
-    local new_sckey
+    
+    echo "请输入Server酱用户ID (UID): "
+    read -r new_uid
+    while [[ -z "$new_uid" ]]; do
+        echo "UID不能为空。请重新输入: "
+        read -r new_uid
+    done
 
-    echo "请输入Server酱 SCKEY: "
-    read -r new_sckey
-    while [[ -z "$new_sckey" ]]; do
-        echo "SCKEY 不能为空。请重新输入: "
-        read -r new_sckey
+    echo "请输入Server酱发送密钥 (SendKey): "
+    read -r new_sendkey
+    while [[ -z "$new_sendkey" ]]; do
+        echo "SendKey不能为空。请重新输入: "
+        read -r new_sendkey
     done
 
     echo "请输入机器名称: "
@@ -87,7 +93,8 @@ initial_config() {
     done
 
     # 更新配置文件
-    echo "SCKEY=$new_sckey" > "$CONFIG_FILE"
+    echo "UID=$new_uid" > "$CONFIG_FILE"
+    echo "SENDKEY=$new_sendkey" >> "$CONFIG_FILE"
     echo "MACHINE_NAME=$new_machine_name" >> "$CONFIG_FILE"
     echo "DAILY_REPORT_TIME=$new_daily_report_time" >> "$CONFIG_FILE"
 
@@ -97,7 +104,7 @@ initial_config() {
 
 # 发送限速警告
 send_throttle_warning() {
-    local url="https://sctapi.ftqq.com/${SCKEY}.send"
+    local url="https://${SCKEY}.push.ft07.com/send/${SCKEY}.send"
     local title="⚠️ [${MACHINE_NAME}]限速警告"
     local desp="流量已达到限制，已启动 TC 模式限速。"
     curl -s -X POST "$url" -d "title=$title" -d "desp=$desp"
@@ -105,7 +112,7 @@ send_throttle_warning() {
 
 # 发送限速解除通知
 send_throttle_lifted() {
-    local url="https://sctapi.ftqq.com/${SCKEY}.send"
+    local url="https://${SCKEY}.push.ft07.com/send/${SCKEY}.send"
     local title="✅ [${MACHINE_NAME}]限速解除"
     local desp="流量已恢复正常，所有限制已清除。"
     curl -s -X POST "$url" -d "title=$title" -d "desp=$desp"
@@ -113,7 +120,7 @@ send_throttle_lifted() {
 
 # 发送新周期开始通知
 send_new_cycle_notification() {
-    local url="https://sctapi.ftqq.com/${SCKEY}.send"
+    local url="https://${SCKEY}.push.ft07.com/send/${SCKEY}.send"
     local title="🔄 [${MACHINE_NAME}]新周期开始"
     local desp="新的流量统计周期已开始，之前的限速（如果有）已自动解除。"
     curl -s -X POST "$url" -d "title=$title" -d "desp=$desp"
@@ -121,7 +128,7 @@ send_new_cycle_notification() {
 
 # 发送关机警告
 send_shutdown_warning() {
-    local url="https://sctapi.ftqq.com/${SCKEY}.send"
+    local url="https://${SCKEY}.push.ft07.com/send/${SCKEY}.send"
     local title="🚨 [${MACHINE_NAME}]关机警告"
     local desp="流量已达到严重限制，系统将在 1 分钟后关机！"
     curl -s -X POST "$url" -d "title=$title" -d "desp=$desp"
@@ -132,7 +139,7 @@ test_serverchan_notification() {
     local title="🔔 [${MACHINE_NAME}]测试消息"
     local desp="如果您收到这条消息，说明Server酱通知功能正常工作。"
     local response
-    response=$(curl -s -X POST "https://sctapi.ftqq.com/${SCKEY}.send" \
+    response=$(curl -s -X POST "https://${SCKEY}.push.ft07.com/send/${SCKEY}.send" \
         -d "title=${title}" \
         -d "desp=${desp}")
     
@@ -258,7 +265,7 @@ daily_report() {
     local desp="当前使用流量：$current_usage\n流量限制：$limit"
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 准备发送消息: $title $desp"| tee -a "$CRON_LOG"
 
-    local url="https://sctapi.ftqq.com/${SCKEY}.send"
+    local url="https://${SCKEY}.push.ft07.com/send/${SCKEY}.send"
     local response
 
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 尝试发送Server酱消息"| tee -a "$CRON_LOG"
