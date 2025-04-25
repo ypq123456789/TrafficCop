@@ -42,7 +42,7 @@ read_config() {
     source "$CONFIG_FILE"
 
     # 检查必要的配置项是否都存在
-    if [ -z "$SCKEY" ] || [ -z "$MACHINE_NAME" ] || [ -z "$DAILY_REPORT_TIME" ]; then
+    if [ -z "$SENDKEY" ] || [ -z "$MACHINE_NAME" ] || [ -z "$DAILY_REPORT_TIME" ]; then
         echo "配置文件不完整，需要重新进行配置。"
         return 1
     fi
@@ -53,7 +53,7 @@ read_config() {
 # 写入配置
 write_config() {
     cat > "$CONFIG_FILE" << EOF
-SCKEY="$SCKEY"
+SENDKEY="$SENDKEY"
 DAILY_REPORT_TIME="$DAILY_REPORT_TIME"
 MACHINE_NAME="$MACHINE_NAME"
 EOF
@@ -64,13 +64,6 @@ EOF
 initial_config() {
     echo "开始初始化配置..."
     
-    echo "请输入Server酱用户ID (UID): "
-    read -r new_uid
-    while [[ -z "$new_uid" ]]; do
-        echo "UID不能为空。请重新输入: "
-        read -r new_uid
-    done
-
     echo "请输入Server酱发送密钥 (SendKey): "
     read -r new_sendkey
     while [[ -z "$new_sendkey" ]]; do
@@ -93,10 +86,9 @@ initial_config() {
     done
 
     # 更新配置文件
-    echo "UID=$new_uid" > "$CONFIG_FILE"
-    echo "SENDKEY=$new_sendkey" >> "$CONFIG_FILE"
-    echo "MACHINE_NAME=$new_machine_name" >> "$CONFIG_FILE"
-    echo "DAILY_REPORT_TIME=$new_daily_report_time" >> "$CONFIG_FILE"
+    echo "SENDKEY=\"$new_sendkey\"" > "$CONFIG_FILE"
+    echo "MACHINE_NAME=\"$new_machine_name\"" >> "$CONFIG_FILE"
+    echo "DAILY_REPORT_TIME=\"$new_daily_report_time\"" >> "$CONFIG_FILE"
 
     echo "配置已更新。"
     read_config
@@ -104,7 +96,7 @@ initial_config() {
 
 # 发送限速警告
 send_throttle_warning() {
-    local url="https://${SCKEY}.push.ft07.com/send/${SCKEY}.send"
+    local url="https://sctapi.ftqq.com/${SENDKEY}.send"
     local title="⚠️ [${MACHINE_NAME}]限速警告"
     local desp="流量已达到限制，已启动 TC 模式限速。"
     curl -s -X POST "$url" -d "title=$title" -d "desp=$desp"
@@ -112,7 +104,7 @@ send_throttle_warning() {
 
 # 发送限速解除通知
 send_throttle_lifted() {
-    local url="https://${SCKEY}.push.ft07.com/send/${SCKEY}.send"
+    local url="https://sctapi.ftqq.com/${SENDKEY}.send"
     local title="✅ [${MACHINE_NAME}]限速解除"
     local desp="流量已恢复正常，所有限制已清除。"
     curl -s -X POST "$url" -d "title=$title" -d "desp=$desp"
@@ -120,7 +112,7 @@ send_throttle_lifted() {
 
 # 发送新周期开始通知
 send_new_cycle_notification() {
-    local url="https://${SCKEY}.push.ft07.com/send/${SCKEY}.send"
+    local url="https://sctapi.ftqq.com/${SENDKEY}.send"
     local title="🔄 [${MACHINE_NAME}]新周期开始"
     local desp="新的流量统计周期已开始，之前的限速（如果有）已自动解除。"
     curl -s -X POST "$url" -d "title=$title" -d "desp=$desp"
@@ -128,7 +120,7 @@ send_new_cycle_notification() {
 
 # 发送关机警告
 send_shutdown_warning() {
-    local url="https://${SCKEY}.push.ft07.com/send/${SCKEY}.send"
+    local url="https://sctapi.ftqq.com/${SENDKEY}.send"
     local title="🚨 [${MACHINE_NAME}]关机警告"
     local desp="流量已达到严重限制，系统将在 1 分钟后关机！"
     curl -s -X POST "$url" -d "title=$title" -d "desp=$desp"
@@ -139,14 +131,14 @@ test_serverchan_notification() {
     local title="🔔 [${MACHINE_NAME}]测试消息"
     local desp="如果您收到这条消息，说明Server酱通知功能正常工作。"
     local response
-    response=$(curl -s -X POST "https://${SCKEY}.push.ft07.com/send/${SCKEY}.send" \
+    response=$(curl -s -X POST "https://sctapi.ftqq.com/${SENDKEY}.send" \
         -d "title=${title}" \
         -d "desp=${desp}")
     
     if echo "$response" | grep -q '"code":0'; then
         echo "✅ [${MACHINE_NAME}]测试消息已成功发送，请检查您的微信。"
     else
-        echo "❌ [${MACHINE_NAME}]发送测试消息失败。请检查您的SCKEY设置。"
+        echo "❌ [${MACHINE_NAME}]发送测试消息失败。请检查您的SENDKEY设置。"
     fi
 }
 
@@ -241,7 +233,7 @@ $correct_entry"
 daily_report() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 开始生成每日报告"| tee -a "$CRON_LOG"
     echo "$(date '+%Y-%m-%d %H:%M:%S') : DAILY_REPORT_TIME=$DAILY_REPORT_TIME"| tee -a "$CRON_LOG"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') : SCKEY=${SCKEY:0:5}..."| tee -a "$CRON_LOG"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : SENDKEY=${SENDKEY:0:5}..."| tee -a "$CRON_LOG"
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 日志文件路径: $LOG_FILE"| tee -a "$CRON_LOG"
 
     # 反向读取日志文件，查找第一个包含"当前使用流量"和"限制流量"的行
@@ -265,7 +257,7 @@ daily_report() {
     local desp="当前使用流量：$current_usage\n流量限制：$limit"
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 准备发送消息: $title $desp"| tee -a "$CRON_LOG"
 
-    local url="https://${SCKEY}.push.ft07.com/send/${SCKEY}.send"
+    local url="https://sctapi.ftqq.com/${SENDKEY}.send"
     local response
 
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 尝试发送Server酱消息"| tee -a "$CRON_LOG"
@@ -326,7 +318,7 @@ main() {
         echo "当前配置摘要："
         echo "机器名称: $MACHINE_NAME"
         echo "每日报告时间: $DAILY_REPORT_TIME"
-        echo "SCKEY: ${SCKEY:0:10}..." # 只显示前10个字符
+        echo "SENDKEY: ${SENDKEY:0:10}..." # 只显示前10个字符
         
         echo "脚本正在运行中。按 'q' 退出，按 'c' 检查流量，按 'd' 手动发送每日报告，按 'r' 重新加载配置，按 't' 发送测试消息，按 'm' 修改配置，按 'h' 修改每日报告时间。"
         while true; do
