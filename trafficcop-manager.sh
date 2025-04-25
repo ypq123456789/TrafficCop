@@ -80,6 +80,29 @@ install_pushplus_notifier() {
     read -p "按回车键继续..."
 }
 
+# 安装Server酱通知
+install_serverchan_notifier() {
+    echo -e "${CYAN}正在安装Server酱通知功能...${NC}"
+    # 检查serverchan_notifier.sh是否在仓库中，如果不在，使用本地的
+    if curl -s --head "$REPO_URL/serverchan_notifier.sh" | grep "200 OK" > /dev/null; then
+        install_script "serverchan_notifier.sh"
+    else
+        echo -e "${YELLOW}从仓库下载失败，使用本地文件...${NC}"
+        # 复制当前目录下的serverchan_notifier.sh到工作目录
+        if [ -f "serverchan_notifier.sh" ]; then
+            cp "serverchan_notifier.sh" "$WORK_DIR/serverchan_notifier.sh"
+            chmod +x "$WORK_DIR/serverchan_notifier.sh"
+        else
+            echo -e "${RED}本地serverchan_notifier.sh文件不存在！${NC}"
+            read -p "按回车键继续..."
+            return
+        fi
+    fi
+    run_script "$WORK_DIR/serverchan_notifier.sh"
+    echo -e "${GREEN}Server酱通知功能安装完成！${NC}"
+    read -p "按回车键继续..."
+}
+
 # 解除流量限制
 remove_traffic_limit() {
     echo -e "${CYAN}正在解除流量限制...${NC}"
@@ -95,9 +118,10 @@ view_logs() {
     echo "1) 流量监控日志"
     echo "2) Telegram通知日志"
     echo "3) PushPlus通知日志"
+    echo "4) Server酱通知日志"
     echo "0) 返回主菜单"
     
-    read -p "请选择要查看的日志类型 [0-3]: " log_choice
+    read -p "请选择要查看的日志类型 [0-4]: " log_choice
     
     case $log_choice in
         1)
@@ -121,6 +145,13 @@ view_logs() {
                 echo -e "${RED}PushPlus通知日志不存在${NC}"
             fi
             ;;
+        4)
+            if [ -f "$WORK_DIR/serverchan_notifier_cron.log" ]; then
+                tail -n 30 "$WORK_DIR/serverchan_notifier_cron.log"
+            else
+                echo -e "${RED}Server酱通知日志不存在${NC}"
+            fi
+            ;;
         0)
             return
             ;;
@@ -138,9 +169,10 @@ view_config() {
     echo "1) 流量监控配置"
     echo "2) Telegram通知配置"
     echo "3) PushPlus通知配置"
+    echo "4) Server酱通知配置"
     echo "0) 返回主菜单"
     
-    read -p "请选择要查看的配置类型 [0-3]: " config_choice
+    read -p "请选择要查看的配置类型 [0-4]: " config_choice
     
     case $config_choice in
         1)
@@ -162,6 +194,13 @@ view_config() {
                 cat "$WORK_DIR/pushplus_notifier_config.txt"
             else
                 echo -e "${RED}PushPlus通知配置不存在${NC}"
+            fi
+            ;;
+        4)
+            if [ -f "$WORK_DIR/serverchan_notifier_config.txt" ]; then
+                cat "$WORK_DIR/serverchan_notifier_config.txt"
+            else
+                echo -e "${RED}Server酱通知配置不存在${NC}"
             fi
             ;;
         0)
@@ -249,9 +288,10 @@ stop_all_services() {
     pkill -f traffic_monitor.sh 2>/dev/null || true
     pkill -f tg_notifier.sh 2>/dev/null || true
     pkill -f pushplus_notifier.sh 2>/dev/null || true
+    pkill -f serverchan_notifier.sh 2>/dev/null || true
     
     # 清理crontab
-    crontab -l | grep -v "traffic_monitor.sh" | grep -v "tg_notifier.sh" | grep -v "pushplus_notifier.sh" | crontab -
+    crontab -l | grep -v "traffic_monitor.sh" | grep -v "tg_notifier.sh" | grep -v "pushplus_notifier.sh" | grep -v "serverchan_notifier.sh" | crontab -
     
     echo -e "${GREEN}所有TrafficCop服务已停止${NC}"
     read -p "按回车键继续..."
@@ -266,11 +306,12 @@ show_main_menu() {
     echo -e "${YELLOW}1) 安装流量监控${NC}"
     echo -e "${YELLOW}2) 安装Telegram通知功能${NC}"
     echo -e "${YELLOW}3) 安装PushPlus通知功能${NC}"
-    echo -e "${YELLOW}4) 解除流量限制${NC}"
-    echo -e "${YELLOW}5) 查看日志${NC}"
-    echo -e "${YELLOW}6) 查看当前配置${NC}"
-    echo -e "${YELLOW}7) 使用预设配置${NC}"
-    echo -e "${YELLOW}8) 停止所有服务${NC}"
+    echo -e "${YELLOW}4) 安装Server酱通知功能${NC}"
+    echo -e "${YELLOW}5) 解除流量限制${NC}"
+    echo -e "${YELLOW}6) 查看日志${NC}"
+    echo -e "${YELLOW}7) 查看当前配置${NC}"
+    echo -e "${YELLOW}8) 使用预设配置${NC}"
+    echo -e "${YELLOW}9) 停止所有服务${NC}"
     echo -e "${YELLOW}0) 退出${NC}"
     echo -e "${PURPLE}====================================${NC}"
     echo ""
@@ -283,7 +324,7 @@ main() {
     
     while true; do
         show_main_menu
-        read -p "请选择操作 [0-8]: " choice
+        read -p "请选择操作 [0-9]: " choice
         
         case $choice in
             1)
@@ -296,18 +337,21 @@ main() {
                 install_pushplus_notifier
                 ;;
             4)
-                remove_traffic_limit
+                install_serverchan_notifier
                 ;;
             5)
-                view_logs
+                remove_traffic_limit
                 ;;
             6)
-                view_config
+                view_logs
                 ;;
             7)
-                use_preset_config
+                view_config
                 ;;
             8)
+                use_preset_config
+                ;;
+            9)
                 stop_all_services
                 ;;
             0)
