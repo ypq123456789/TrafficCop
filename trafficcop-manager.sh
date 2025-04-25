@@ -84,7 +84,7 @@ install_pushplus_notifier() {
 install_serverchan_notifier() {
     echo -e "${CYAN}正在安装Server酱通知功能...${NC}"
     # 检查serverchan_notifier.sh是否在仓库中，如果不在，使用本地的
-    if curl -s --head "$REPO_URL/serverchan_notifier.sh" | grep "200 OK" > /dev/null; then
+    if curl -s --head "$REPO_URL/serverchan_notifier.sh" | grep "HTTP/2 200\|HTTP/1.1 200" > /dev/null; then
         install_script "serverchan_notifier.sh"
     else
         echo -e "${YELLOW}从仓库下载失败，使用本地文件...${NC}"
