@@ -6,6 +6,8 @@
 
 [NodeSupport](https://github.com/NodeSeekDev/NodeSupport)赞助了本项目
 
+[VTEXS](https://console.vtexs.com/?affid=1554)赞助了本项目
+
 ## 注意事项
 
 1. 本脚本是基于vnstat的流量统计，vnstat只会在安装后开始统计流量!
