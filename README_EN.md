@@ -1,6 +1,7 @@
 # TrafficCop - Smart Traffic Monitoring and Limiting Script
 English | [中文](README.md)
 
+[VTEXS](https://console.vtexs.com/?affid=1554) sponsored this project.
 
 ## Important Notes
 
