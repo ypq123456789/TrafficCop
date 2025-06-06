@@ -8,6 +8,8 @@
 
 [VTEXS](https://console.vtexs.com/?affid=1554)赞助了本项目
 
+[![Powered by DartNode](https://dartnode.com/branding/DN-Open-Source-sm.png)](https://dartnode.com "Powered by DartNode - Free VPS for Open Source")
+
 ## 注意事项
 
 1. 本脚本是基于vnstat的流量统计，vnstat只会在安装后开始统计流量!
