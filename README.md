@@ -1,6 +1,7 @@
 # TrafficCop - 智能流量监控与限制脚本
 [English](README_EN.md) | 中文
 
+[netjett](https://netjett.com/aff.php?aff=115)赞助了本项目
 
 [![image](https://github.com/user-attachments/assets/b1712474-1c08-49f9-a252-43caa33809d1)](https://yxvm.com/)
 
