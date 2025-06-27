@@ -3,13 +3,13 @@
 
 [netjett](https://netjett.com/aff.php?aff=115)赞助了本项目
 
-[![image](https://github.com/user-attachments/assets/b1712474-1c08-49f9-a252-43caa33809d1)](https://yxvm.com/)
+[![image](https://github.com/user-attachments/assets/b1712474-1c08-49f9-a252-43caa33809d1)](https://yxvm.com/aff.php?aff=718)
 
 [NodeSupport](https://github.com/NodeSeekDev/NodeSupport)赞助了本项目
 
 [VTEXS](https://console.vtexs.com/?affid=1554)赞助了本项目
 
-[![Powered by DartNode](https://dartnode.com/branding/DN-Open-Source-sm.png)](https://dartnode.com "Powered by DartNode - Free VPS for Open Source")
+[![Powered by DartNode](https://dartnode.com/branding/DN-Open-Source-sm.png)](https://dartnode.com?aff=SwiftPuppy719	 "Powered by DartNode - Free VPS for Open Source")
 
 ## 注意事项
 
