@@ -258,14 +258,7 @@ get_port_traffic_summary() {
             # 格式化显示（确保前导零）
             total_gb=$(printf "%.2f" $total_gb)
             
-            # 计算百分比
-            local percentage=0
-            if [ -n "$limit" ] && [ "$limit" != "null" ] && (( $(echo "$limit > 0" | bc -l) )); then
-                percentage=$(echo "scale=2; ($total_gb / $limit) * 100" | bc)
-                percentage=$(printf "%.2f" $percentage)
-            fi
-            
-            summary="${summary}%0A✓ 端口 ${port}: ${total_gb}GB / ${limit}GB (${percentage}%)"
+            summary="${summary}%0A✓ 端口 ${port}: ${total_gb}GB / ${limit}GB"
             displayed=$((displayed + 1))
         fi
     done
@@ -472,13 +465,12 @@ daily_report() {
                             local port_usage_formatted=$(printf "%.2f" "$port_usage" 2>/dev/null || echo "$port_usage")
                             local port_limit_formatted=$(printf "%.2f" "$port_limit" 2>/dev/null || echo "$port_limit")
                             
-                            # 计算使用百分比
+                            # 根据使用率选择表情
                             local port_percentage=0
                             if [ -n "$port_limit" ] && [ "$port_limit" != "null" ] && (( $(echo "$port_limit > 0" | bc -l 2>/dev/null || echo "0") )); then
                                 port_percentage=$(printf "%.2f" $(echo "scale=2; ($port_usage / $port_limit) * 100" | bc 2>/dev/null || echo "0"))
                             fi
                             
-                            # 根据使用率选择表情
                             local status_icon="✅"
                             if (( $(echo "$port_percentage >= 90" | bc -l 2>/dev/null || echo "0") )); then
                                 status_icon="🔴"
@@ -486,7 +478,7 @@ daily_report() {
                                 status_icon="🟡"
                             fi
                             
-                            message="${message}%0A${status_icon} 端口 ${port} (${port_desc})：${port_usage_formatted}GB / ${port_limit_formatted}GB (${port_percentage}%)"
+                            message="${message}%0A${status_icon} 端口 ${port} (${port_desc})：${port_usage_formatted}GB / ${port_limit_formatted}GB"
                         fi
                         
                         i=$((i + 1))
