@@ -611,19 +611,41 @@ port_config_wizard_with_port() {
     echo -e "${YELLOW}提示：所有选项可直接回车保持原值${NC}"
     echo ""
     
-    port="$preset_port"
+    local old_port="$preset_port"
     
     # 获取现有配置
-    local config=$(get_port_config "$port")
+    local config=$(get_port_config "$old_port")
     local old_desc=$(echo "$config" | jq -r '.description')
     local old_limit=$(echo "$config" | jq -r '.traffic_limit')
     local old_tolerance=$(echo "$config" | jq -r '.traffic_tolerance')
+    local old_mode=$(echo "$config" | jq -r '.limit_mode')
+    local old_interface=$(echo "$config" | jq -r '.main_interface')
     
     echo -e "${CYAN}当前配置：${NC}"
-    echo "  端口: $port"
+    echo "  端口: $old_port"
     echo "  描述: $old_desc"
     echo "  限制: ${old_limit}GB (容错: ${old_tolerance}GB)"
+    echo "  模式: $old_mode"
+    echo "  接口: $old_interface"
     echo ""
+    
+    # 端口号（允许修改）
+    while true; do
+        read -p "端口号 [回车=$old_port]: " port
+        if [ -z "$port" ]; then
+            port="$old_port"
+            break
+        elif [[ "$port" =~ ^[0-9]+$ ]] && [ "$port" -ge 1 ] && [ "$port" -le 65535 ]; then
+            # 检查新端口号是否与其他端口冲突（排除当前端口）
+            if [ "$port" != "$old_port" ] && port_exists "$port"; then
+                echo -e "${RED}端口 $port 已存在配置！${NC}"
+            else
+                break
+            fi
+        else
+            echo -e "${RED}无效的端口号（1-65535）${NC}"
+        fi
+    done
     
     # 端口描述
     read -p "端口描述 [回车=$old_desc]: " description
@@ -675,12 +697,32 @@ port_config_wizard_with_port() {
     # 保存配置
     echo ""
     echo -e "${CYAN}正在更新配置...${NC}"
+    
+    # 如果端口号改变了，需要先删除旧端口配置和限速
+    if [ "$port" != "$old_port" ]; then
+        echo -e "${YELLOW}端口号已改变 ($old_port -> $port)，正在迁移配置...${NC}"
+        
+        # 删除旧端口的iptables规则和tc限速
+        unblock_port "$old_port"
+        remove_tc_limit "$old_port" "$old_interface"
+        
+        # 删除旧端口配置
+        delete_port_config "$old_port"
+        
+        echo -e "${GREEN}✓ 已清理旧端口 $old_port 的配置和限速${NC}"
+    fi
+    
+    # 添加新配置（如果端口未变，会自动覆盖）
     add_port_config "$port" "$description" "$traffic_limit" "$traffic_tolerance" \
         "$traffic_mode" "$traffic_period" "$period_start_day" "$limit_speed" \
         "$main_interface" "$limit_mode"
     
     echo ""
-    echo -e "${GREEN}✓ 端口 $port 配置已更新！${NC}"
+    if [ "$port" != "$old_port" ]; then
+        echo -e "${GREEN}✓ 端口配置已从 $old_port 迁移到 $port！${NC}"
+    else
+        echo -e "${GREEN}✓ 端口 $port 配置已更新！${NC}"
+    fi
     echo ""
     read -p "按回车键继续..." dummy
 }
@@ -708,7 +750,12 @@ remove_port_limit() {
         if [[ "$confirm" = "y" || "$confirm" = "Y" ]]; then
             remove_all_limits
             echo -e "${GREEN}已解除所有端口限速${NC}"
+        else
+            echo -e "${YELLOW}已取消操作${NC}"
         fi
+        echo ""
+        read -p "按回车键继续..." dummy
+        return
     # 判断是否为纯数字（可能是序号或端口号）
     elif [[ "$del_input" =~ ^[0-9]+$ ]]; then
         # 获取端口总数
