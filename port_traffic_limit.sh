@@ -1,7 +1,11 @@
 #!/bin/bash
 
-# Port Traffic Limit - 端口流量限制脚本 v2.0
+# Port Traffic Limit - 端口流量限制脚本 v2.1
 # 功能：为多个端口设置独立的流量限制（支持JSON配置）
+# 最后更新：2025-10-19 00:15
+
+SCRIPT_VERSION="2.1"
+LAST_UPDATE="2025-10-19 00:15"
 
 WORK_DIR="/root/TrafficCop"
 PORT_CONFIG_FILE="$WORK_DIR/ports_traffic_config.json"
@@ -21,7 +25,7 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 
 echo "-----------------------------------------------------" | tee -a "$PORT_LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') Port Traffic Limit 版本：2.0.0 (Multi-Port)" | tee -a "$PORT_LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') Port Traffic Limit v${SCRIPT_VERSION} (最后更新: ${LAST_UPDATE})" | tee -a "$PORT_LOG_FILE"
 
 # 检查并安装jq
 check_and_install_jq() {
@@ -395,7 +399,12 @@ port_config_wizard() {
             limit_mode=${LIMIT_MODE:-"tc"}
             
             echo -e "${GREEN}✓ 已同步机器总流量配置${NC}"
-            echo -e "${CYAN}  统计模式: $traffic_mode | 周期: $traffic_period | 限制模式: $limit_mode${NC}"
+            echo -e "${CYAN}  统计模式: $traffic_mode | 周期: $traffic_period (每月${period_start_day}日起) | 限制模式: $limit_mode${NC}"
+            if [ "$limit_mode" = "tc" ]; then
+                echo -e "${CYAN}  限速值: ${limit_speed}kbit/s | 网络接口: $main_interface${NC}"
+            else
+                echo -e "${CYAN}  网络接口: $main_interface${NC}"
+            fi
         else
             # 机器配置不存在，使用默认值
             traffic_mode="total"
@@ -406,7 +415,8 @@ port_config_wizard() {
             limit_mode="tc"
             
             echo -e "${YELLOW}! 未找到机器配置，使用默认配置${NC}"
-            echo -e "${CYAN}  统计模式: total | 周期: monthly | 限制模式: tc${NC}"
+            echo -e "${CYAN}  统计模式: total | 周期: monthly (每月1日起) | 限制模式: tc${NC}"
+            echo -e "${CYAN}  限速值: 20kbit/s | 网络接口: $main_interface${NC}"
         fi
     else
         # 自定义配置
@@ -766,7 +776,9 @@ view_crontab_status() {
 interactive_menu() {
     while true; do
         clear
-        echo -e "${CYAN}========== 端口流量限制管理 v2.0 ==========${NC}"
+        echo -e "${CYAN}========== 端口流量限制管理 v${SCRIPT_VERSION} ==========${NC}"
+        echo -e "${YELLOW}最后更新: ${LAST_UPDATE}${NC}"
+        echo ""
         echo "1) 添加端口配置"
         echo "2) 修改端口配置"
         echo "3) 解除端口限速"
