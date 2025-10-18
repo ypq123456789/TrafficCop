@@ -1,4 +1,8 @@
 #!/bin/bash
+
+# 设置 PATH 确保 cron 环境能找到所有命令
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
 WORK_DIR="/root/TrafficCop"
 CONFIG_FILE="$WORK_DIR/traffic_monitor_config.txt"
 LOG_FILE="$WORK_DIR/traffic_monitor.log"
