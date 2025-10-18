@@ -103,6 +103,27 @@ install_serverchan_notifier() {
     read -p "按回车键继续..."
 }
 
+# 安装端口流量限制
+install_port_traffic_limit() {
+    echo -e "${CYAN}正在安装端口流量限制功能...${NC}"
+    install_script "port_traffic_limit.sh"
+    run_script "$WORK_DIR/port_traffic_limit.sh"
+    echo -e "${GREEN}端口流量限制功能安装完成！${NC}"
+    read -p "按回车键继续..."
+}
+
+# 解除端口流量限制
+remove_port_traffic_limit() {
+    echo -e "${CYAN}正在解除端口流量限制...${NC}"
+    if [ -f "$WORK_DIR/port_traffic_limit.sh" ]; then
+        bash "$WORK_DIR/port_traffic_limit.sh" --remove
+        echo -e "${GREEN}端口流量限制已解除！${NC}"
+    else
+        echo -e "${RED}端口流量限制脚本不存在${NC}"
+    fi
+    read -p "按回车键继续..."
+}
+
 # 解除流量限制
 remove_traffic_limit() {
     echo -e "${CYAN}正在解除流量限制...${NC}"
@@ -119,9 +140,10 @@ view_logs() {
     echo "2) Telegram通知日志"
     echo "3) PushPlus通知日志"
     echo "4) Server酱通知日志"
+    echo "5) 端口流量监控日志"
     echo "0) 返回主菜单"
     
-    read -p "请选择要查看的日志类型 [0-4]: " log_choice
+    read -p "请选择要查看的日志类型 [0-5]: " log_choice
     
     case $log_choice in
         1)
@@ -152,6 +174,13 @@ view_logs() {
                 echo -e "${RED}Server酱通知日志不存在${NC}"
             fi
             ;;
+        5)
+            if [ -f "$WORK_DIR/port_traffic_monitor.log" ]; then
+                tail -n 30 "$WORK_DIR/port_traffic_monitor.log"
+            else
+                echo -e "${RED}端口流量监控日志不存在${NC}"
+            fi
+            ;;
         0)
             return
             ;;
@@ -170,9 +199,10 @@ view_config() {
     echo "2) Telegram通知配置"
     echo "3) PushPlus通知配置"
     echo "4) Server酱通知配置"
+    echo "5) 端口流量监控配置"
     echo "0) 返回主菜单"
     
-    read -p "请选择要查看的配置类型 [0-4]: " config_choice
+    read -p "请选择要查看的配置类型 [0-5]: " config_choice
     
     case $config_choice in
         1)
@@ -201,6 +231,13 @@ view_config() {
                 cat "$WORK_DIR/serverchan_notifier_config.txt"
             else
                 echo -e "${RED}Server酱通知配置不存在${NC}"
+            fi
+            ;;
+        5)
+            if [ -f "$WORK_DIR/port_traffic_config.txt" ]; then
+                cat "$WORK_DIR/port_traffic_config.txt"
+            else
+                echo -e "${RED}端口流量监控配置不存在${NC}"
             fi
             ;;
         0)
@@ -289,9 +326,10 @@ stop_all_services() {
     pkill -f tg_notifier.sh 2>/dev/null || true
     pkill -f pushplus_notifier.sh 2>/dev/null || true
     pkill -f serverchan_notifier.sh 2>/dev/null || true
+    pkill -f port_traffic_monitor.sh 2>/dev/null || true
     
     # 清理crontab
-    crontab -l | grep -v "traffic_monitor.sh" | grep -v "tg_notifier.sh" | grep -v "pushplus_notifier.sh" | grep -v "serverchan_notifier.sh" | crontab -
+    crontab -l | grep -v "traffic_monitor.sh" | grep -v "tg_notifier.sh" | grep -v "pushplus_notifier.sh" | grep -v "serverchan_notifier.sh" | grep -v "port_traffic_monitor.sh" | crontab -
     
     echo -e "${GREEN}所有TrafficCop服务已停止${NC}"
     read -p "按回车键继续..."
@@ -301,17 +339,19 @@ stop_all_services() {
 show_main_menu() {
     clear
     echo -e "${PURPLE}====================================${NC}"
-    echo -e "${PURPLE}     TrafficCop 管理工具 v1.0      ${NC}"
+    echo -e "${PURPLE}     TrafficCop 管理工具 v1.1      ${NC}"
     echo -e "${PURPLE}====================================${NC}"
     echo -e "${YELLOW}1) 安装流量监控${NC}"
     echo -e "${YELLOW}2) 安装Telegram通知功能${NC}"
     echo -e "${YELLOW}3) 安装PushPlus通知功能${NC}"
     echo -e "${YELLOW}4) 安装Server酱通知功能${NC}"
-    echo -e "${YELLOW}5) 解除流量限制${NC}"
-    echo -e "${YELLOW}6) 查看日志${NC}"
-    echo -e "${YELLOW}7) 查看当前配置${NC}"
-    echo -e "${YELLOW}8) 使用预设配置${NC}"
-    echo -e "${YELLOW}9) 停止所有服务${NC}"
+    echo -e "${YELLOW}5) 安装端口流量限制${NC}"
+    echo -e "${YELLOW}6) 解除流量限制${NC}"
+    echo -e "${YELLOW}7) 解除端口流量限制${NC}"
+    echo -e "${YELLOW}8) 查看日志${NC}"
+    echo -e "${YELLOW}9) 查看当前配置${NC}"
+    echo -e "${YELLOW}10) 使用预设配置${NC}"
+    echo -e "${YELLOW}11) 停止所有服务${NC}"
     echo -e "${YELLOW}0) 退出${NC}"
     echo -e "${PURPLE}====================================${NC}"
     echo ""
@@ -324,7 +364,7 @@ main() {
     
     while true; do
         show_main_menu
-        read -p "请选择操作 [0-9]: " choice
+        read -p "请选择操作 [0-11]: " choice
         
         case $choice in
             1)
@@ -340,18 +380,24 @@ main() {
                 install_serverchan_notifier
                 ;;
             5)
-                remove_traffic_limit
+                install_port_traffic_limit
                 ;;
             6)
-                view_logs
+                remove_traffic_limit
                 ;;
             7)
-                view_config
+                remove_port_traffic_limit
                 ;;
             8)
-                use_preset_config
+                view_logs
                 ;;
             9)
+                view_config
+                ;;
+            10)
+                use_preset_config
+                ;;
+            11)
                 stop_all_services
                 ;;
             0)

@@ -68,11 +68,14 @@ bash <(curl -sL https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/t
 1. 安装流量监控 - 下载并安装基础的流量监控功能
 2. 安装Telegram通知功能 - 添加Telegram推送通知
 3. 安装PushPlus通知功能 - 添加PushPlus推送通知
-4. 解除流量限制 - 一键解除当前的流量限制
-5. 查看日志 - 查看各种服务的日志文件
-6. 查看当前配置 - 查看各种服务的配置文件
-7. 使用预设配置 - 应用针对不同服务商优化的预设配置
-8. 停止所有服务 - 停止所有TrafficCop相关服务
+4. 安装Server酱通知功能 - 添加Server酱推送通知
+5. 安装端口流量限制 - 为指定端口设置独立的流量限制（新功能）
+6. 解除流量限制 - 一键解除当前的流量限制
+7. 解除端口流量限制 - 解除指定端口的流量限制
+8. 查看日志 - 查看各种服务的日志文件
+9. 查看当前配置 - 查看各种服务的配置文件
+10. 使用预设配置 - 应用针对不同服务商优化的预设配置
+11. 停止所有服务 - 停止所有TrafficCop相关服务
 
 #### 优势
 1. 一站式管理 - 用户只需记住一个命令，即可管理所有TrafficCop功能
@@ -221,6 +224,127 @@ sudo pkill -f pushplus_notifier.sh && crontab -l | grep -v "pushplus_notifier.sh
 
 推送示意如下：
 ![Screenshot_20240707_022328_com tencent mm](https://github.com/ypq123456789/TrafficCop/assets/114487221/c32c1ba1-1082-4f01-a26c-25608e9e3c29)
+
+## 端口流量限制功能（新增）
+
+TrafficCop 现在支持为指定端口设置独立的流量限制！这个功能非常适合需要对特定服务（如Web服务器、代理服务等）进行精细化流量管理的场景。
+
+### 功能特点
+
+1. **独立端口流量统计** - 使用iptables精确统计指定端口的入站和出站流量
+2. **智能配置同步** - 自动同步机器配置，也支持自定义配置
+3. **灵活的限制策略** - 支持两种限制模式：
+   - TC模式：对端口流量进行限速
+   - 阻断模式：超限后完全阻断端口流量
+4. **配置验证** - 确保端口流量限制不超过机器总流量限制
+5. **自动化管理** - 支持定时任务自动监控和限制
+
+### 使用逻辑
+
+#### 场景一：机器未限制流量
+当机器尚未配置流量限制时，为指定端口设置流量限制会：
+1. 创建端口流量配置
+2. 询问是否同步配置到机器流量限制
+3. 如果选择同步，端口配置将自动应用到机器级别
+
+#### 场景二：机器已限制流量
+当机器已配置流量限制时，为指定端口设置流量限制会：
+1. 检查端口流量限制是否小于等于机器流量限制
+2. 默认继承机器的其他配置（统计模式、周期、限制模式等）
+3. 允许自定义配置以满足特殊需求
+
+### 安装和配置
+
+#### 方法一：通过管理器脚本（推荐）
+```bash
+bash <(curl -sL https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/trafficcop-manager.sh)
+```
+选择 "5) 安装端口流量限制"
+
+#### 方法二：直接运行脚本
+```bash
+sudo mkdir -p /root/TrafficCop && \
+curl -fsSL "https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/port_traffic_limit.sh" | tr -d '\r' > /root/TrafficCop/port_traffic_limit.sh && \
+chmod +x /root/TrafficCop/port_traffic_limit.sh && \
+bash /root/TrafficCop/port_traffic_limit.sh
+```
+
+### 配置选项
+
+在配置过程中，您需要提供：
+
+1. **端口号** - 要限制流量的端口（1-65535）
+2. **流量限制** - 端口允许使用的最大流量（GB）
+3. **容错范围** - 触发限制前的缓冲区（GB）
+4. **配置方式** - 选择使用机器配置或自定义配置
+
+如果选择自定义配置，还需要设置：
+- 流量统计模式（出站/入站/总计/最大值）
+- 统计周期（月/季/年）
+- 周期起始日
+- 限制模式（TC限速/阻断）
+- 限速值（仅TC模式）
+
+### 相关命令
+
+#### 查看端口流量监控日志
+```bash
+sudo tail -f -n 30 /root/TrafficCop/port_traffic_monitor.log
+```
+
+#### 查看端口流量配置
+```bash
+sudo cat /root/TrafficCop/port_traffic_config.txt
+```
+
+#### 手动运行端口流量检查
+```bash
+sudo /root/TrafficCop/port_traffic_monitor.sh --run
+```
+
+#### 解除端口流量限制
+```bash
+sudo /root/TrafficCop/port_traffic_limit.sh --remove
+```
+
+#### 停止端口流量监控
+```bash
+sudo pkill -f port_traffic_monitor.sh && \
+crontab -l | grep -v "port_traffic_monitor.sh" | crontab -
+```
+
+### 使用示例
+
+假设您的机器有1TB的总流量限制，而您想为80端口（Web服务）单独设置200GB的流量限制：
+
+1. 运行端口流量限制脚本
+2. 输入端口号：80
+3. 输入流量限制：200
+4. 输入容错范围：10（当使用达到190GB时开始限制）
+5. 选择使用机器配置（推荐）或自定义配置
+6. 脚本会自动设置定时任务，每分钟检查一次端口流量
+
+当80端口的流量达到190GB时：
+- **TC模式**：端口速度将被限制到设定值（如20kbit/s）
+- **阻断模式**：端口将被完全阻断，无法接收或发送数据
+
+### 技术原理
+
+端口流量限制功能使用以下技术实现：
+
+1. **iptables** - 创建规则统计特定端口的流量
+2. **tc (Traffic Control)** - 实现端口级别的流量控制和限速
+3. **HTB (Hierarchical Token Bucket)** - 分层流量控制，为不同端口分配不同的带宽
+4. **Packet Marking** - 使用mangle表标记数据包，实现精确的流量分类
+
+### 注意事项
+
+1. 端口流量限制依赖iptables，请确保系统已安装
+2. 端口流量统计从设置时开始，不包含历史流量
+3. 建议先运行主流量监控脚本，以确保依赖已安装
+4. TC模式可能对端口性能有轻微影响
+5. 阻断模式会完全禁止端口通信，请谨慎使用
+6. 目前仅支持单端口配置，如需多端口请多次运行脚本（多端口支持正在开发中）
 
 ## 预设配置
 ### 阿里云CDT 200G：
