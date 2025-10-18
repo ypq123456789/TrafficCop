@@ -166,14 +166,54 @@ initial_config() {
 # 发送限速警告
 send_throttle_warning() {
     local url="https://api.telegram.org/bot${BOT_TOKEN}/sendMessage"
-    local message="⚠️ [${MACHINE_NAME}]限速警告：流量已达到限制，已启动 TC 模式限速。"
+    local port_summary=$(get_port_traffic_summary)
+    local message="⚠️ [${MACHINE_NAME}]限速警告：流量已达到限制，已启动 TC 模式限速。${port_summary}"
     curl -s -X POST "$url" -d "chat_id=$CHAT_ID" -d "text=$message"
+}
+
+# 获取端口流量摘要
+get_port_traffic_summary() {
+    local ports_config_file="$WORK_DIR/ports_traffic_config.json"
+    local summary=""
+    
+    if [ -f "$ports_config_file" ] && [ -f "$WORK_DIR/view_port_traffic.sh" ]; then
+        local port_data=$(bash "$WORK_DIR/view_port_traffic.sh" --json 2>/dev/null)
+        
+        if [ -n "$port_data" ]; then
+            local port_count=$(echo "$port_data" | jq -r '.ports | length' 2>/dev/null)
+            
+            if [ "$port_count" -gt 0 ]; then
+                summary="%0A%0A🔌 端口流量："
+                
+                local i=0
+                while [ $i -lt $port_count ] && [ $i -lt 5 ]; do
+                    local port=$(echo "$port_data" | jq -r ".ports[$i].port" 2>/dev/null)
+                    local port_usage=$(echo "$port_data" | jq -r ".ports[$i].usage" 2>/dev/null)
+                    local port_limit=$(echo "$port_data" | jq -r ".ports[$i].limit" 2>/dev/null)
+                    
+                    if [ -n "$port" ] && [ "$port" != "null" ]; then
+                        local port_percentage=$(echo "scale=0; ($port_usage / $port_limit) * 100" | bc 2>/dev/null)
+                        summary="${summary}%0A端口${port}: ${port_usage}/${port_limit}GB (${port_percentage}%)"
+                    fi
+                    
+                    i=$((i + 1))
+                done
+                
+                if [ "$port_count" -gt 5 ]; then
+                    summary="${summary}%0A...及其他$((port_count - 5))个端口"
+                fi
+            fi
+        fi
+    fi
+    
+    echo "$summary"
 }
 
 # 发送限速解除通知
 send_throttle_lifted() {
     local url="https://api.telegram.org/bot${BOT_TOKEN}/sendMessage"
-    local message="✅ [${MACHINE_NAME}]限速解除：流量已恢复正常，所有限制已清除。"
+    local port_summary=$(get_port_traffic_summary)
+    local message="✅ [${MACHINE_NAME}]限速解除：流量已恢复正常，所有限制已清除。${port_summary}"
     curl -s -X POST "$url" -d "chat_id=$CHAT_ID" -d "text=$message"
 }
 
@@ -187,7 +227,8 @@ send_new_cycle_notification() {
 # 发送关机警告
 send_shutdown_warning() {
     local url="https://api.telegram.org/bot${BOT_TOKEN}/sendMessage"
-    local message="🚨 [${MACHINE_NAME}]关机警告：流量已达到严重限制，系统将在 1 分钟后关机！"
+    local port_summary=$(get_port_traffic_summary)
+    local message="🚨 [${MACHINE_NAME}]关机警告：流量已达到严重限制，系统将在 1 分钟后关机！${port_summary}"
     curl -s -X POST "$url" -d "chat_id=$CHAT_ID" -d "text=$message"
 }
 
@@ -323,8 +364,58 @@ daily_report() {
         return 1
     fi
 
-    local message="📊 [${MACHINE_NAME}]每日流量报告%0A当前使用流量：$current_usage%0A流量限制：$limit"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') : 准备发送消息: $message"| tee -a "$CRON_LOG"
+    # 构建基础消息
+    local message="📊 [${MACHINE_NAME}]每日流量报告%0A%0A🖥️ 机器总流量：%0A当前使用：$current_usage%0A流量限制：$limit"
+    
+    # 检查是否有端口流量配置
+    local ports_config_file="$WORK_DIR/ports_traffic_config.json"
+    if [ -f "$ports_config_file" ] && [ -f "$WORK_DIR/view_port_traffic.sh" ]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 检测到端口流量配置，添加端口信息"| tee -a "$CRON_LOG"
+        
+        # 获取端口流量信息（JSON格式）
+        local port_data=$(bash "$WORK_DIR/view_port_traffic.sh" --json 2>/dev/null)
+        
+        if [ -n "$port_data" ]; then
+            local port_count=$(echo "$port_data" | jq -r '.ports | length' 2>/dev/null)
+            
+            if [ "$port_count" -gt 0 ]; then
+                message="${message}%0A%0A🔌 端口流量详情："
+                
+                # 遍历每个端口
+                local i=0
+                while [ $i -lt $port_count ]; do
+                    local port=$(echo "$port_data" | jq -r ".ports[$i].port" 2>/dev/null)
+                    local port_desc=$(echo "$port_data" | jq -r ".ports[$i].description" 2>/dev/null)
+                    local port_usage=$(echo "$port_data" | jq -r ".ports[$i].usage" 2>/dev/null)
+                    local port_limit=$(echo "$port_data" | jq -r ".ports[$i].limit" 2>/dev/null)
+                    
+                    if [ -n "$port" ] && [ "$port" != "null" ]; then
+                        # 计算使用百分比
+                        local port_percentage=0
+                        if (( $(echo "$port_limit > 0" | bc -l 2>/dev/null) )); then
+                            port_percentage=$(echo "scale=1; ($port_usage / $port_limit) * 100" | bc 2>/dev/null)
+                        fi
+                        
+                        # 根据使用率选择表情
+                        local status_icon="✅"
+                        if (( $(echo "$port_percentage >= 90" | bc -l 2>/dev/null) )); then
+                            status_icon="🔴"
+                        elif (( $(echo "$port_percentage >= 75" | bc -l 2>/dev/null) )); then
+                            status_icon="🟡"
+                        fi
+                        
+                        message="${message}%0A${status_icon} 端口 ${port} (${port_desc})：${port_usage}GB / ${port_limit}GB (${port_percentage}%)"
+                    fi
+                    
+                    i=$((i + 1))
+                done
+                
+                echo "$(date '+%Y-%m-%d %H:%M:%S') : 已添加 $port_count 个端口的流量信息"| tee -a "$CRON_LOG"
+            fi
+        fi
+    fi
+    
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : 准备发送消息"| tee -a "$CRON_LOG"
 
     local url="https://api.telegram.org/bot${BOT_TOKEN}/sendMessage"
     local response

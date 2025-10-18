@@ -335,6 +335,30 @@ stop_all_services() {
     read -p "按回车键继续..."
 }
 
+# 查看端口流量
+view_port_traffic() {
+    echo -e "${CYAN}正在查看端口流量...${NC}"
+    if [ -f "$WORK_DIR/view_port_traffic.sh" ]; then
+        bash "$WORK_DIR/view_port_traffic.sh"
+    else
+        echo -e "${RED}端口流量查看脚本不存在！${NC}"
+        echo -e "${YELLOW}请先安装端口流量限制功能${NC}"
+    fi
+    read -p "按回车键继续..."
+}
+
+# 管理端口配置
+manage_port_config() {
+    echo -e "${CYAN}正在打开端口配置管理...${NC}"
+    if [ -f "$WORK_DIR/port_traffic_limit.sh" ]; then
+        bash "$WORK_DIR/port_traffic_limit.sh"
+    else
+        echo -e "${RED}端口流量限制脚本不存在！${NC}"
+        echo -e "${YELLOW}请先安装端口流量限制功能${NC}"
+    fi
+    read -p "按回车键继续..."
+}
+
 # 显示主菜单
 show_main_menu() {
     clear
@@ -352,6 +376,8 @@ show_main_menu() {
     echo -e "${YELLOW}9) 查看当前配置${NC}"
     echo -e "${YELLOW}10) 使用预设配置${NC}"
     echo -e "${YELLOW}11) 停止所有服务${NC}"
+    echo -e "${YELLOW}12) 查看端口流量${NC}"
+    echo -e "${YELLOW}13) 管理端口配置${NC}"
     echo -e "${YELLOW}0) 退出${NC}"
     echo -e "${PURPLE}====================================${NC}"
     echo ""
@@ -364,7 +390,7 @@ main() {
     
     while true; do
         show_main_menu
-        read -p "请选择操作 [0-11]: " choice
+        read -p "请选择操作 [0-13]: " choice
         
         case $choice in
             1)
@@ -399,6 +425,12 @@ main() {
                 ;;
             11)
                 stop_all_services
+                ;;
+            12)
+                view_port_traffic
+                ;;
+            13)
+                manage_port_config
                 ;;
             0)
                 echo -e "${GREEN}感谢使用TrafficCop管理工具！${NC}"

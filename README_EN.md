@@ -59,13 +59,15 @@ bash <(curl -sL https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/t
 2. Install Telegram Notifications - Add Telegram push notifications
 3. Install PushPlus Notifications - Add PushPlus push notifications
 4. Install ServerChan Notifications - Add ServerChan push notifications
-5. Install Port Traffic Limit - Set independent traffic limits for specific ports (NEW)
+5. Install Port Traffic Limit - Set independent traffic limits for multiple ports (Multi-Port 2.0)
 6. Remove Traffic Limits - Instantly remove current traffic restrictions
 7. Remove Port Traffic Limits - Remove traffic limits for specific ports
 8. View Logs - View log files for various services
 9. View Current Configuration - View configuration files for various services
 10. Use Preset Configurations - Apply optimized preset configurations for different service providers
 11. Stop All Services - Stop all TrafficCop-related services
+12. View Port Traffic - Real-time view of all configured port traffic usage (NEW 2.0)
+13. Manage Port Configuration - Interactive menu to add/modify/delete port configurations (NEW 2.0)
 
 #### Advantages
 1. One-stop management - Users only need to remember one command to manage all TrafficCop functions
@@ -214,19 +216,22 @@ sudo pkill -f pushplus_notifier.sh && crontab -l | grep -v "pushplus_notifier.sh
 Push notification example:
 ![Screenshot_20240707_022328_com tencent mm](https://github.com/ypq123456789/TrafficCop/assets/114487221/c32c1ba1-1082-4f01-a26c-25608e9e3c29)
 
-## Port Traffic Limit Feature (NEW)
+## Port Traffic Limit Feature 2.0 (NEW - Multi-Port Support)
 
-TrafficCop now supports setting independent traffic limits for specific ports! This feature is ideal for scenarios requiring fine-grained traffic management for specific services (such as web servers, proxy services, etc.).
+TrafficCop now supports setting independent traffic limits for **multiple ports** simultaneously! This feature is ideal for scenarios requiring fine-grained traffic management for specific services (such as web servers, proxy services, SSH, etc.).
 
 ### Features
 
-1. **Independent Port Traffic Statistics** - Use iptables to accurately track inbound and outbound traffic for specific ports
-2. **Smart Configuration Sync** - Automatically sync machine configuration, also supports custom configuration
-3. **Flexible Limit Strategies** - Supports two limit modes:
+1. **Multi-Port Traffic Management** - Monitor and limit traffic for multiple ports simultaneously, using JSON format for configuration storage
+2. **Independent Port Traffic Statistics** - Use iptables to accurately track inbound and outbound traffic for each port
+3. **Real-Time Traffic Viewing** - Colorful visual interface displaying all ports' traffic usage with progress bars
+4. **Smart Configuration Sync** - Automatically sync machine configuration, also supports custom configuration
+5. **Flexible Limit Strategies** - Supports two limit modes:
    - TC Mode: Throttle port traffic speed
    - Block Mode: Completely block port traffic when limit exceeded
-4. **Configuration Validation** - Ensures port traffic limit does not exceed total machine traffic limit
-5. **Automated Management** - Supports scheduled tasks for automatic monitoring and limiting
+6. **Configuration Validation** - Ensures port traffic limit does not exceed total machine traffic limit
+7. **Push Notification Integration** - All push services (Telegram, PushPlus, ServerChan) automatically include port traffic information
+8. **Automated Management** - Supports scheduled tasks for automatic monitoring and limiting
 
 ### Usage Logic
 
@@ -276,46 +281,104 @@ If choosing custom configuration, you also need to set:
 
 ### Related Commands
 
-#### View Port Traffic Monitor Log
+#### View All Port Traffic (Recommended)
 ```bash
-sudo tail -f -n 30 /root/TrafficCop/port_traffic_monitor.log
+# Normal view
+sudo bash /root/TrafficCop/view_port_traffic.sh
+
+# Real-time monitoring (refresh every 5 seconds)
+sudo bash /root/TrafficCop/view_port_traffic.sh --realtime
+
+# Export JSON report
+sudo bash /root/TrafficCop/view_port_traffic.sh --export
 ```
 
-#### View Port Traffic Configuration
+#### Manage Port Configuration
 ```bash
-sudo cat /root/TrafficCop/port_traffic_config.txt
+# Open interactive configuration menu
+sudo bash /root/TrafficCop/port_traffic_limit.sh
+
+# Delete specific port
+sudo bash /root/TrafficCop/port_traffic_limit.sh --remove 80
+
+# Delete all port configurations
+sudo bash /root/TrafficCop/port_traffic_limit.sh --remove
 ```
 
-#### Manually Run Port Traffic Check
+#### Access via Manager (Recommended)
 ```bash
-sudo /root/TrafficCop/port_traffic_monitor.sh --run
+bash <(curl -sL https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/trafficcop-manager.sh)
+# Select 12) View Port Traffic
+# Select 13) Manage Port Configuration
 ```
 
-#### Remove Port Traffic Limit
+#### View Configuration File
 ```bash
-sudo /root/TrafficCop/port_traffic_limit.sh --remove
-```
+# View JSON configuration (multi-port)
+sudo cat /root/TrafficCop/ports_traffic_config.json
 
-#### Stop Port Traffic Monitoring
-```bash
-sudo pkill -f port_traffic_monitor.sh && \
-crontab -l | grep -v "port_traffic_monitor.sh" | crontab -
+# Pretty print
+sudo cat /root/TrafficCop/ports_traffic_config.json | jq
 ```
 
 ### Usage Example
 
-Suppose your machine has a 1TB total traffic limit, and you want to set a separate 200GB traffic limit for port 80 (web service):
+#### Scenario: Configure Independent Traffic Limits for Multiple Services
 
-1. Run the port traffic limit script
-2. Enter port number: 80
-3. Enter traffic limit: 200
-4. Enter tolerance range: 10 (limiting starts when usage reaches 190GB)
-5. Choose to use machine configuration (recommended) or custom configuration
-6. Script will automatically set up a scheduled task to check port traffic every minute
+Suppose your machine has a 1TB total traffic limit, and you want to set independent traffic quotas for different services:
 
-When port 80 traffic reaches 190GB:
+**Configure Multiple Ports:**
+1. Run port configuration script
+2. Add port 80 (Web service): 200GB limit, 10GB tolerance
+3. Add port 443 (HTTPS): 300GB limit, 15GB tolerance
+4. Add port 22 (SSH): 50GB limit, 5GB tolerance
+
+**View All Port Traffic in Real-Time:**
+```bash
+sudo bash /root/TrafficCop/view_port_traffic.sh
+```
+
+Example Output:
+```
+════════════════════════════════════════════════════════════
+        Port Traffic Monitor - 2025-10-18 15:30:45
+════════════════════════════════════════════════════════════
+
+✅ Port 80 (Web Server)
+   Used: 150.2 GB / 200 GB (75.1%)
+   [████████████████████████      ] Limit: 20kbit/s
+   
+🟡 Port 443 (HTTPS)
+   Used: 280.5 GB / 300 GB (93.5%)
+   [████████████████████████████  ] Limit: 50kbit/s
+   
+✅ Port 22 (SSH)
+   Used: 15.3 GB / 50 GB (30.6%)
+   [█████████                     ] Limit: 10kbit/s
+
+════════════════════════════════════════════════════════════
+Total: 3 ports | Total Usage: 446.0 GB | Total Limit: 550 GB
+════════════════════════════════════════════════════════════
+```
+
+**Push Notification Example (Telegram):**
+```
+📊 [MyServer] Daily Traffic Report
+
+🖥️ Total Machine Traffic:
+Current Usage: 650.5 GB
+Traffic Limit: 1000 GB
+
+🔌 Port Traffic Details:
+✅ Port 80 (Web Server): 150.2GB / 200GB (75.1%)
+🟡 Port 443 (HTTPS): 280.5GB / 300GB (93.5%)
+✅ Port 22 (SSH): 15.3GB / 50GB (30.6%)
+```
+
+When a port's traffic reaches its limit:
 - **TC Mode**: Port speed will be limited to the set value (e.g., 20kbit/s)
 - **Block Mode**: Port will be completely blocked, unable to receive or send data
+- **Auto Notification**: All configured push services will send warning notifications
 
 ### Technical Principles
 
@@ -326,14 +389,38 @@ Port traffic limit feature is implemented using:
 3. **HTB (Hierarchical Token Bucket)** - Hierarchical traffic control, allocating different bandwidth to different ports
 4. **Packet Marking** - Use mangle table to mark packets for precise traffic classification
 
+### Configuration File Format (JSON)
+
+```json
+{
+  "ports": [
+    {
+      "port": 80,
+      "description": "Web Server",
+      "traffic_limit": 200,
+      "traffic_tolerance": 10,
+      "traffic_mode": "total",
+      "traffic_period": "monthly",
+      "period_start_day": 1,
+      "limit_speed": 20,
+      "main_interface": "eth0",
+      "limit_mode": "tc",
+      "created_at": "2025-10-18 12:00:00",
+      "last_reset": "2025-10-01"
+    }
+  ]
+}
+```
+
 ### Important Notes
 
-1. Port traffic limit depends on iptables, ensure it's installed on your system
-2. Port traffic statistics start from setup time, do not include historical traffic
-3. It's recommended to run the main traffic monitor script first to ensure dependencies are installed
-4. TC mode may have slight impact on port performance
-5. Block mode completely prohibits port communication, use with caution
-6. Currently only supports single port configuration, run script multiple times for multiple ports (multi-port support in development)
+1. **Dependencies**: Requires jq tool (automatically installed by script) and iptables
+2. **Traffic Statistics**: Port traffic statistics start from configuration time, do not include historical traffic
+3. **Prerequisites**: It's recommended to run the main traffic monitor script first to ensure dependencies are installed
+4. **Performance Impact**: TC mode may have slight impact on port performance
+5. **Use with Caution**: Block mode completely prohibits port communication, use with caution
+6. **Multi-Port Support**: ✅ Version 2.0 now supports configuring and managing multiple ports simultaneously
+7. **Push Integration**: Port traffic information is integrated into all push notifications
 
 ## Preset Configurations
 ### Alibaba Cloud CDT 200GB:

@@ -4,6 +4,11 @@
 WORK_DIR="/root/TrafficCop"
 mkdir -p "$WORK_DIR"
 
+# 导入端口流量辅助函数
+if [ -f "$WORK_DIR/port_traffic_helper.sh" ]; then
+    source "$WORK_DIR/port_traffic_helper.sh"
+fi
+
 # 更新文件路径
 CONFIG_FILE="$WORK_DIR/serverchan_notifier_config.txt"
 LOG_FILE="$WORK_DIR/traffic_monitor.log"
@@ -99,6 +104,15 @@ send_throttle_warning() {
     local url="https://sctapi.ftqq.com/${SENDKEY}.send"
     local title="⚠️ [${MACHINE_NAME}]限速警告"
     local desp="流量已达到限制，已启动 TC 模式限速。"
+    
+    # 添加端口流量摘要
+    if command -v get_port_traffic_summary &> /dev/null; then
+        local port_summary=$(get_port_traffic_summary 3)
+        if [ -n "$port_summary" ]; then
+            desp="${desp}%0A%0A${port_summary}"
+        fi
+    fi
+    
     curl -s -X POST "$url" -d "title=$title" -d "desp=$desp"
 }
 
@@ -107,6 +121,15 @@ send_throttle_lifted() {
     local url="https://sctapi.ftqq.com/${SENDKEY}.send"
     local title="✅ [${MACHINE_NAME}]限速解除"
     local desp="流量已恢复正常，所有限制已清除。"
+    
+    # 添加端口流量摘要
+    if command -v get_port_traffic_summary &> /dev/null; then
+        local port_summary=$(get_port_traffic_summary 3)
+        if [ -n "$port_summary" ]; then
+            desp="${desp}%0A%0A${port_summary}"
+        fi
+    fi
+    
     curl -s -X POST "$url" -d "title=$title" -d "desp=$desp"
 }
 
@@ -123,6 +146,15 @@ send_shutdown_warning() {
     local url="https://sctapi.ftqq.com/${SENDKEY}.send"
     local title="🚨 [${MACHINE_NAME}]关机警告"
     local desp="流量已达到严重限制，系统将在 1 分钟后关机！"
+    
+    # 添加端口流量摘要
+    if command -v get_port_traffic_summary &> /dev/null; then
+        local port_summary=$(get_port_traffic_summary 3)
+        if [ -n "$port_summary" ]; then
+            desp="${desp}%0A%0A${port_summary}"
+        fi
+    fi
+    
     curl -s -X POST "$url" -d "title=$title" -d "desp=$desp"
 }
 
@@ -255,6 +287,15 @@ daily_report() {
 
     local title="📊 [${MACHINE_NAME}]每日流量报告"
     local desp="当前使用流量：$current_usage%0A流量限制：$limit"
+    
+    # 添加端口流量详细信息
+    if command -v get_port_traffic_details &> /dev/null; then
+        local port_details=$(get_port_traffic_details)
+        if [ -n "$port_details" ]; then
+            desp="${desp}%0A%0A【端口流量统计】%0A${port_details}"
+        fi
+    fi
+    
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 准备发送消息: $title $desp"| tee -a "$CRON_LOG"
 
     local url="https://sctapi.ftqq.com/${SENDKEY}.send"
