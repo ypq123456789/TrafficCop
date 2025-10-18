@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # View Port Traffic - 查看端口流量使用情况脚本
-# 版本 1.1
+# 版本 1.2
 
 # 设置时区为上海（东八区）
 export TZ='Asia/Shanghai'
@@ -37,8 +37,9 @@ get_port_traffic_usage() {
     esac
     
     if [ -n "$usage_bytes" ] && [ "$usage_bytes" -gt 0 ]; then
-        # 使用 printf 确保显示前导零（例如 0.02 而不是 .02）
-        printf "%.3f" $(echo "scale=3; $usage_bytes/1024/1024/1024" | bc)
+        # 使用 awk 确保显示前导零（例如 0.02 而不是 .02）
+        local gb_value=$(echo "scale=6; $usage_bytes/1024/1024/1024" | bc)
+        printf "%.3f" $(echo "$gb_value" | awk '{printf "%.6f", $1}')
     else
         echo "0.000"
     fi
@@ -229,7 +230,10 @@ show_all_ports() {
     
     local total_percentage=$(calculate_percentage "$total_usage" "$total_limit")
     
-    echo -e "所有端口总使用: ${YELLOW}${total_usage} GB${NC} / ${GREEN}${total_limit} GB${NC} (${total_percentage}%)"
+    # 格式化总使用量，确保显示前导零
+    local total_usage_formatted=$(printf "%.3f" $(echo "$total_usage" | awk '{printf "%.6f", $1}'))
+    
+    echo -e "所有端口总使用: ${YELLOW}${total_usage_formatted} GB${NC} / ${GREEN}${total_limit} GB${NC} (${total_percentage}%)"
     show_progress_bar "$total_percentage"
     echo ""
 }
