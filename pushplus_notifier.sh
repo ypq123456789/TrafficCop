@@ -386,16 +386,72 @@ daily_report() {
     fi
 
     local title="[${MACHINE_NAME}]每日流量报告"
-    local content="📊 每日流量报告<br>当前使用流量：$current_usage<br>流量限制：$limit"
+    local content="📊 每日流量报告<br><br>🖥️ <b>机器总流量</b><br>当前使用：$current_usage<br>流量限制：$limit"
     
-    # 添加端口流量详细信息
-    if command -v get_port_traffic_details &> /dev/null; then
-        local port_details=$(get_port_traffic_details)
-        if [ -n "$port_details" ]; then
-            # 将换行符转换为<br>标签以适配HTML格式
-            port_details=$(echo "$port_details" | sed 's/$/\\n/g' | tr '\n' ' ' | sed 's/\\n/<br>/g')
-            content="${content}<br><br><b>【端口流量统计】</b><br>${port_details}"
+    # 检查是否有端口流量配置
+    local ports_config_file="$WORK_DIR/ports_traffic_config.json"
+    local view_script="$WORK_DIR/view_port_traffic.sh"
+    
+    if [ -f "$ports_config_file" ]; then
+        local port_count=$(jq -r '.ports | length' "$ports_config_file" 2>/dev/null || echo "0")
+        
+        if [ "$port_count" -gt 0 ]; then
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : 检测到 $port_count 个端口流量配置，添加端口信息"| tee -a "$CRON_LOG"
+            
+            # 如果有 view_port_traffic.sh 脚本，使用它
+            if [ -f "$view_script" ]; then
+                local port_data=$(bash "$view_script" --json 2>/dev/null)
+            else
+                local port_data=""
+            fi
+            
+            if [ -n "$port_data" ] && echo "$port_data" | jq -e '.ports' >/dev/null 2>&1; then
+                local actual_port_count=$(echo "$port_data" | jq -r '.ports | length' 2>/dev/null || echo "0")
+                
+                if [ "$actual_port_count" -gt 0 ]; then
+                    content="${content}<br><br>🔌 <b>端口流量详情</b><br>"
+                    
+                    # 遍历每个端口
+                    local i=0
+                    while [ $i -lt $actual_port_count ]; do
+                        local port=$(echo "$port_data" | jq -r ".ports[$i].port" 2>/dev/null)
+                        local port_desc=$(echo "$port_data" | jq -r ".ports[$i].description" 2>/dev/null)
+                        local port_usage=$(echo "$port_data" | jq -r ".ports[$i].usage" 2>/dev/null)
+                        local port_limit=$(echo "$port_data" | jq -r ".ports[$i].limit" 2>/dev/null)
+                        
+                        if [ -n "$port" ] && [ "$port" != "null" ] && [ "$port_usage" != "null" ]; then
+                            # 计算使用百分比
+                            local port_percentage=0
+                            if [ -n "$port_limit" ] && [ "$port_limit" != "null" ] && (( $(echo "$port_limit > 0" | bc -l 2>/dev/null || echo "0") )); then
+                                port_percentage=$(echo "scale=1; ($port_usage / $port_limit) * 100" | bc 2>/dev/null || echo "0")
+                            fi
+                            
+                            # 根据使用率选择表情
+                            local status_icon="✅"
+                            if (( $(echo "$port_percentage >= 90" | bc -l 2>/dev/null || echo "0") )); then
+                                status_icon="🔴"
+                            elif (( $(echo "$port_percentage >= 75" | bc -l 2>/dev/null || echo "0") )); then
+                                status_icon="🟡"
+                            fi
+                            
+                            content="${content}${status_icon} 端口 ${port} (${port_desc})：${port_usage}GB / ${port_limit}GB (${port_percentage}%)<br>"
+                        fi
+                        
+                        i=$((i + 1))
+                    done
+                    
+                    echo "$(date '+%Y-%m-%d %H:%M:%S') : 已添加 $actual_port_count 个端口的流量信息"| tee -a "$CRON_LOG"
+                else
+                    echo "$(date '+%Y-%m-%d %H:%M:%S') : JSON数据中没有端口信息"| tee -a "$CRON_LOG"
+                fi
+            else
+                echo "$(date '+%Y-%m-%d %H:%M:%S') : 无法获取有效的端口流量JSON数据"| tee -a "$CRON_LOG"
+            fi
+        else
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : 没有配置端口流量监控"| tee -a "$CRON_LOG"
         fi
+    else
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 端口配置文件不存在"| tee -a "$CRON_LOG"
     fi
     
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 准备发送消息: $content"| tee -a "$CRON_LOG"
