@@ -61,7 +61,7 @@ sudo tc qdisc del dev $(ip route | grep default | cut -d ' ' -f 5) root
 ## 一键安装脚本
 ### 一键安装交互式脚本
 ```
-bash <(curl -sL https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/trafficcop-manager.sh)
+bash <(curl -sL https://raw.githubusercontent.com/ypq123456789/TrafficCop/交互式脚本.png)
 ```
 #### 功能
 
