@@ -90,11 +90,13 @@ initial_config() {
         read -r new_daily_report_time
     done
 
-    # 更新配置文件
-    echo "SENDKEY=\"$new_sendkey\"" > "$CONFIG_FILE"
-    echo "MACHINE_NAME=\"$new_machine_name\"" >> "$CONFIG_FILE"
-    echo "DAILY_REPORT_TIME=\"$new_daily_report_time\"" >> "$CONFIG_FILE"
-
+    # 更新配置文件（使用write_config函数确保格式正确）
+    SENDKEY="$new_sendkey"
+    MACHINE_NAME="$new_machine_name"
+    DAILY_REPORT_TIME="$new_daily_report_time"
+    
+    write_config
+    
     echo "配置已更新。"
     read_config
 }
