@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # TrafficCop 管理器 - 交互式管理工具
-# 版本 1.6
-# 最后更新：2025-10-19 02:55
+# 版本 1.7
+# 最后更新：2025-10-19 03:05
 
-SCRIPT_VERSION="1.6"
-LAST_UPDATE="2025-10-19 02:55"
+SCRIPT_VERSION="1.7"
+LAST_UPDATE="2025-10-19 03:05"
 
 # 颜色定义
 RED='\033[0;31m'
@@ -160,9 +160,10 @@ view_logs() {
     echo "3) PushPlus通知日志"
     echo "4) Server酱通知日志"
     echo "5) 端口流量监控日志"
+    echo "6) 端口流量包装脚本日志"
     echo "0) 返回主菜单"
     
-    read -p "请选择要查看的日志类型 [0-5]: " log_choice
+    read -p "请选择要查看的日志类型 [0-6]: " log_choice
     
     case $log_choice in
         1)
@@ -199,6 +200,18 @@ view_logs() {
                 tail -n 100 "$WORK_DIR/port_traffic_monitor.log"
             else
                 echo -e "${RED}端口流量监控日志不存在${NC}"
+            fi
+            ;;
+        6)
+            if [ -f "$WORK_DIR/port_traffic_cron_wrapper.log" ]; then
+                echo -e "${CYAN}==================== 包装脚本执行日志 ====================${NC}"
+                echo -e "${YELLOW}说明：显示定时任务从 GitHub 下载和执行脚本的过程${NC}"
+                echo ""
+                tail -n 100 "$WORK_DIR/port_traffic_cron_wrapper.log"
+            else
+                echo -e "${RED}包装脚本日志不存在${NC}"
+                echo -e "${YELLOW}提示：此日志仅在使用 v2.5+ 版本的包装脚本定时任务时才会生成${NC}"
+                echo -e "${YELLOW}请运行：bash /root/TrafficCop/port_traffic_limit.sh 并选择 5) 查看定时任务配置${NC}"
             fi
             ;;
         0)

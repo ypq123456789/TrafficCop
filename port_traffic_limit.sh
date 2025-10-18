@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Port Traffic Limit - 端口流量限制脚本 v2.5
+# Port Traffic Limit - 端口流量限制脚本 v2.6
 # 功能：为多个端口设置独立的流量限制（支持JSON配置）
-# 最后更新：2025-10-19 03:00
+# 最后更新：2025-10-19 03:05
 
-SCRIPT_VERSION="2.5"
-LAST_UPDATE="2025-10-19 03:00"
+SCRIPT_VERSION="2.6"
+LAST_UPDATE="2025-10-19 03:05"
 
 WORK_DIR="/root/TrafficCop"
 PORT_CONFIG_FILE="$WORK_DIR/ports_traffic_config.json"
@@ -1004,30 +1004,48 @@ WORK_DIR="/root/TrafficCop"
 GITHUB_URL="https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/port_traffic_limit.sh"
 TEMP_SCRIPT="/tmp/port_traffic_limit_cron_$$.sh"
 LOG_FILE="$WORK_DIR/port_traffic_monitor.log"
+WRAPPER_LOG="$WORK_DIR/port_traffic_cron_wrapper.log"
+
+# 记录包装脚本执行
+echo "$(date '+%Y-%m-%d %H:%M:%S') [包装脚本] 开始执行" >> "$WRAPPER_LOG"
 
 # 下载最新版本
+echo "$(date '+%Y-%m-%d %H:%M:%S') [包装脚本] 正在从 GitHub 下载最新版本..." >> "$WRAPPER_LOG"
 if wget -q --timeout=10 --tries=2 -O "$TEMP_SCRIPT" "$GITHUB_URL" 2>/dev/null; then
     if [ -s "$TEMP_SCRIPT" ] && head -1 "$TEMP_SCRIPT" | grep -q "^#!/bin/bash"; then
+        # 提取版本号
+        local version=$(grep '^SCRIPT_VERSION=' "$TEMP_SCRIPT" | head -1 | cut -d'"' -f2)
+        echo "$(date '+%Y-%m-%d %H:%M:%S') [包装脚本] ✓ 下载成功，版本: v${version}" >> "$WRAPPER_LOG"
+        
         # 下载成功，执行最新版本
         chmod +x "$TEMP_SCRIPT"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') [包装脚本] 执行 GitHub 最新版本" >> "$WRAPPER_LOG"
         bash "$TEMP_SCRIPT" --cron
         rm -f "$TEMP_SCRIPT"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') [包装脚本] 执行完成" >> "$WRAPPER_LOG"
     else
         # 下载的文件无效，使用本地版本
+        echo "$(date '+%Y-%m-%d %H:%M:%S') [包装脚本] ✗ 下载的文件无效，降级使用本地版本" >> "$WRAPPER_LOG"
         if [ -f "$WORK_DIR/port_traffic_limit.sh" ]; then
             bash "$WORK_DIR/port_traffic_limit.sh" --cron
+        else
+            echo "$(date '+%Y-%m-%d %H:%M:%S') [包装脚本] ✗ 本地文件也不存在" >> "$WRAPPER_LOG"
         fi
         rm -f "$TEMP_SCRIPT"
     fi
 else
     # 下载失败，使用本地版本作为备份
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [包装脚本] ✗ 下载失败，降级使用本地版本" >> "$WRAPPER_LOG"
     if [ -f "$WORK_DIR/port_traffic_limit.sh" ]; then
         bash "$WORK_DIR/port_traffic_limit.sh" --cron
     else
-        echo "$(date '+%Y-%m-%d %H:%M:%S') [错误] 无法下载脚本且本地文件不存在" >> "$LOG_FILE"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') [包装脚本] ✗ 无法下载脚本且本地文件不存在" >> "$LOG_FILE"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') [包装脚本] ✗ 无法下载脚本且本地文件不存在" >> "$WRAPPER_LOG"
     fi
     rm -f "$TEMP_SCRIPT"
 fi
+
+echo "-----" >> "$WRAPPER_LOG"
 EOF
     
     chmod +x "$wrapper_script"
