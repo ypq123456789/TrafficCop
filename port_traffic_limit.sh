@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Port Traffic Limit - 端口流量限制脚本 v2.1
+# Port Traffic Limit - 端口流量限制脚本 v2.2
 # 功能：为多个端口设置独立的流量限制（支持JSON配置）
-# 最后更新：2025-10-19 00:15
+# 最后更新：2025-10-19 02:30
 
-SCRIPT_VERSION="2.1"
-LAST_UPDATE="2025-10-19 00:15"
+SCRIPT_VERSION="2.2"
+LAST_UPDATE="2025-10-19 02:30"
 
 WORK_DIR="/root/TrafficCop"
 PORT_CONFIG_FILE="$WORK_DIR/ports_traffic_config.json"
@@ -24,8 +24,11 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-echo "-----------------------------------------------------" | tee -a "$PORT_LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') Port Traffic Limit v${SCRIPT_VERSION} (最后更新: ${LAST_UPDATE})" | tee -a "$PORT_LOG_FILE"
+# 只在交互模式下显示版本信息（cron模式在cron_mode函数中单独记录）
+if [ "$1" != "--cron" ]; then
+    echo "-----------------------------------------------------"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') Port Traffic Limit v${SCRIPT_VERSION} (最后更新: ${LAST_UPDATE})"
+fi
 
 # 检查并安装jq
 check_and_install_jq() {
@@ -303,19 +306,24 @@ check_and_limit_port_traffic() {
         *) current_usage=$total_gb ;;
     esac
     
-    # 计算触发阈值
+    # 计算触发阈值和使用率
     local trigger_limit=$(echo "scale=2; $traffic_limit - $traffic_tolerance" | bc)
+    local usage_percentage=0
+    if (( $(echo "$traffic_limit > 0" | bc -l) )); then
+        usage_percentage=$(echo "scale=1; ($current_usage / $traffic_limit) * 100" | bc)
+    fi
     
-    echo "$(date '+%Y-%m-%d %H:%M:%S') 端口 $port - 当前: ${current_usage}GB, 限制: ${traffic_limit}GB" | tee -a "$PORT_LOG_FILE"
+    # 详细记录每个端口的流量信息（入站/出站/总计）
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 端口 $port: 入站=${in_gb}GB, 出站=${out_gb}GB, 总计=${total_gb}GB, 当前=${current_usage}GB, 限制=${traffic_limit}GB (${usage_percentage}%)" >> "$PORT_LOG_FILE"
     
     # 检查是否超限
     if (( $(echo "$current_usage >= $trigger_limit" | bc -l) )); then
         if [ "$limit_mode" = "tc" ]; then
             apply_tc_limit "$port" "$interface" "$limit_speed"
-            echo "$(date '+%Y-%m-%d %H:%M:%S') 端口 $port 已触发TC限速" | tee -a "$PORT_LOG_FILE"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') [警告] 端口 $port 已触发TC限速（${current_usage}GB >= ${trigger_limit}GB）" >> "$PORT_LOG_FILE"
         else
             block_port "$port"
-            echo "$(date '+%Y-%m-%d %H:%M:%S') 端口 $port 已被阻断" | tee -a "$PORT_LOG_FILE"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') [警告] 端口 $port 已被阻断（${current_usage}GB >= ${trigger_limit}GB）" >> "$PORT_LOG_FILE"
         fi
     fi
 }
@@ -912,9 +920,24 @@ cron_mode() {
         exit 0
     fi
     
-    jq -r '.ports[].port' "$PORT_CONFIG_FILE" | while read port; do
-        check_and_limit_port_traffic "$port"
+    # 获取所有端口（使用数组避免管道子shell问题）
+    local ports_array=()
+    while IFS= read -r port; do
+        ports_array+=("$port")
+    done < <(jq -r '.ports[].port' "$PORT_CONFIG_FILE" 2>/dev/null)
+    
+    # 记录开始检查
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 开始检查 ${#ports_array[@]} 个端口的流量..." >> "$PORT_LOG_FILE"
+    
+    # 循环检查每个端口
+    for port in "${ports_array[@]}"; do
+        if [ -n "$port" ]; then
+            check_and_limit_port_traffic "$port"
+        fi
     done
+    
+    # 记录检查完成
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 流量检查完成" >> "$PORT_LOG_FILE"
 }
 
 # 主函数
