@@ -265,7 +265,7 @@ get_port_traffic_summary() {
                 percentage=$(printf "%.2f" $percentage)
             fi
             
-            summary="${summary}%0A✓ 端口 ${port}: ${total_gb}GB / ${limit}GB (${percentage}%25)"
+            summary="${summary}%0A✓ 端口 ${port}: ${total_gb}GB / ${limit}GB (${percentage}%)"
             displayed=$((displayed + 1))
         fi
     done
