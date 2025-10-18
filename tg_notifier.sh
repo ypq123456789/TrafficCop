@@ -486,7 +486,7 @@ daily_report() {
                                 status_icon="🟡"
                             fi
                             
-                            message="${message}%0A${status_icon} 端口 ${port} (${port_desc})：${port_usage_formatted}GB / ${port_limit_formatted}GB (${port_percentage}%%)"
+                            message="${message}%0A${status_icon} 端口 ${port} (${port_desc})：${port_usage_formatted}GB / ${port_limit_formatted}GB (${port_percentage}%)"
                         fi
                         
                         i=$((i + 1))
