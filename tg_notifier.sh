@@ -228,34 +228,50 @@ get_port_traffic_summary() {
     local ports_config_file="$WORK_DIR/ports_traffic_config.json"
     local summary=""
     
-    if [ -f "$ports_config_file" ] && [ -f "$WORK_DIR/view_port_traffic.sh" ]; then
-        local port_data=$(bash "$WORK_DIR/view_port_traffic.sh" --json 2>/dev/null)
+    if [ ! -f "$ports_config_file" ]; then
+        return
+    fi
+    
+    # 检查是否有端口配置
+    local port_count=$(jq -r '.ports | length' "$ports_config_file" 2>/dev/null)
+    if [ -z "$port_count" ] || [ "$port_count" -eq 0 ]; then
+        return
+    fi
+    
+    summary="%0A%0A🔌 端口流量详情："
+    
+    # 遍历所有端口（最多显示5个）
+    local max_display=5
+    local displayed=0
+    
+    for ((i=0; i<port_count && displayed<max_display; i++)); do
+        local port=$(jq -r ".ports[$i].port" "$ports_config_file" 2>/dev/null)
+        local interface=$(jq -r ".ports[$i].main_interface" "$ports_config_file" 2>/dev/null)
+        local limit=$(jq -r ".ports[$i].traffic_limit" "$ports_config_file" 2>/dev/null)
         
-        if [ -n "$port_data" ]; then
-            local port_count=$(echo "$port_data" | jq -r '.ports | length' 2>/dev/null)
+        if [ -n "$port" ] && [ "$port" != "null" ]; then
+            # 直接调用 iptables 获取流量（与 port_traffic_limit.sh 一致）
+            local in_bytes=$(iptables -L INPUT -v -n -x 2>/dev/null | grep "dpt:$port" | awk '{sum+=$2} END {print sum+0}')
+            local out_bytes=$(iptables -L OUTPUT -v -n -x 2>/dev/null | grep "spt:$port" | awk '{sum+=$2} END {print sum+0}')
+            local total_gb=$(echo "scale=2; ($in_bytes + $out_bytes) / 1024 / 1024 / 1024" | bc)
             
-            if [ "$port_count" -gt 0 ]; then
-                summary="%0A%0A🔌 端口流量："
-                
-                local i=0
-                while [ $i -lt $port_count ] && [ $i -lt 5 ]; do
-                    local port=$(echo "$port_data" | jq -r ".ports[$i].port" 2>/dev/null)
-                    local port_usage=$(echo "$port_data" | jq -r ".ports[$i].usage" 2>/dev/null)
-                    local port_limit=$(echo "$port_data" | jq -r ".ports[$i].limit" 2>/dev/null)
-                    
-                    if [ -n "$port" ] && [ "$port" != "null" ]; then
-                        local port_percentage=$(echo "scale=0; ($port_usage / $port_limit) * 100" | bc 2>/dev/null)
-                        summary="${summary}%0A端口${port}: ${port_usage}/${port_limit}GB (${port_percentage}%)"
-                    fi
-                    
-                    i=$((i + 1))
-                done
-                
-                if [ "$port_count" -gt 5 ]; then
-                    summary="${summary}%0A...及其他$((port_count - 5))个端口"
-                fi
+            # 格式化显示（确保前导零）
+            total_gb=$(printf "%.2f" $total_gb)
+            
+            # 计算百分比
+            local percentage=0
+            if [ -n "$limit" ] && [ "$limit" != "null" ] && (( $(echo "$limit > 0" | bc -l) )); then
+                percentage=$(echo "scale=2; ($total_gb / $limit) * 100" | bc)
+                percentage=$(printf "%.2f" $percentage)
             fi
+            
+            summary="${summary}%0A✓ 端口 ${port}: ${total_gb}GB / ${limit}GB (${percentage}%%)"
+            displayed=$((displayed + 1))
         fi
+    done
+    
+    if [ "$port_count" -gt "$max_display" ]; then
+        summary="${summary}%0A...及其他 $((port_count - max_display)) 个端口"
     fi
     
     echo "$summary"
