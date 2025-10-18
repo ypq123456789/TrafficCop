@@ -106,9 +106,23 @@ install_serverchan_notifier() {
 # 安装端口流量限制
 install_port_traffic_limit() {
     echo -e "${CYAN}正在安装端口流量限制功能...${NC}"
+    
+    # 安装主配置脚本
     install_script "port_traffic_limit.sh"
+    
+    # 安装端口流量查看脚本
+    echo -e "${YELLOW}正在下载端口流量查看脚本...${NC}"
+    install_script "view_port_traffic.sh"
+    
+    # 安装辅助函数库
+    echo -e "${YELLOW}正在下载辅助函数库...${NC}"
+    install_script "port_traffic_helper.sh"
+    
+    # 运行配置向导
     run_script "$WORK_DIR/port_traffic_limit.sh"
+    
     echo -e "${GREEN}端口流量限制功能安装完成！${NC}"
+    echo -e "${CYAN}提示：使用选项12可查看端口流量，选项13可管理端口配置${NC}"
     read -p "按回车键继续..."
 }
 
@@ -118,6 +132,7 @@ remove_port_traffic_limit() {
     if [ -f "$WORK_DIR/port_traffic_limit.sh" ]; then
         bash "$WORK_DIR/port_traffic_limit.sh" --remove
         echo -e "${GREEN}端口流量限制已解除！${NC}"
+        echo -e "${YELLOW}注意：配置文件和查看脚本仍保留，可继续使用选项12/13管理${NC}"
     else
         echo -e "${RED}端口流量限制脚本不存在${NC}"
     fi
@@ -348,16 +363,25 @@ view_port_traffic() {
     read -p "按回车键继续..."
 }
 
-# 管理端口配置
+# 安装/管理端口配置
 manage_port_config() {
     clear
     if [ -f "$WORK_DIR/port_traffic_limit.sh" ]; then
+        # 已安装，直接进入管理界面
         bash "$WORK_DIR/port_traffic_limit.sh"
     else
-        echo -e "${RED}端口流量限制脚本不存在！${NC}"
-        echo -e "${YELLOW}请先安装端口流量限制功能${NC}"
+        # 未安装，先安装
+        echo -e "${YELLOW}检测到端口流量限制功能未安装${NC}"
         echo ""
-        read -p "按回车键继续..."
+        read -p "是否现在安装？[Y/n]: " install_confirm
+        [ -z "$install_confirm" ] && install_confirm="y"
+        
+        if [[ "$install_confirm" = "y" || "$install_confirm" = "Y" ]]; then
+            install_port_traffic_limit
+        else
+            echo ""
+            read -p "按回车键继续..."
+        fi
     fi
 }
 
@@ -371,15 +395,12 @@ show_main_menu() {
     echo -e "${YELLOW}2) 安装Telegram通知功能${NC}"
     echo -e "${YELLOW}3) 安装PushPlus通知功能${NC}"
     echo -e "${YELLOW}4) 安装Server酱通知功能${NC}"
-    echo -e "${YELLOW}5) 安装端口流量限制${NC}"
+    echo -e "${YELLOW}5) 安装/管理端口流量限制${NC}"
     echo -e "${YELLOW}6) 解除流量限制${NC}"
-    echo -e "${YELLOW}7) 解除端口流量限制${NC}"
-    echo -e "${YELLOW}8) 查看日志${NC}"
-    echo -e "${YELLOW}9) 查看当前配置${NC}"
-    echo -e "${YELLOW}10) 使用预设配置${NC}"
-    echo -e "${YELLOW}11) 停止所有服务${NC}"
-    echo -e "${YELLOW}12) 查看端口流量${NC}"
-    echo -e "${YELLOW}13) 管理端口配置${NC}"
+    echo -e "${YELLOW}7) 查看日志${NC}"
+    echo -e "${YELLOW}8) 查看当前配置${NC}"
+    echo -e "${YELLOW}9) 使用预设配置${NC}"
+    echo -e "${YELLOW}10) 停止所有服务${NC}"
     echo -e "${YELLOW}0) 退出${NC}"
     echo -e "${PURPLE}====================================${NC}"
     echo ""
@@ -392,7 +413,7 @@ main() {
     
     while true; do
         show_main_menu
-        read -p "请选择操作 [0-13]: " choice
+        read -p "请选择操作 [0-10]: " choice
         
         case $choice in
             1)
@@ -408,31 +429,22 @@ main() {
                 install_serverchan_notifier
                 ;;
             5)
-                install_port_traffic_limit
+                manage_port_config
                 ;;
             6)
                 remove_traffic_limit
                 ;;
             7)
-                remove_port_traffic_limit
-                ;;
-            8)
                 view_logs
                 ;;
-            9)
+            8)
                 view_config
                 ;;
-            10)
+            9)
                 use_preset_config
                 ;;
-            11)
+            10)
                 stop_all_services
-                ;;
-            12)
-                view_port_traffic
-                ;;
-            13)
-                manage_port_config
                 ;;
             0)
                 echo -e "${GREEN}感谢使用TrafficCop管理工具！${NC}"

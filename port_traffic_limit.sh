@@ -152,11 +152,16 @@ list_all_ports() {
     echo -e "${CYAN}==================== 已配置的端口 ====================${NC}"
     if [ ! -f "$PORT_CONFIG_FILE" ] || [ "$(jq -r '.ports | length' "$PORT_CONFIG_FILE")" -eq 0 ]; then
         echo -e "${YELLOW}暂无配置的端口${NC}"
-        return
+        return 1
     fi
     
-    jq -r '.ports[] | "端口 \(.port) (\(.description)) - 限制: \(.traffic_limit)GB, 容错: \(.traffic_tolerance)GB, 模式: \(.limit_mode)"' "$PORT_CONFIG_FILE"
+    local index=1
+    jq -r '.ports[] | "\(.port)|\(.description)|\(.traffic_limit)|\(.traffic_tolerance)|\(.limit_mode)"' "$PORT_CONFIG_FILE" | while IFS='|' read -r port desc limit tolerance mode; do
+        echo "  ${GREEN}[$index]${NC} 端口 $port ($desc) - 限制: ${limit}GB, 容错: ${tolerance}GB, 模式: $mode"
+        index=$((index + 1))
+    done
     echo -e "${CYAN}====================================================${NC}"
+    return 0
 }
 
 # 初始化iptables规则
@@ -476,16 +481,297 @@ port_config_wizard() {
     read -p "按回车键继续..." dummy
 }
 
+# 查看端口配置和流量
+view_port_status() {
+    clear
+    if [ ! -f "$PORT_CONFIG_FILE" ] || [ "$(jq -r '.ports | length' "$PORT_CONFIG_FILE")" -eq 0 ]; then
+        echo -e "${YELLOW}当前没有配置任何端口${NC}"
+        echo ""
+        read -p "按回车键继续..." dummy
+        return
+    fi
+    
+    echo -e "${CYAN}==================== 端口配置与流量状态 ====================${NC}"
+    echo ""
+    
+    local index=1
+    jq -r '.ports[] | @json' "$PORT_CONFIG_FILE" | while read -r port_json; do
+        local port=$(echo "$port_json" | jq -r '.port')
+        local desc=$(echo "$port_json" | jq -r '.description')
+        local limit=$(echo "$port_json" | jq -r '.traffic_limit')
+        local tolerance=$(echo "$port_json" | jq -r '.traffic_tolerance')
+        local mode=$(echo "$port_json" | jq -r '.limit_mode')
+        local speed=$(echo "$port_json" | jq -r '.limit_speed')
+        local interface=$(echo "$port_json" | jq -r '.main_interface')
+        
+        echo -e "${GREEN}[$index]${NC} ${GREEN}端口 $port${NC} - $desc"
+        echo -e "    流量限制: ${YELLOW}${limit}GB${NC} (容错: ${tolerance}GB)"
+        echo -e "    限制模式: $mode$([ "$mode" = "tc" ] && echo " (${speed}kbit/s)")"
+        echo -e "    网络接口: $interface"
+        
+        # 获取当前流量
+        local usage=$(get_port_traffic_usage "$port" "$interface")
+        local total_gb=$(echo "$usage" | cut -d',' -f3)
+        local percentage=$(echo "scale=1; $total_gb * 100 / $limit" | bc)
+        
+        echo -e "    当前使用: ${CYAN}${total_gb}GB${NC} / ${limit}GB (${percentage}%)"
+        
+        # 状态图标
+        if (( $(echo "$percentage >= 90" | bc -l) )); then
+            echo -e "    状态: ${RED}⚠️  接近限制${NC}"
+        elif (( $(echo "$percentage >= 70" | bc -l) )); then
+            echo -e "    状态: ${YELLOW}🟡 需要关注${NC}"
+        else
+            echo -e "    状态: ${GREEN}✅ 正常${NC}"
+        fi
+        echo ""
+        index=$((index + 1))
+    done
+    
+    echo -e "${CYAN}==========================================================${NC}"
+    echo ""
+    read -p "按回车键继续..." dummy
+}
+
+# 修改端口配置
+modify_port_config() {
+    clear
+    list_all_ports
+    
+    if [ ! -f "$PORT_CONFIG_FILE" ] || [ "$(jq -r '.ports | length' "$PORT_CONFIG_FILE")" -eq 0 ]; then
+        echo ""
+        read -p "按回车键继续..." dummy
+        return
+    fi
+    
+    echo ""
+    echo -e "${YELLOW}提示：可输入序号或端口号${NC}"
+    read -p "请选择 (序号/端口号): " mod_input
+    
+    local mod_port=""
+    
+    # 判断是否为纯数字
+    if [[ "$mod_input" =~ ^[0-9]+$ ]]; then
+        # 获取端口总数
+        local total_ports=$(jq -r '.ports | length' "$PORT_CONFIG_FILE")
+        
+        # 如果输入的数字小于等于端口总数，尝试作为序号
+        if [ "$mod_input" -le "$total_ports" ]; then
+            # 按序号获取端口号
+            mod_port=$(jq -r ".ports[$((mod_input - 1))].port" "$PORT_CONFIG_FILE")
+            echo -e "${CYAN}序号 $mod_input 对应端口: $mod_port${NC}"
+            echo ""
+        else
+            # 否则作为端口号处理
+            mod_port="$mod_input"
+        fi
+    else
+        echo -e "${RED}无效输入${NC}"
+        echo ""
+        read -p "按回车键继续..." dummy
+        return
+    fi
+    
+    if port_exists "$mod_port"; then
+        # 设置要修改的端口，然后调用配置向导
+        port_config_wizard_with_port "$mod_port"
+    else
+        echo -e "${RED}端口 $mod_port 不存在${NC}"
+        echo ""
+        read -p "按回车键继续..." dummy
+    fi
+}
+
+# 带端口号的配置向导（用于修改）
+port_config_wizard_with_port() {
+    local preset_port=$1
+    # 直接调用原配置向导，它会检测到端口已存在并提示更新
+    clear
+    echo -e "${CYAN}==================== 修改端口配置 ====================${NC}"
+    echo -e "${YELLOW}提示：所有选项可直接回车保持原值${NC}"
+    echo ""
+    
+    port="$preset_port"
+    
+    # 获取现有配置
+    local config=$(get_port_config "$port")
+    local old_desc=$(echo "$config" | jq -r '.description')
+    local old_limit=$(echo "$config" | jq -r '.traffic_limit')
+    local old_tolerance=$(echo "$config" | jq -r '.traffic_tolerance')
+    
+    echo -e "${CYAN}当前配置：${NC}"
+    echo "  端口: $port"
+    echo "  描述: $old_desc"
+    echo "  限制: ${old_limit}GB (容错: ${old_tolerance}GB)"
+    echo ""
+    
+    # 端口描述
+    read -p "端口描述 [回车=$old_desc]: " description
+    [ -z "$description" ] && description="$old_desc"
+    
+    # 流量限制
+    while true; do
+        read -p "流量限制(GB) [回车=$old_limit]: " traffic_limit
+        if [ -z "$traffic_limit" ]; then
+            traffic_limit="$old_limit"
+            break
+        elif [[ "$traffic_limit" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+            break
+        else
+            echo -e "${RED}无效输入${NC}"
+        fi
+    done
+    
+    # 容错范围
+    while true; do
+        read -p "容错范围(GB) [回车=$old_tolerance]: " traffic_tolerance
+        if [ -z "$traffic_tolerance" ]; then
+            traffic_tolerance="$old_tolerance"
+            break
+        elif [[ "$traffic_tolerance" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+            break
+        else
+            echo -e "${RED}无效输入${NC}"
+        fi
+    done
+    
+    # 同步其他配置
+    if read_machine_config; then
+        traffic_mode=${TRAFFIC_MODE:-"total"}
+        traffic_period=${TRAFFIC_PERIOD:-"monthly"}
+        period_start_day=${PERIOD_START_DAY:-1}
+        limit_speed=${LIMIT_SPEED:-20}
+        main_interface=${MAIN_INTERFACE:-$(ip route | grep default | awk '{print $5}' | head -n1)}
+        limit_mode=${LIMIT_MODE:-"tc"}
+    else
+        traffic_mode="total"
+        traffic_period="monthly"
+        period_start_day=1
+        limit_speed=20
+        main_interface=$(ip route | grep default | awk '{print $5}' | head -n1)
+        limit_mode="tc"
+    fi
+    
+    # 保存配置
+    echo ""
+    echo -e "${CYAN}正在更新配置...${NC}"
+    add_port_config "$port" "$description" "$traffic_limit" "$traffic_tolerance" \
+        "$traffic_mode" "$traffic_period" "$period_start_day" "$limit_speed" \
+        "$main_interface" "$limit_mode"
+    
+    echo ""
+    echo -e "${GREEN}✓ 端口 $port 配置已更新！${NC}"
+    echo ""
+    read -p "按回车键继续..." dummy
+}
+
+# 解除端口限速
+remove_port_limit() {
+    clear
+    list_all_ports
+    
+    if [ ! -f "$PORT_CONFIG_FILE" ] || [ "$(jq -r '.ports | length' "$PORT_CONFIG_FILE")" -eq 0 ]; then
+        echo ""
+        read -p "按回车键继续..." dummy
+        return
+    fi
+    
+    echo ""
+    echo -e "${YELLOW}提示：可输入序号、端口号或'all'${NC}"
+    read -p "请选择 (序号/端口号/all): " del_input
+    
+    local del_port=""
+    
+    # 判断是否为all
+    if [ "$del_input" = "all" ]; then
+        read -p "确认解除所有端口限速？[y/N]: " confirm
+        [ -z "$confirm" ] && confirm="n"
+        if [[ "$confirm" = "y" || "$confirm" = "Y" ]]; then
+            remove_all_limits
+            echo -e "${GREEN}已解除所有端口限速${NC}"
+        fi
+    # 判断是否为纯数字（可能是序号或端口号）
+    elif [[ "$del_input" =~ ^[0-9]+$ ]]; then
+        # 获取端口总数
+        local total_ports=$(jq -r '.ports | length' "$PORT_CONFIG_FILE")
+        
+        # 如果输入的数字小于等于端口总数，尝试作为序号
+        if [ "$del_input" -le "$total_ports" ]; then
+            # 按序号获取端口号
+            del_port=$(jq -r ".ports[$((del_input - 1))].port" "$PORT_CONFIG_FILE")
+            echo -e "${CYAN}序号 $del_input 对应端口: $del_port${NC}"
+        else
+            # 否则作为端口号处理
+            del_port="$del_input"
+        fi
+        
+        # 检查端口是否存在并解除限速
+        if port_exists "$del_port"; then
+            local config=$(get_port_config "$del_port")
+            local interface=$(echo "$config" | jq -r '.main_interface')
+            
+            delete_port_config "$del_port"
+            unblock_port "$del_port"
+            remove_tc_limit "$del_port" "$interface"
+            echo -e "${GREEN}端口 $del_port 限速已解除${NC}"
+        else
+            echo -e "${RED}端口 $del_port 不存在${NC}"
+        fi
+    else
+        echo -e "${RED}无效输入${NC}"
+    fi
+    
+    echo ""
+    read -p "按回车键继续..." dummy
+}
+
+# 查看定时任务
+view_crontab_status() {
+    clear
+    echo -e "${CYAN}==================== 定时任务状态 ====================${NC}"
+    echo ""
+    
+    local cron_entry="$PORT_SCRIPT_PATH --cron"
+    local current_cron=$(crontab -l 2>/dev/null)
+    
+    if echo "$current_cron" | grep -Fq "$PORT_SCRIPT_PATH"; then
+        echo -e "${GREEN}✓ 定时任务已启用${NC}"
+        echo ""
+        echo "当前定时任务："
+        echo "$current_cron" | grep "$PORT_SCRIPT_PATH"
+        echo ""
+        echo -e "${CYAN}说明：每分钟自动检查所有端口流量${NC}"
+        echo ""
+        read -p "是否要禁用定时任务？[y/N]: " disable
+        [ -z "$disable" ] && disable="n"
+        if [[ "$disable" = "y" || "$disable" = "Y" ]]; then
+            crontab -l 2>/dev/null | grep -v "$PORT_SCRIPT_PATH" | crontab -
+            echo -e "${GREEN}定时任务已禁用${NC}"
+        fi
+    else
+        echo -e "${YELLOW}✗ 定时任务未启用${NC}"
+        echo ""
+        read -p "是否要启用定时任务？[Y/n]: " enable
+        [ -z "$enable" ] && enable="y"
+        if [[ "$enable" = "y" || "$enable" = "Y" ]]; then
+            setup_crontab
+        fi
+    fi
+    
+    echo ""
+    read -p "按回车键继续..." dummy
+}
+
 # 交互式主菜单
 interactive_menu() {
     while true; do
         clear
         echo -e "${CYAN}========== 端口流量限制管理 v2.0 ==========${NC}"
-        echo "1) 添加/修改端口配置"
-        echo "2) 删除端口配置"
-        echo "3) 查看所有端口"
-        echo "4) 手动检查端口流量"
-        echo "5) 设置定时任务"
+        echo "1) 添加端口配置"
+        echo "2) 修改端口配置"
+        echo "3) 解除端口限速"
+        echo "4) 查看端口配置及流量使用情况"
+        echo "5) 查看定时任务配置"
         echo "0) 退出"
         echo -e "${CYAN}===========================================${NC}"
         
@@ -496,37 +782,16 @@ interactive_menu() {
                 port_config_wizard
                 ;;
             2)
-                clear
-                list_all_ports
-                echo ""
-                read -p "请输入要删除的端口号: " del_port
-                if port_exists "$del_port"; then
-                    delete_port_config "$del_port"
-                    unblock_port "$del_port"
-                else
-                    echo -e "${RED}端口 $del_port 不存在${NC}"
-                fi
+                modify_port_config
                 ;;
             3)
-                list_all_ports
-                echo ""
-                read -p "按回车键继续..." dummy
+                remove_port_limit
                 ;;
             4)
-                clear
-                echo -e "${CYAN}正在检查所有端口流量...${NC}"
-                echo ""
-                if [ -f "$PORT_CONFIG_FILE" ]; then
-                    jq -r '.ports[].port' "$PORT_CONFIG_FILE" | while read port; do
-                        check_and_limit_port_traffic "$port"
-                    done
-                fi
-                echo ""
-                read -p "按回车键继续..." dummy
+                view_port_status
                 ;;
             5)
-                clear
-                setup_crontab
+                view_crontab_status
                 ;;
             0)
                 echo -e "${GREEN}退出程序${NC}"
@@ -534,6 +799,7 @@ interactive_menu() {
                 ;;
             *)
                 echo -e "${RED}无效的选择${NC}"
+                sleep 1
                 ;;
         esac
     done
