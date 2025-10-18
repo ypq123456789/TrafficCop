@@ -1,7 +1,11 @@
 #!/bin/bash
 
 # TrafficCop 管理器 - 交互式管理工具
-# 版本 1.0
+# 版本 1.2
+# 最后更新：2025-10-19 00:20
+
+SCRIPT_VERSION="1.2"
+LAST_UPDATE="2025-10-19 00:20"
 
 # 颜色定义
 RED='\033[0;31m'
@@ -122,7 +126,7 @@ install_port_traffic_limit() {
     run_script "$WORK_DIR/port_traffic_limit.sh"
     
     echo -e "${GREEN}端口流量限制功能安装完成！${NC}"
-    echo -e "${CYAN}提示：使用选项12可查看端口流量，选项13可管理端口配置${NC}"
+    echo -e "${CYAN}提示：使用选项5可管理端口配置，支持序号快速选择${NC}"
     read -p "按回车键继续..."
 }
 
@@ -389,8 +393,10 @@ manage_port_config() {
 show_main_menu() {
     clear
     echo -e "${PURPLE}====================================${NC}"
-    echo -e "${PURPLE}     TrafficCop 管理工具 v1.1      ${NC}"
+    echo -e "${PURPLE}   TrafficCop 管理工具 v${SCRIPT_VERSION}     ${NC}"
     echo -e "${PURPLE}====================================${NC}"
+    echo -e "${CYAN}最后更新: ${LAST_UPDATE}${NC}"
+    echo ""
     echo -e "${YELLOW}1) 安装流量监控${NC}"
     echo -e "${YELLOW}2) 安装Telegram通知功能${NC}"
     echo -e "${YELLOW}3) 安装PushPlus通知功能${NC}"
