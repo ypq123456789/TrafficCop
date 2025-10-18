@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Port Traffic Limit - 端口流量限制脚本 v2.4
+# Port Traffic Limit - 端口流量限制脚本 v2.5
 # 功能：为多个端口设置独立的流量限制（支持JSON配置）
-# 最后更新：2025-10-19 02:45
+# 最后更新：2025-10-19 03:00
 
-SCRIPT_VERSION="2.4"
-LAST_UPDATE="2025-10-19 02:45"
+SCRIPT_VERSION="2.5"
+LAST_UPDATE="2025-10-19 03:00"
 
 WORK_DIR="/root/TrafficCop"
 PORT_CONFIG_FILE="$WORK_DIR/ports_traffic_config.json"
@@ -805,22 +805,50 @@ view_crontab_status() {
     echo -e "${CYAN}==================== 定时任务状态 ====================${NC}"
     echo ""
     
-    local cron_entry="$PORT_SCRIPT_PATH --cron"
+    local wrapper_script="$WORK_DIR/port_traffic_cron_wrapper.sh"
     local current_cron=$(crontab -l 2>/dev/null)
     
-    if echo "$current_cron" | grep -Fq "$PORT_SCRIPT_PATH"; then
-        echo -e "${GREEN}✓ 定时任务已启用${NC}"
+    # 检查是否存在包装脚本定时任务或旧的直接调用定时任务
+    if echo "$current_cron" | grep -Fq "$wrapper_script"; then
+        echo -e "${GREEN}✓ 定时任务已启用（使用 GitHub 最新版本）${NC}"
         echo ""
         echo "当前定时任务："
-        echo "$current_cron" | grep "$PORT_SCRIPT_PATH"
+        echo "$current_cron" | grep "$wrapper_script"
         echo ""
-        echo -e "${CYAN}说明：每分钟自动检查所有端口流量${NC}"
+        echo -e "${CYAN}说明：每分钟从 GitHub 获取最新版本并自动检查所有端口流量${NC}"
+        echo -e "${CYAN}包装脚本：$wrapper_script${NC}"
         echo ""
         read -p "是否要禁用定时任务？[y/N]: " disable
         [ -z "$disable" ] && disable="n"
         if [[ "$disable" = "y" || "$disable" = "Y" ]]; then
-            crontab -l 2>/dev/null | grep -v "$PORT_SCRIPT_PATH" | crontab -
+            crontab -l 2>/dev/null | grep -v "$wrapper_script" | crontab -
+            rm -f "$wrapper_script"
             echo -e "${GREEN}定时任务已禁用${NC}"
+        fi
+    elif echo "$current_cron" | grep -Fq "$PORT_SCRIPT_PATH"; then
+        echo -e "${YELLOW}⚠ 定时任务已启用（使用本地版本 - 建议升级）${NC}"
+        echo ""
+        echo "当前定时任务："
+        echo "$current_cron" | grep "$PORT_SCRIPT_PATH"
+        echo ""
+        echo -e "${CYAN}说明：每分钟检查所有端口流量（使用本地文件）${NC}"
+        echo -e "${YELLOW}建议：升级到从 GitHub 获取最新版本的方式${NC}"
+        echo ""
+        read -p "是否要升级到 GitHub 最新版本模式？[Y/n]: " upgrade
+        [ -z "$upgrade" ] && upgrade="y"
+        if [[ "$upgrade" = "y" || "$upgrade" = "Y" ]]; then
+            # 移除旧的定时任务
+            crontab -l 2>/dev/null | grep -v "$PORT_SCRIPT_PATH" | crontab -
+            echo -e "${GREEN}已移除旧的定时任务${NC}"
+            # 设置新的定时任务
+            setup_crontab
+        else
+            read -p "是否要禁用定时任务？[y/N]: " disable
+            [ -z "$disable" ] && disable="n"
+            if [[ "$disable" = "y" || "$disable" = "Y" ]]; then
+                crontab -l 2>/dev/null | grep -v "$PORT_SCRIPT_PATH" | crontab -
+                echo -e "${GREEN}定时任务已禁用${NC}"
+            fi
         fi
     else
         echo -e "${YELLOW}✗ 定时任务未启用${NC}"
@@ -963,14 +991,65 @@ interactive_menu() {
 
 # 设置定时任务
 setup_crontab() {
-    local cron_entry="* * * * * $PORT_SCRIPT_PATH --cron"
+    # 创建包装脚本，每次从 GitHub 下载并执行最新版本
+    local wrapper_script="$WORK_DIR/port_traffic_cron_wrapper.sh"
+    local github_url="https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/port_traffic_limit.sh"
+    
+    cat > "$wrapper_script" << 'EOF'
+#!/bin/bash
+# Port Traffic Limit Cron Wrapper - 从 GitHub 下载并执行最新版本
+# 自动生成，请勿手动编辑
+
+WORK_DIR="/root/TrafficCop"
+GITHUB_URL="https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/port_traffic_limit.sh"
+TEMP_SCRIPT="/tmp/port_traffic_limit_cron_$$.sh"
+LOG_FILE="$WORK_DIR/port_traffic_monitor.log"
+
+# 下载最新版本
+if wget -q --timeout=10 --tries=2 -O "$TEMP_SCRIPT" "$GITHUB_URL" 2>/dev/null; then
+    if [ -s "$TEMP_SCRIPT" ] && head -1 "$TEMP_SCRIPT" | grep -q "^#!/bin/bash"; then
+        # 下载成功，执行最新版本
+        chmod +x "$TEMP_SCRIPT"
+        bash "$TEMP_SCRIPT" --cron
+        rm -f "$TEMP_SCRIPT"
+    else
+        # 下载的文件无效，使用本地版本
+        if [ -f "$WORK_DIR/port_traffic_limit.sh" ]; then
+            bash "$WORK_DIR/port_traffic_limit.sh" --cron
+        fi
+        rm -f "$TEMP_SCRIPT"
+    fi
+else
+    # 下载失败，使用本地版本作为备份
+    if [ -f "$WORK_DIR/port_traffic_limit.sh" ]; then
+        bash "$WORK_DIR/port_traffic_limit.sh" --cron
+    else
+        echo "$(date '+%Y-%m-%d %H:%M:%S') [错误] 无法下载脚本且本地文件不存在" >> "$LOG_FILE"
+    fi
+    rm -f "$TEMP_SCRIPT"
+fi
+EOF
+    
+    chmod +x "$wrapper_script"
+    
+    # 设置定时任务指向包装脚本
+    local cron_entry="* * * * * $wrapper_script"
     local current_cron=$(crontab -l 2>/dev/null)
     
-    if echo "$current_cron" | grep -Fq "$PORT_SCRIPT_PATH"; then
-        echo -e "${YELLOW}定时任务已存在${NC}"
+    # 检查是否已存在包装脚本的定时任务
+    if echo "$current_cron" | grep -Fq "$wrapper_script"; then
+        echo -e "${YELLOW}定时任务已存在（使用 GitHub 最新版本）${NC}"
     else
+        # 先移除旧的定时任务（如果存在）
+        if echo "$current_cron" | grep -Fq "$PORT_SCRIPT_PATH"; then
+            crontab -l 2>/dev/null | grep -v "$PORT_SCRIPT_PATH" | crontab -
+            echo -e "${YELLOW}已移除旧的定时任务${NC}"
+        fi
+        
+        # 添加新的定时任务
         (crontab -l 2>/dev/null; echo "$cron_entry") | crontab -
-        echo -e "${GREEN}定时任务已添加（每分钟检查一次）${NC}"
+        echo -e "${GREEN}定时任务已添加（每分钟从 GitHub 获取最新版本并执行）${NC}"
+        echo -e "${CYAN}包装脚本位置: $wrapper_script${NC}"
     fi
 }
 
@@ -988,8 +1067,26 @@ remove_all_limits() {
         done
     fi
     
-    # 移除定时任务
-    crontab -l 2>/dev/null | grep -v "$PORT_SCRIPT_PATH" | crontab -
+    # 移除定时任务（包括新旧两种方式）
+    local wrapper_script="$WORK_DIR/port_traffic_cron_wrapper.sh"
+    
+    # 移除包装脚本的定时任务
+    if crontab -l 2>/dev/null | grep -q "$wrapper_script"; then
+        crontab -l 2>/dev/null | grep -v "$wrapper_script" | crontab -
+        echo -e "${GREEN}已移除包装脚本定时任务${NC}"
+    fi
+    
+    # 移除旧的直接调用定时任务
+    if crontab -l 2>/dev/null | grep -q "$PORT_SCRIPT_PATH"; then
+        crontab -l 2>/dev/null | grep -v "$PORT_SCRIPT_PATH" | crontab -
+        echo -e "${GREEN}已移除旧的定时任务${NC}"
+    fi
+    
+    # 删除包装脚本文件
+    if [ -f "$wrapper_script" ]; then
+        rm -f "$wrapper_script"
+        echo -e "${GREEN}已删除包装脚本${NC}"
+    fi
     
     echo -e "${GREEN}所有端口限制已移除${NC}"
 }
