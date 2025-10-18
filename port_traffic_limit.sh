@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Port Traffic Limit - 端口流量限制脚本 v2.6
+# Port Traffic Limit - 端口流量限制脚本 v2.7
 # 功能：为多个端口设置独立的流量限制（支持JSON配置）
-# 最后更新：2025-10-19 03:05
+# 最后更新：2025-10-19 03:10
 
-SCRIPT_VERSION="2.6"
-LAST_UPDATE="2025-10-19 03:05"
+SCRIPT_VERSION="2.7"
+LAST_UPDATE="2025-10-19 03:10"
 
 WORK_DIR="/root/TrafficCop"
 PORT_CONFIG_FILE="$WORK_DIR/ports_traffic_config.json"
@@ -1017,8 +1017,12 @@ if wget -q --timeout=10 --tries=2 -O "$TEMP_SCRIPT" "$GITHUB_URL" 2>/dev/null; t
         local version=$(grep '^SCRIPT_VERSION=' "$TEMP_SCRIPT" | head -1 | cut -d'"' -f2)
         echo "$(date '+%Y-%m-%d %H:%M:%S') [包装脚本] ✓ 下载成功，版本: v${version}" >> "$WRAPPER_LOG"
         
-        # 下载成功，执行最新版本
-        chmod +x "$TEMP_SCRIPT"
+        # 覆盖本地文件作为备份
+        cp "$TEMP_SCRIPT" "$WORK_DIR/port_traffic_limit.sh"
+        chmod +x "$WORK_DIR/port_traffic_limit.sh"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') [包装脚本] ✓ 已更新本地文件" >> "$WRAPPER_LOG"
+        
+        # 执行最新版本
         echo "$(date '+%Y-%m-%d %H:%M:%S') [包装脚本] 执行 GitHub 最新版本" >> "$WRAPPER_LOG"
         bash "$TEMP_SCRIPT" --cron
         rm -f "$TEMP_SCRIPT"
