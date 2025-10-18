@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # TrafficCop 管理器 - 交互式管理工具
-# 版本 1.7
-# 最后更新：2025-10-19 03:05
+# 版本 1.8
+# 最后更新：2025-10-19 03:15
 
-SCRIPT_VERSION="1.7"
-LAST_UPDATE="2025-10-19 03:05"
+SCRIPT_VERSION="1.8"
+LAST_UPDATE="2025-10-19 03:15"
 
 # 颜色定义
 RED='\033[0;31m'
@@ -417,63 +417,49 @@ view_port_traffic() {
 # 安装/管理端口配置
 manage_port_config() {
     clear
-    echo -e "${CYAN}正在从 GitHub 获取最新版端口流量限制脚本...${NC}"
+    echo -e "${CYAN}正在从 GitHub 下载最新版端口流量限制脚本...${NC}"
     echo ""
     
     # GitHub 原始文件链接
     local GITHUB_RAW="https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/port_traffic_limit.sh"
-    local TEMP_FILE="/tmp/port_traffic_limit_latest.sh"
+    local LOCAL_FILE="$WORK_DIR/port_traffic_limit.sh"
     
-    # 下载最新版本
-    if wget -q --timeout=10 --tries=3 -O "$TEMP_FILE" "$GITHUB_RAW"; then
-        if [ -s "$TEMP_FILE" ] && head -1 "$TEMP_FILE" | grep -q "^#!/bin/bash"; then
-            chmod +x "$TEMP_FILE"
-            echo -e "${GREEN}✓ 获取成功，正在启动...${NC}"
+    # 下载最新版本到本地
+    if wget -q --timeout=10 --tries=3 -O "$LOCAL_FILE" "$GITHUB_RAW"; then
+        if [ -s "$LOCAL_FILE" ] && head -1 "$LOCAL_FILE" | grep -q "^#!/bin/bash"; then
+            chmod +x "$LOCAL_FILE"
+            
+            # 提取版本号
+            local version=$(grep '^SCRIPT_VERSION=' "$LOCAL_FILE" | head -1 | cut -d'"' -f2)
+            echo -e "${GREEN}✓ 下载成功，版本: v${version}${NC}"
+            echo -e "${GREEN}✓ 已保存到: $LOCAL_FILE${NC}"
             echo ""
             sleep 1
             
-            # 直接运行临时文件
-            bash "$TEMP_FILE"
-            
-            # 运行完成后清理临时文件
-            rm -f "$TEMP_FILE"
+            # 执行本地文件
+            bash "$LOCAL_FILE"
         else
             echo -e "${RED}✗ 下载的文件无效${NC}"
-            echo -e "${YELLOW}尝试使用本地版本...${NC}"
-            echo ""
             
-            if [ -f "$WORK_DIR/port_traffic_limit.sh" ]; then
-                bash "$WORK_DIR/port_traffic_limit.sh"
+            if [ -f "$LOCAL_FILE.bak" ]; then
+                echo -e "${YELLOW}恢复上次的备份版本...${NC}"
+                mv "$LOCAL_FILE.bak" "$LOCAL_FILE"
+                bash "$LOCAL_FILE"
             else
-                echo -e "${RED}本地也没有找到脚本文件${NC}"
-                echo ""
-                read -p "是否现在安装到本地？[Y/n]: " install_confirm
-                [ -z "$install_confirm" ] && install_confirm="y"
-                
-                if [[ "$install_confirm" = "y" || "$install_confirm" = "Y" ]]; then
-                    install_port_traffic_limit
-                fi
+                echo -e "${RED}无可用的脚本文件${NC}"
             fi
-            rm -f "$TEMP_FILE"
         fi
     else
         echo -e "${RED}✗ 无法连接到 GitHub${NC}"
-        echo -e "${YELLOW}尝试使用本地版本...${NC}"
+        echo -e "${YELLOW}使用本地现有版本...${NC}"
         echo ""
         
-        if [ -f "$WORK_DIR/port_traffic_limit.sh" ]; then
-            bash "$WORK_DIR/port_traffic_limit.sh"
+        if [ -f "$LOCAL_FILE" ]; then
+            bash "$LOCAL_FILE"
         else
-            echo -e "${RED}本地也没有找到脚本文件${NC}"
-            echo ""
-            read -p "是否现在安装到本地？[Y/n]: " install_confirm
-            [ -z "$install_confirm" ] && install_confirm="y"
-            
-            if [[ "$install_confirm" = "y" || "$install_confirm" = "Y" ]]; then
-                install_port_traffic_limit
-            fi
+            echo -e "${RED}本地没有找到脚本文件${NC}"
+            echo -e "${YELLOW}请检查网络连接后重试${NC}"
         fi
-        rm -f "$TEMP_FILE"
     fi
 }
 
