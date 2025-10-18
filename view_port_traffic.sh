@@ -169,6 +169,11 @@ show_port_info() {
 
 # 显示所有端口信息
 show_all_ports() {
+    # 非实时模式才清屏（实时模式在realtime_monitor中清屏）
+    if [ "$1" != "--no-clear" ]; then
+        clear
+    fi
+    
     if [ ! -f "$PORTS_CONFIG_FILE" ]; then
         echo -e "${RED}未找到端口配置文件${NC}"
         return
@@ -226,6 +231,7 @@ show_all_ports() {
 # 实时监控模式
 realtime_monitor() {
     while true; do
+        clear
         show_all_ports
         echo -e "${YELLOW}[实时监控模式] 按 Ctrl+C 退出${NC}"
         sleep 5

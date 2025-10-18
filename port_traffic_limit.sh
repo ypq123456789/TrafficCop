@@ -148,6 +148,7 @@ delete_port_config() {
 
 # 列出所有端口
 list_all_ports() {
+    clear
     echo -e "${CYAN}==================== 已配置的端口 ====================${NC}"
     if [ ! -f "$PORT_CONFIG_FILE" ] || [ "$(jq -r '.ports | length' "$PORT_CONFIG_FILE")" -eq 0 ]; then
         echo -e "${YELLOW}暂无配置的端口${NC}"
@@ -303,7 +304,10 @@ check_and_limit_port_traffic() {
 
 # 端口配置向导
 port_config_wizard() {
+    clear
     echo -e "${CYAN}==================== 端口配置向导 ====================${NC}"
+    echo -e "${YELLOW}提示：所有选项可直接回车使用默认值${NC}"
+    echo ""
     
     # 输入端口号
     while true; do
@@ -318,62 +322,97 @@ port_config_wizard() {
     # 检查端口是否已存在
     if port_exists "$port"; then
         echo -e "${YELLOW}端口 $port 已存在配置${NC}"
-        read -p "是否要更新配置？(y/n): " update_choice
+        read -p "是否要更新配置？[y/N]: " update_choice
+        [ -z "$update_choice" ] && update_choice="n"
         if [[ "$update_choice" != "y" && "$update_choice" != "Y" ]]; then
             return
         fi
     fi
     
     # 端口描述
-    read -p "请输入端口描述 (如: Web Server): " description
+    read -p "端口描述 [回车=Port $port]: " description
     [ -z "$description" ] && description="Port $port"
     
-    # 流量限制
+    # 流量限制 - 智能默认
+    if read_machine_config && [ -n "$TRAFFIC_LIMIT" ]; then
+        default_limit="$TRAFFIC_LIMIT"
+    else
+        default_limit="100"
+    fi
+    
     while true; do
-        read -p "请输入端口流量限制 (GB): " traffic_limit
-        if [[ "$traffic_limit" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+        read -p "流量限制(GB) [回车=${default_limit}]: " traffic_limit
+        if [ -z "$traffic_limit" ]; then
+            traffic_limit="$default_limit"
+            break
+        elif [[ "$traffic_limit" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
             break
         else
-            echo -e "${RED}无效的流量限制，请输入数字${NC}"
+            echo -e "${RED}无效输入${NC}"
         fi
     done
     
-    # 容错范围
+    # 容错范围 - 智能默认
+    if read_machine_config && [ -n "$TRAFFIC_TOLERANCE" ]; then
+        default_tolerance="$TRAFFIC_TOLERANCE"
+    else
+        default_tolerance="10"
+    fi
+    
     while true; do
-        read -p "请输入容错范围 (GB，建议5-10): " traffic_tolerance
-        if [[ "$traffic_tolerance" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+        read -p "容错范围(GB) [回车=${default_tolerance}]: " traffic_tolerance
+        if [ -z "$traffic_tolerance" ]; then
+            traffic_tolerance="$default_tolerance"
+            break
+        elif [[ "$traffic_tolerance" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
             break
         else
-            echo -e "${RED}无效的容错范围，请输入数字${NC}"
+            echo -e "${RED}无效输入${NC}"
         fi
     done
     
     # 配置方式选择
     echo ""
     echo -e "${CYAN}配置方式：${NC}"
-    echo "1) 使用机器配置（推荐）"
+    echo "1) 同步机器总流量配置（推荐，回车默认）"
     echo "2) 自定义配置"
-    read -p "请选择 (1/2): " config_choice
+    read -p "选择 [回车=1]: " config_choice
+    [ -z "$config_choice" ] && config_choice="1"
     
-    if [ "$config_choice" = "1" ] && read_machine_config; then
-        # 使用机器配置
-        traffic_mode=${TRAFFIC_MODE:-"total"}
-        traffic_period=${TRAFFIC_PERIOD:-"monthly"}
-        period_start_day=${PERIOD_START_DAY:-1}
-        limit_speed=${LIMIT_SPEED:-20}
-        main_interface=${MAIN_INTERFACE:-"eth0"}
-        limit_mode=${LIMIT_MODE:-"tc"}
-        
-        echo -e "${GREEN}已继承机器配置${NC}"
+    if [ "$config_choice" = "1" ]; then
+        # 同步机器配置
+        if read_machine_config; then
+            traffic_mode=${TRAFFIC_MODE:-"total"}
+            traffic_period=${TRAFFIC_PERIOD:-"monthly"}
+            period_start_day=${PERIOD_START_DAY:-1}
+            limit_speed=${LIMIT_SPEED:-20}
+            main_interface=${MAIN_INTERFACE:-$(ip route | grep default | awk '{print $5}' | head -n1)}
+            limit_mode=${LIMIT_MODE:-"tc"}
+            
+            echo -e "${GREEN}✓ 已同步机器总流量配置${NC}"
+            echo -e "${CYAN}  统计模式: $traffic_mode | 周期: $traffic_period | 限制模式: $limit_mode${NC}"
+        else
+            # 机器配置不存在，使用默认值
+            traffic_mode="total"
+            traffic_period="monthly"
+            period_start_day=1
+            limit_speed=20
+            main_interface=$(ip route | grep default | awk '{print $5}' | head -n1)
+            limit_mode="tc"
+            
+            echo -e "${YELLOW}! 未找到机器配置，使用默认配置${NC}"
+            echo -e "${CYAN}  统计模式: total | 周期: monthly | 限制模式: tc${NC}"
+        fi
     else
         # 自定义配置
         echo ""
         echo -e "${CYAN}流量统计模式：${NC}"
-        echo "1) total - 入站+出站"
+        echo "1) total - 入站+出站（默认）"
         echo "2) outbound - 仅出站"
         echo "3) inbound - 仅入站"
         echo "4) max - 取最大值"
-        read -p "请选择 (1-4): " mode_choice
+        read -p "请选择 [默认: 1]: " mode_choice
+        [ -z "$mode_choice" ] && mode_choice="1"
         case $mode_choice in
             1) traffic_mode="total" ;;
             2) traffic_mode="outbound" ;;
@@ -384,10 +423,11 @@ port_config_wizard() {
         
         echo ""
         echo -e "${CYAN}统计周期：${NC}"
-        echo "1) monthly - 每月"
+        echo "1) monthly - 每月（默认）"
         echo "2) quarterly - 每季度"
         echo "3) yearly - 每年"
-        read -p "请选择 (1-3): " period_choice
+        read -p "请选择 [默认: 1]: " period_choice
+        [ -z "$period_choice" ] && period_choice="1"
         case $period_choice in
             1) traffic_period="monthly" ;;
             2) traffic_period="quarterly" ;;
@@ -395,17 +435,18 @@ port_config_wizard() {
             *) traffic_period="monthly" ;;
         esac
         
-        read -p "周期起始日 (1-28): " period_start_day
+        read -p "周期起始日 (1-28) [默认: 1]: " period_start_day
         [ -z "$period_start_day" ] && period_start_day=1
         
         echo ""
         echo -e "${CYAN}限制模式：${NC}"
-        echo "1) tc - 限速模式"
+        echo "1) tc - 限速模式（默认）"
         echo "2) shutdown - 阻断模式"
-        read -p "请选择 (1/2): " limit_choice
+        read -p "请选择 [默认: 1]: " limit_choice
+        [ -z "$limit_choice" ] && limit_choice="1"
         if [ "$limit_choice" = "1" ]; then
             limit_mode="tc"
-            read -p "限速值 (kbit/s，建议20-100): " limit_speed
+            read -p "限速值 (kbit/s) [默认: 20]: " limit_speed
             [ -z "$limit_speed" ] && limit_speed=20
         else
             limit_mode="shutdown"
@@ -418,6 +459,8 @@ port_config_wizard() {
     fi
     
     # 保存配置
+    echo ""
+    echo -e "${CYAN}正在保存配置...${NC}"
     add_port_config "$port" "$description" "$traffic_limit" "$traffic_tolerance" \
         "$traffic_mode" "$traffic_period" "$period_start_day" "$limit_speed" \
         "$main_interface" "$limit_mode"
@@ -425,13 +468,18 @@ port_config_wizard() {
     # 初始化iptables规则
     init_iptables_rules "$port" "$main_interface"
     
-    echo -e "${GREEN}端口 $port 配置完成！${NC}"
+    echo ""
+    echo -e "${GREEN}════════════════════════════════════════${NC}"
+    echo -e "${GREEN}✓ 端口 $port 配置完成！${NC}"
+    echo -e "${GREEN}════════════════════════════════════════${NC}"
+    echo ""
+    read -p "按回车键继续..." dummy
 }
 
 # 交互式主菜单
 interactive_menu() {
     while true; do
-        echo ""
+        clear
         echo -e "${CYAN}========== 端口流量限制管理 v2.0 ==========${NC}"
         echo "1) 添加/修改端口配置"
         echo "2) 删除端口配置"
@@ -448,7 +496,9 @@ interactive_menu() {
                 port_config_wizard
                 ;;
             2)
+                clear
                 list_all_ports
+                echo ""
                 read -p "请输入要删除的端口号: " del_port
                 if port_exists "$del_port"; then
                     delete_port_config "$del_port"
@@ -459,15 +509,23 @@ interactive_menu() {
                 ;;
             3)
                 list_all_ports
+                echo ""
+                read -p "按回车键继续..." dummy
                 ;;
             4)
+                clear
+                echo -e "${CYAN}正在检查所有端口流量...${NC}"
+                echo ""
                 if [ -f "$PORT_CONFIG_FILE" ]; then
                     jq -r '.ports[].port' "$PORT_CONFIG_FILE" | while read port; do
                         check_and_limit_port_traffic "$port"
                     done
                 fi
+                echo ""
+                read -p "按回车键继续..." dummy
                 ;;
             5)
+                clear
                 setup_crontab
                 ;;
             0)

@@ -337,26 +337,28 @@ stop_all_services() {
 
 # 查看端口流量
 view_port_traffic() {
-    echo -e "${CYAN}正在查看端口流量...${NC}"
+    clear
     if [ -f "$WORK_DIR/view_port_traffic.sh" ]; then
         bash "$WORK_DIR/view_port_traffic.sh"
     else
         echo -e "${RED}端口流量查看脚本不存在！${NC}"
         echo -e "${YELLOW}请先安装端口流量限制功能${NC}"
     fi
+    echo ""
     read -p "按回车键继续..."
 }
 
 # 管理端口配置
 manage_port_config() {
-    echo -e "${CYAN}正在打开端口配置管理...${NC}"
+    clear
     if [ -f "$WORK_DIR/port_traffic_limit.sh" ]; then
         bash "$WORK_DIR/port_traffic_limit.sh"
     else
         echo -e "${RED}端口流量限制脚本不存在！${NC}"
         echo -e "${YELLOW}请先安装端口流量限制功能${NC}"
+        echo ""
+        read -p "按回车键继续..."
     fi
-    read -p "按回车键继续..."
 }
 
 # 显示主菜单
