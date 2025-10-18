@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # TrafficCop 管理器 - 交互式管理工具
-# 版本 1.3
-# 最后更新：2025-10-19 03:00
+# 版本 1.4
+# 最后更新：2025-10-19 02:40
 
-SCRIPT_VERSION="1.3"
-LAST_UPDATE="2025-10-19 03:00"
+SCRIPT_VERSION="1.4"
+LAST_UPDATE="2025-10-19 02:40"
 
 # 颜色定义
 RED='\033[0;31m'
@@ -389,22 +389,63 @@ view_port_traffic() {
 # 安装/管理端口配置
 manage_port_config() {
     clear
-    if [ -f "$WORK_DIR/port_traffic_limit.sh" ]; then
-        # 已安装，直接进入管理界面
-        bash "$WORK_DIR/port_traffic_limit.sh"
-    else
-        # 未安装，先安装
-        echo -e "${YELLOW}检测到端口流量限制功能未安装${NC}"
-        echo ""
-        read -p "是否现在安装？[Y/n]: " install_confirm
-        [ -z "$install_confirm" ] && install_confirm="y"
-        
-        if [[ "$install_confirm" = "y" || "$install_confirm" = "Y" ]]; then
-            install_port_traffic_limit
-        else
+    echo -e "${CYAN}正在从 GitHub 获取最新版端口流量限制脚本...${NC}"
+    echo ""
+    
+    # GitHub 原始文件链接
+    local GITHUB_RAW="https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/port_traffic_limit.sh"
+    local TEMP_FILE="/tmp/port_traffic_limit_latest.sh"
+    
+    # 下载最新版本
+    if wget -q --timeout=10 --tries=3 -O "$TEMP_FILE" "$GITHUB_RAW"; then
+        if [ -s "$TEMP_FILE" ] && head -1 "$TEMP_FILE" | grep -q "^#!/bin/bash"; then
+            chmod +x "$TEMP_FILE"
+            echo -e "${GREEN}✓ 获取成功，正在启动...${NC}"
             echo ""
-            read -p "按回车键继续..."
+            sleep 1
+            
+            # 直接运行临时文件
+            bash "$TEMP_FILE"
+            
+            # 运行完成后清理临时文件
+            rm -f "$TEMP_FILE"
+        else
+            echo -e "${RED}✗ 下载的文件无效${NC}"
+            echo -e "${YELLOW}尝试使用本地版本...${NC}"
+            echo ""
+            
+            if [ -f "$WORK_DIR/port_traffic_limit.sh" ]; then
+                bash "$WORK_DIR/port_traffic_limit.sh"
+            else
+                echo -e "${RED}本地也没有找到脚本文件${NC}"
+                echo ""
+                read -p "是否现在安装到本地？[Y/n]: " install_confirm
+                [ -z "$install_confirm" ] && install_confirm="y"
+                
+                if [[ "$install_confirm" = "y" || "$install_confirm" = "Y" ]]; then
+                    install_port_traffic_limit
+                fi
+            fi
+            rm -f "$TEMP_FILE"
         fi
+    else
+        echo -e "${RED}✗ 无法连接到 GitHub${NC}"
+        echo -e "${YELLOW}尝试使用本地版本...${NC}"
+        echo ""
+        
+        if [ -f "$WORK_DIR/port_traffic_limit.sh" ]; then
+            bash "$WORK_DIR/port_traffic_limit.sh"
+        else
+            echo -e "${RED}本地也没有找到脚本文件${NC}"
+            echo ""
+            read -p "是否现在安装到本地？[Y/n]: " install_confirm
+            [ -z "$install_confirm" ] && install_confirm="y"
+            
+            if [[ "$install_confirm" = "y" || "$install_confirm" = "Y" ]]; then
+                install_port_traffic_limit
+            fi
+        fi
+        rm -f "$TEMP_FILE"
     fi
 }
 
