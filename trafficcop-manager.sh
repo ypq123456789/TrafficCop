@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # TrafficCop 管理器 - 交互式管理工具
-# 版本 1.5
-# 最后更新：2025-10-19 02:45
+# 版本 1.6
+# 最后更新：2025-10-19 02:55
 
-SCRIPT_VERSION="1.5"
-LAST_UPDATE="2025-10-19 02:45"
+SCRIPT_VERSION="1.6"
+LAST_UPDATE="2025-10-19 02:55"
 
 # 颜色定义
 RED='\033[0;31m'
@@ -167,35 +167,36 @@ view_logs() {
     case $log_choice in
         1)
             if [ -f "$WORK_DIR/traffic_monitor.log" ]; then
-                tail -n 30 "$WORK_DIR/traffic_monitor.log"
+                tail -n 50 "$WORK_DIR/traffic_monitor.log"
             else
                 echo -e "${RED}流量监控日志不存在${NC}"
             fi
             ;;
         2)
             if [ -f "$WORK_DIR/tg_notifier_cron.log" ]; then
-                tail -n 30 "$WORK_DIR/tg_notifier_cron.log"
+                tail -n 50 "$WORK_DIR/tg_notifier_cron.log"
             else
                 echo -e "${RED}Telegram通知日志不存在${NC}"
             fi
             ;;
         3)
             if [ -f "$WORK_DIR/pushplus_notifier_cron.log" ]; then
-                tail -n 30 "$WORK_DIR/pushplus_notifier_cron.log"
+                tail -n 50 "$WORK_DIR/pushplus_notifier_cron.log"
             else
                 echo -e "${RED}PushPlus通知日志不存在${NC}"
             fi
             ;;
         4)
             if [ -f "$WORK_DIR/serverchan_notifier_cron.log" ]; then
-                tail -n 30 "$WORK_DIR/serverchan_notifier_cron.log"
+                tail -n 50 "$WORK_DIR/serverchan_notifier_cron.log"
             else
                 echo -e "${RED}Server酱通知日志不存在${NC}"
             fi
             ;;
         5)
             if [ -f "$WORK_DIR/port_traffic_monitor.log" ]; then
-                tail -n 30 "$WORK_DIR/port_traffic_monitor.log"
+                # 显示最后100行，确保能看到完整的检查周期
+                tail -n 100 "$WORK_DIR/port_traffic_monitor.log"
             else
                 echo -e "${RED}端口流量监控日志不存在${NC}"
             fi
@@ -218,10 +219,9 @@ view_config() {
     echo "2) Telegram通知配置"
     echo "3) PushPlus通知配置"
     echo "4) Server酱通知配置"
-    echo "5) 端口流量监控配置"
     echo "0) 返回主菜单"
     
-    read -p "请选择要查看的配置类型 [0-5]: " config_choice
+    read -p "请选择要查看的配置类型 [0-4]: " config_choice
     
     case $config_choice in
         1)
@@ -250,32 +250,6 @@ view_config() {
                 cat "$WORK_DIR/serverchan_notifier_config.txt"
             else
                 echo -e "${RED}Server酱通知配置不存在${NC}"
-            fi
-            ;;
-        5)
-            if [ -f "$WORK_DIR/ports_traffic_config.json" ]; then
-                echo -e "${GREEN}端口流量监控配置（JSON格式）：${NC}"
-                echo ""
-                
-                # 检查是否有jq，有的话格式化输出
-                if command -v jq &> /dev/null; then
-                    jq '.' "$WORK_DIR/ports_traffic_config.json"
-                else
-                    cat "$WORK_DIR/ports_traffic_config.json"
-                fi
-                
-                echo ""
-                echo -e "${CYAN}=== 端口流量使用情况 ===${NC}"
-                
-                # 调用 view_port_traffic.sh 显示实时流量
-                if [ -f "$WORK_DIR/view_port_traffic.sh" ]; then
-                    bash "$WORK_DIR/view_port_traffic.sh"
-                else
-                    echo -e "${YELLOW}view_port_traffic.sh 脚本不存在${NC}"
-                fi
-            else
-                echo -e "${RED}端口流量监控配置不存在${NC}"
-                echo -e "${YELLOW}提示：请先使用菜单选项 5) 安装/管理端口流量限制${NC}"
             fi
             ;;
         0)
