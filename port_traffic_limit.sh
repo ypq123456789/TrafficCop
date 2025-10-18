@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Port Traffic Limit - 端口流量限制脚本 v2.7
+# Port Traffic Limit - 端口流量限制脚本 v2.8
 # 功能：为多个端口设置独立的流量限制（支持JSON配置）
-# 最后更新：2025-10-19 03:10
+# 最后更新：2025-10-19 03:20
 
-SCRIPT_VERSION="2.7"
-LAST_UPDATE="2025-10-19 03:10"
+SCRIPT_VERSION="2.8"
+LAST_UPDATE="2025-10-19 03:20"
 
 WORK_DIR="/root/TrafficCop"
 PORT_CONFIG_FILE="$WORK_DIR/ports_traffic_config.json"
@@ -991,87 +991,27 @@ interactive_menu() {
 
 # 设置定时任务
 setup_crontab() {
-    # 创建包装脚本，每次从 GitHub 下载并执行最新版本
-    local wrapper_script="$WORK_DIR/port_traffic_cron_wrapper.sh"
-    local github_url="https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/port_traffic_limit.sh"
-    
-    cat > "$wrapper_script" << 'EOF'
-#!/bin/bash
-# Port Traffic Limit Cron Wrapper - 从 GitHub 下载并执行最新版本
-# 自动生成，请勿手动编辑
-
-WORK_DIR="/root/TrafficCop"
-GITHUB_URL="https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/port_traffic_limit.sh"
-TEMP_SCRIPT="/tmp/port_traffic_limit_cron_$$.sh"
-LOG_FILE="$WORK_DIR/port_traffic_monitor.log"
-WRAPPER_LOG="$WORK_DIR/port_traffic_cron_wrapper.log"
-
-# 记录包装脚本执行
-echo "$(date '+%Y-%m-%d %H:%M:%S') [包装脚本] 开始执行" >> "$WRAPPER_LOG"
-
-# 下载最新版本
-echo "$(date '+%Y-%m-%d %H:%M:%S') [包装脚本] 正在从 GitHub 下载最新版本..." >> "$WRAPPER_LOG"
-if wget -q --timeout=10 --tries=2 -O "$TEMP_SCRIPT" "$GITHUB_URL" 2>/dev/null; then
-    if [ -s "$TEMP_SCRIPT" ] && head -1 "$TEMP_SCRIPT" | grep -q "^#!/bin/bash"; then
-        # 提取版本号
-        local version=$(grep '^SCRIPT_VERSION=' "$TEMP_SCRIPT" | head -1 | cut -d'"' -f2)
-        echo "$(date '+%Y-%m-%d %H:%M:%S') [包装脚本] ✓ 下载成功，版本: v${version}" >> "$WRAPPER_LOG"
-        
-        # 覆盖本地文件作为备份
-        cp "$TEMP_SCRIPT" "$WORK_DIR/port_traffic_limit.sh"
-        chmod +x "$WORK_DIR/port_traffic_limit.sh"
-        echo "$(date '+%Y-%m-%d %H:%M:%S') [包装脚本] ✓ 已更新本地文件" >> "$WRAPPER_LOG"
-        
-        # 执行最新版本
-        echo "$(date '+%Y-%m-%d %H:%M:%S') [包装脚本] 执行 GitHub 最新版本" >> "$WRAPPER_LOG"
-        bash "$TEMP_SCRIPT" --cron
-        rm -f "$TEMP_SCRIPT"
-        echo "$(date '+%Y-%m-%d %H:%M:%S') [包装脚本] 执行完成" >> "$WRAPPER_LOG"
-    else
-        # 下载的文件无效，使用本地版本
-        echo "$(date '+%Y-%m-%d %H:%M:%S') [包装脚本] ✗ 下载的文件无效，降级使用本地版本" >> "$WRAPPER_LOG"
-        if [ -f "$WORK_DIR/port_traffic_limit.sh" ]; then
-            bash "$WORK_DIR/port_traffic_limit.sh" --cron
-        else
-            echo "$(date '+%Y-%m-%d %H:%M:%S') [包装脚本] ✗ 本地文件也不存在" >> "$WRAPPER_LOG"
-        fi
-        rm -f "$TEMP_SCRIPT"
-    fi
-else
-    # 下载失败，使用本地版本作为备份
-    echo "$(date '+%Y-%m-%d %H:%M:%S') [包装脚本] ✗ 下载失败，降级使用本地版本" >> "$WRAPPER_LOG"
-    if [ -f "$WORK_DIR/port_traffic_limit.sh" ]; then
-        bash "$WORK_DIR/port_traffic_limit.sh" --cron
-    else
-        echo "$(date '+%Y-%m-%d %H:%M:%S') [包装脚本] ✗ 无法下载脚本且本地文件不存在" >> "$LOG_FILE"
-        echo "$(date '+%Y-%m-%d %H:%M:%S') [包装脚本] ✗ 无法下载脚本且本地文件不存在" >> "$WRAPPER_LOG"
-    fi
-    rm -f "$TEMP_SCRIPT"
-fi
-
-echo "-----" >> "$WRAPPER_LOG"
-EOF
-    
-    chmod +x "$wrapper_script"
-    
-    # 设置定时任务指向包装脚本
-    local cron_entry="* * * * * $wrapper_script"
+    # 定时任务直接执行本地文件
+    local cron_entry="* * * * * bash $PORT_SCRIPT_PATH --cron"
     local current_cron=$(crontab -l 2>/dev/null)
     
-    # 检查是否已存在包装脚本的定时任务
-    if echo "$current_cron" | grep -Fq "$wrapper_script"; then
-        echo -e "${YELLOW}定时任务已存在（使用 GitHub 最新版本）${NC}"
+    # 检查是否已存在定时任务
+    if echo "$current_cron" | grep -Fq "$PORT_SCRIPT_PATH --cron"; then
+        echo -e "${YELLOW}定时任务已存在${NC}"
+        echo -e "${CYAN}定时任务: $cron_entry${NC}"
     else
-        # 先移除旧的定时任务（如果存在）
-        if echo "$current_cron" | grep -Fq "$PORT_SCRIPT_PATH"; then
-            crontab -l 2>/dev/null | grep -v "$PORT_SCRIPT_PATH" | crontab -
-            echo -e "${YELLOW}已移除旧的定时任务${NC}"
+        # 先移除旧的包装脚本定时任务（如果存在）
+        local wrapper_script="$WORK_DIR/port_traffic_cron_wrapper.sh"
+        if echo "$current_cron" | grep -Fq "$wrapper_script"; then
+            crontab -l 2>/dev/null | grep -v "$wrapper_script" | crontab -
+            echo -e "${YELLOW}已移除旧的包装脚本定时任务${NC}"
         fi
         
         # 添加新的定时任务
         (crontab -l 2>/dev/null; echo "$cron_entry") | crontab -
-        echo -e "${GREEN}定时任务已添加（每分钟从 GitHub 获取最新版本并执行）${NC}"
-        echo -e "${CYAN}包装脚本位置: $wrapper_script${NC}"
+        echo -e "${GREEN}定时任务已添加（每分钟检查端口流量）${NC}"
+        echo -e "${CYAN}定时任务: $cron_entry${NC}"
+        echo -e "${YELLOW}提示: 请通过主菜单选项5更新脚本到最新版本${NC}"
     fi
 }
 
@@ -1092,10 +1032,10 @@ remove_all_limits() {
     # 移除定时任务（包括新旧两种方式）
     local wrapper_script="$WORK_DIR/port_traffic_cron_wrapper.sh"
     
-    # 移除包装脚本的定时任务
+    # 移除包装脚本的定时任务（旧版本）
     if crontab -l 2>/dev/null | grep -q "$wrapper_script"; then
         crontab -l 2>/dev/null | grep -v "$wrapper_script" | crontab -
-        echo -e "${GREEN}已移除包装脚本定时任务${NC}"
+        echo -e "${GREEN}已移除旧的包装脚本定时任务${NC}"
     fi
     
     # 移除旧的直接调用定时任务
