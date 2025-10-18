@@ -1,7 +1,9 @@
 #!/bin/bash
 
 # View Port Traffic - 查看端口流量使用情况脚本
-# 版本 1.2
+# 版本 1.3
+
+SCRIPT_VERSION="1.3"
 
 # 设置时区为上海（东八区）
 export TZ='Asia/Shanghai'
@@ -195,10 +197,11 @@ show_all_ports() {
     
     clear
     echo -e "${PURPLE}╔════════════════════════════════════════╗${NC}"
-    echo -e "${PURPLE}║   端口流量监控 - 实时查看工具          ║${NC}"
+    echo -e "${PURPLE}║   端口流量监控 - 实时查看工具 v${SCRIPT_VERSION}     ║${NC}"
     echo -e "${PURPLE}╚════════════════════════════════════════╝${NC}"
     echo ""
-    echo -e "更新时间: ${CYAN}$(date '+%Y-%m-%d %H:%M:%S')${NC}"
+    # 确保使用北京时间
+    echo -e "更新时间: ${CYAN}$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')${NC}"
     echo -e "已配置端口: ${GREEN}${port_count}${NC}"
     echo ""
     
