@@ -210,10 +210,10 @@ get_port_traffic_usage() {
     # 获取出站流量（字节）
     local out_bytes=$(iptables -L OUTPUT -v -n -x | grep "spt:$port" | awk '{sum+=$2} END {print sum+0}')
     
-    # 转换为GB
-    local in_gb=$(echo "scale=2; $in_bytes / 1024 / 1024 / 1024" | bc)
-    local out_gb=$(echo "scale=2; $out_bytes / 1024 / 1024 / 1024" | bc)
-    local total_gb=$(echo "scale=2; $in_gb + $out_gb" | bc)
+    # 转换为GB（使用printf格式化，确保显示前导零）
+    local in_gb=$(printf "%.2f" $(echo "scale=2; $in_bytes / 1024 / 1024 / 1024" | bc))
+    local out_gb=$(printf "%.2f" $(echo "scale=2; $out_bytes / 1024 / 1024 / 1024" | bc))
+    local total_gb=$(printf "%.2f" $(echo "scale=2; $in_gb + $out_gb" | bc))
     
     echo "$in_gb,$out_gb,$total_gb"
 }

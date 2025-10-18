@@ -34,7 +34,8 @@ get_port_traffic_usage() {
     esac
     
     if [ -n "$usage_bytes" ] && [ "$usage_bytes" -gt 0 ]; then
-        echo "scale=3; $usage_bytes/1024/1024/1024" | bc
+        # 使用 printf 确保显示前导零（例如 0.02 而不是 .02）
+        printf "%.3f" $(echo "scale=3; $usage_bytes/1024/1024/1024" | bc)
     else
         echo "0.000"
     fi
@@ -53,7 +54,8 @@ calculate_percentage() {
     local limit=$2
     
     if (( $(echo "$limit > 0" | bc -l) )); then
-        echo "scale=2; ($usage / $limit) * 100" | bc
+        # 使用 printf 确保显示前导零
+        printf "%.2f" $(echo "scale=2; ($usage / $limit) * 100" | bc)
     else
         echo "0.00"
     fi

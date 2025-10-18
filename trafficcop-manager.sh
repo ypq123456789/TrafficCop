@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # TrafficCop 管理器 - 交互式管理工具
-# 版本 1.2
-# 最后更新：2025-10-19 00:20
+# 版本 1.3
+# 最后更新：2025-10-19 03:00
 
-SCRIPT_VERSION="1.2"
-LAST_UPDATE="2025-10-19 00:20"
+SCRIPT_VERSION="1.3"
+LAST_UPDATE="2025-10-19 03:00"
 
 # 颜色定义
 RED='\033[0;31m'
@@ -253,10 +253,29 @@ view_config() {
             fi
             ;;
         5)
-            if [ -f "$WORK_DIR/port_traffic_config.txt" ]; then
-                cat "$WORK_DIR/port_traffic_config.txt"
+            if [ -f "$WORK_DIR/ports_traffic_config.json" ]; then
+                echo -e "${GREEN}端口流量监控配置（JSON格式）：${NC}"
+                echo ""
+                
+                # 检查是否有jq，有的话格式化输出
+                if command -v jq &> /dev/null; then
+                    jq '.' "$WORK_DIR/ports_traffic_config.json"
+                else
+                    cat "$WORK_DIR/ports_traffic_config.json"
+                fi
+                
+                echo ""
+                echo -e "${CYAN}=== 端口流量使用情况 ===${NC}"
+                
+                # 调用 view_port_traffic.sh 显示实时流量
+                if [ -f "$WORK_DIR/view_port_traffic.sh" ]; then
+                    bash "$WORK_DIR/view_port_traffic.sh"
+                else
+                    echo -e "${YELLOW}view_port_traffic.sh 脚本不存在${NC}"
+                fi
             else
                 echo -e "${RED}端口流量监控配置不存在${NC}"
+                echo -e "${YELLOW}提示：请先使用菜单选项 5) 安装/管理端口流量限制${NC}"
             fi
             ;;
         0)
@@ -397,10 +416,10 @@ show_main_menu() {
     echo -e "${PURPLE}====================================${NC}"
     echo -e "${CYAN}最后更新: ${LAST_UPDATE}${NC}"
     echo ""
-    echo -e "${YELLOW}1) 安装流量监控${NC}"
-    echo -e "${YELLOW}2) 安装Telegram通知功能${NC}"
-    echo -e "${YELLOW}3) 安装PushPlus通知功能${NC}"
-    echo -e "${YELLOW}4) 安装Server酱通知功能${NC}"
+    echo -e "${YELLOW}1) 安装/管理流量监控${NC}"
+    echo -e "${YELLOW}2) 安装/管理Telegram通知${NC}"
+    echo -e "${YELLOW}3) 安装/管理PushPlus通知${NC}"
+    echo -e "${YELLOW}4) 安装/管理Server酱通知${NC}"
     echo -e "${YELLOW}5) 安装/管理端口流量限制${NC}"
     echo -e "${YELLOW}6) 解除流量限制${NC}"
     echo -e "${YELLOW}7) 查看日志${NC}"
