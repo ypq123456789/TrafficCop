@@ -1,7 +1,10 @@
 #!/bin/bash
 
 # View Port Traffic - 查看端口流量使用情况脚本
-# 版本 1.0
+# 版本 1.1
+
+# 设置时区为上海（东八区）
+export TZ='Asia/Shanghai'
 
 WORK_DIR="/root/TrafficCop"
 PORTS_CONFIG_FILE="$WORK_DIR/ports_traffic_config.json"
@@ -89,10 +92,11 @@ show_progress_bar() {
     
     local color=$(get_status_color "$percentage")
     
-    echo -n "${color}["
-    for ((i=0; i<filled; i++)); do echo -n "█"; done
-    for ((i=filled; i<width; i++)); do echo -n "░"; done
-    echo -e "]${NC}"
+    # 使用 printf 正确显示 ANSI 颜色代码
+    printf "%b" "${color}["
+    for ((i=0; i<filled; i++)); do printf "█"; done
+    for ((i=filled; i<width; i++)); do printf "░"; done
+    printf "%b\n" "]${NC}"
 }
 
 # 显示单个端口信息

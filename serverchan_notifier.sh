@@ -67,24 +67,59 @@ EOF
 
 # 初始配置
 initial_config() {
-    echo "开始初始化配置..."
+    echo "======================================"
+    echo "   修改 Server酱 通知配置"
+    echo "======================================"
+    echo ""
+    echo "提示：按 Enter 保留当前配置，输入新值则更新配置"
+    echo ""
     
-    echo "请输入Server酱发送密钥 (SendKey): "
+    local new_sendkey new_machine_name new_daily_report_time
+    
+    # SendKey
+    if [ -n "$SENDKEY" ]; then
+        local key_display="${SENDKEY:0:10}...${SENDKEY: -4}"
+        echo "请输入Server酱发送密钥 [当前: $key_display]: "
+    else
+        echo "请输入Server酱发送密钥 (SendKey): "
+    fi
     read -r new_sendkey
+    if [[ -z "$new_sendkey" ]] && [[ -n "$SENDKEY" ]]; then
+        new_sendkey="$SENDKEY"
+        echo "  → 保留原配置"
+    fi
     while [[ -z "$new_sendkey" ]]; do
         echo "SendKey不能为空。请重新输入: "
         read -r new_sendkey
     done
 
-    echo "请输入机器名称: "
+    # 机器名称
+    if [ -n "$MACHINE_NAME" ]; then
+        echo "请输入机器名称 [当前: $MACHINE_NAME]: "
+    else
+        echo "请输入机器名称: "
+    fi
     read -r new_machine_name
+    if [[ -z "$new_machine_name" ]] && [[ -n "$MACHINE_NAME" ]]; then
+        new_machine_name="$MACHINE_NAME"
+        echo "  → 保留原配置"
+    fi
     while [[ -z "$new_machine_name" ]]; do
         echo "机器名称不能为空。请重新输入: "
         read -r new_machine_name
     done
 
-    echo "请输入每日报告时间 (时区已经固定为东八区，输入格式为 HH:MM，例如 01:00): "
+    # 每日报告时间
+    if [ -n "$DAILY_REPORT_TIME" ]; then
+        echo "请输入每日报告时间 [当前: $DAILY_REPORT_TIME，格式 HH:MM]: "
+    else
+        echo "请输入每日报告时间 (时区已经固定为东八区，输入格式为 HH:MM，例如 01:00): "
+    fi
     read -r new_daily_report_time
+    if [[ -z "$new_daily_report_time" ]] && [[ -n "$DAILY_REPORT_TIME" ]]; then
+        new_daily_report_time="$DAILY_REPORT_TIME"
+        echo "  → 保留原配置"
+    fi
     while [[ ! $new_daily_report_time =~ ^([0-1][0-9]|2[0-3]):[0-5][0-9]$ ]]; do
         echo "时间格式不正确。请重新输入 (HH:MM): "
         read -r new_daily_report_time
@@ -97,7 +132,11 @@ initial_config() {
     
     write_config
     
-    echo "配置已更新。"
+    echo ""
+    echo "======================================"
+    echo "配置已更新成功！"
+    echo "======================================"
+    echo ""
     read_config
 }
 
@@ -322,10 +361,14 @@ daily_report() {
                         local port_limit=$(echo "$port_data" | jq -r ".ports[$i].limit" 2>/dev/null)
                         
                         if [ -n "$port" ] && [ "$port" != "null" ] && [ "$port_usage" != "null" ]; then
+                            # 格式化流量显示（保留2位小数）
+                            local port_usage_formatted=$(printf "%.2f" "$port_usage" 2>/dev/null || echo "$port_usage")
+                            local port_limit_formatted=$(printf "%.2f" "$port_limit" 2>/dev/null || echo "$port_limit")
+                            
                             # 计算使用百分比
                             local port_percentage=0
                             if [ -n "$port_limit" ] && [ "$port_limit" != "null" ] && (( $(echo "$port_limit > 0" | bc -l 2>/dev/null || echo "0") )); then
-                                port_percentage=$(echo "scale=1; ($port_usage / $port_limit) * 100" | bc 2>/dev/null || echo "0")
+                                port_percentage=$(printf "%.2f" $(echo "scale=2; ($port_usage / $port_limit) * 100" | bc 2>/dev/null || echo "0"))
                             fi
                             
                             # 根据使用率选择状态
@@ -336,7 +379,7 @@ daily_report() {
                                 status="🟡 警告"
                             fi
                             
-                            desp="${desp}%0A| $port | $port_desc | ${port_usage}GB / ${port_limit}GB | ${port_percentage}%% | $status |"
+                            desp="${desp}%0A| $port | $port_desc | ${port_usage_formatted}GB / ${port_limit_formatted}GB | ${port_percentage}%% | $status |"
                         fi
                         
                         i=$((i + 1))

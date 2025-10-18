@@ -122,32 +122,78 @@ EOF
 
 # 初始配置
 initial_config() {
-    echo "开始初始化配置..."
-    local new_token new_chat_id
+    echo "======================================"
+    echo "   修改 Telegram 通知配置"
+    echo "======================================"
+    echo ""
+    echo "提示：按 Enter 保留当前配置，输入新值则更新配置"
+    echo ""
+    
+    local new_token new_chat_id new_machine_name new_daily_report_time
 
-    echo "请输入Telegram Bot Token: "
+    # Bot Token
+    if [ -n "$BOT_TOKEN" ]; then
+        # 隐藏部分Token显示
+        local token_display="${BOT_TOKEN:0:10}...${BOT_TOKEN: -4}"
+        echo "请输入Telegram Bot Token [当前: $token_display]: "
+    else
+        echo "请输入Telegram Bot Token: "
+    fi
     read -r new_token
+    # 如果输入为空且有原配置，保留原配置
+    if [[ -z "$new_token" ]] && [[ -n "$BOT_TOKEN" ]]; then
+        new_token="$BOT_TOKEN"
+        echo "  → 保留原配置"
+    fi
+    # 如果还是空（首次配置），要求必须输入
     while [[ -z "$new_token" ]]; do
         echo "Bot Token 不能为空。请重新输入: "
         read -r new_token
     done
 
-    echo "请输入Telegram Chat ID: "
+    # Chat ID
+    if [ -n "$CHAT_ID" ]; then
+        echo "请输入Telegram Chat ID [当前: $CHAT_ID]: "
+    else
+        echo "请输入Telegram Chat ID: "
+    fi
     read -r new_chat_id
+    if [[ -z "$new_chat_id" ]] && [[ -n "$CHAT_ID" ]]; then
+        new_chat_id="$CHAT_ID"
+        echo "  → 保留原配置"
+    fi
     while [[ -z "$new_chat_id" ]]; do
         echo "Chat ID 不能为空。请重新输入: "
         read -r new_chat_id
     done
 
-    echo "请输入机器名称: "
+    # 机器名称
+    if [ -n "$MACHINE_NAME" ]; then
+        echo "请输入机器名称 [当前: $MACHINE_NAME]: "
+    else
+        echo "请输入机器名称: "
+    fi
     read -r new_machine_name
+    if [[ -z "$new_machine_name" ]] && [[ -n "$MACHINE_NAME" ]]; then
+        new_machine_name="$MACHINE_NAME"
+        echo "  → 保留原配置"
+    fi
     while [[ -z "$new_machine_name" ]]; do
         echo "机器名称不能为空。请重新输入: "
         read -r new_machine_name
     done
 
-    echo "请输入每日报告时间 (时区已经固定为东八区，输入格式为 HH:MM，例如 01:00): "
+    # 每日报告时间
+    if [ -n "$DAILY_REPORT_TIME" ]; then
+        echo "请输入每日报告时间 [当前: $DAILY_REPORT_TIME，格式 HH:MM]: "
+    else
+        echo "请输入每日报告时间 (时区已经固定为东八区，输入格式为 HH:MM，例如 01:00): "
+    fi
     read -r new_daily_report_time
+    if [[ -z "$new_daily_report_time" ]] && [[ -n "$DAILY_REPORT_TIME" ]]; then
+        new_daily_report_time="$DAILY_REPORT_TIME"
+        echo "  → 保留原配置"
+    fi
     while [[ ! $new_daily_report_time =~ ^([0-1][0-9]|2[0-3]):[0-5][0-9]$ ]]; do
         echo "时间格式不正确。请重新输入 (HH:MM): "
         read -r new_daily_report_time
@@ -161,7 +207,11 @@ initial_config() {
     
     write_config
     
-    echo "配置已更新。"
+    echo ""
+    echo "======================================"
+    echo "配置已更新成功！"
+    echo "======================================"
+    echo ""
     read_config
 }
 
@@ -402,10 +452,14 @@ daily_report() {
                         local port_limit=$(echo "$port_data" | jq -r ".ports[$i].limit" 2>/dev/null)
                         
                         if [ -n "$port" ] && [ "$port" != "null" ] && [ "$port_usage" != "null" ]; then
+                            # 格式化流量显示（保留2位小数）
+                            local port_usage_formatted=$(printf "%.2f" "$port_usage" 2>/dev/null || echo "$port_usage")
+                            local port_limit_formatted=$(printf "%.2f" "$port_limit" 2>/dev/null || echo "$port_limit")
+                            
                             # 计算使用百分比
                             local port_percentage=0
                             if [ -n "$port_limit" ] && [ "$port_limit" != "null" ] && (( $(echo "$port_limit > 0" | bc -l 2>/dev/null || echo "0") )); then
-                                port_percentage=$(echo "scale=1; ($port_usage / $port_limit) * 100" | bc 2>/dev/null || echo "0")
+                                port_percentage=$(printf "%.2f" $(echo "scale=2; ($port_usage / $port_limit) * 100" | bc 2>/dev/null || echo "0"))
                             fi
                             
                             # 根据使用率选择表情
@@ -416,7 +470,7 @@ daily_report() {
                                 status_icon="🟡"
                             fi
                             
-                            message="${message}%0A${status_icon} 端口 ${port} (${port_desc})：${port_usage}GB / ${port_limit}GB (${port_percentage}%%)"
+                            message="${message}%0A${status_icon} 端口 ${port} (${port_desc})：${port_usage_formatted}GB / ${port_limit_formatted}GB (${port_percentage}%%)"
                         fi
                         
                         i=$((i + 1))
