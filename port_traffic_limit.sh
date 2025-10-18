@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Port Traffic Limit - 端口流量限制脚本 v2.3
+# Port Traffic Limit - 端口流量限制脚本 v2.4
 # 功能：为多个端口设置独立的流量限制（支持JSON配置）
-# 最后更新：2025-10-19 02:35
+# 最后更新：2025-10-19 02:45
 
-SCRIPT_VERSION="2.3"
-LAST_UPDATE="2025-10-19 02:35"
+SCRIPT_VERSION="2.4"
+LAST_UPDATE="2025-10-19 02:45"
 
 WORK_DIR="/root/TrafficCop"
 PORT_CONFIG_FILE="$WORK_DIR/ports_traffic_config.json"
@@ -996,7 +996,12 @@ remove_all_limits() {
 
 # Cron模式 - 自动检查所有端口
 cron_mode() {
+    # 记录执行开始（无论配置文件是否存在）
+    echo "-----------------------------------------------------" >> "$PORT_LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') Port Traffic Limit v${SCRIPT_VERSION} (最后更新: ${LAST_UPDATE})" >> "$PORT_LOG_FILE"
+    
     if [ ! -f "$PORT_CONFIG_FILE" ]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 配置文件不存在，跳过检查" >> "$PORT_LOG_FILE"
         exit 0
     fi
     
@@ -1005,6 +1010,12 @@ cron_mode() {
     while IFS= read -r port; do
         ports_array+=("$port")
     done < <(jq -r '.ports[].port' "$PORT_CONFIG_FILE" 2>/dev/null)
+    
+    # 检查是否有端口配置
+    if [ ${#ports_array[@]} -eq 0 ]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 没有配置端口，跳过检查" >> "$PORT_LOG_FILE"
+        exit 0
+    fi
     
     # 记录开始检查
     echo "$(date '+%Y-%m-%d %H:%M:%S') 开始检查 ${#ports_array[@]} 个端口的流量..." >> "$PORT_LOG_FILE"

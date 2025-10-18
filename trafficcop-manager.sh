@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # TrafficCop 管理器 - 交互式管理工具
-# 版本 1.4
-# 最后更新：2025-10-19 02:40
+# 版本 1.5
+# 最后更新：2025-10-19 02:45
 
-SCRIPT_VERSION="1.4"
-LAST_UPDATE="2025-10-19 02:40"
+SCRIPT_VERSION="1.5"
+LAST_UPDATE="2025-10-19 02:45"
 
 # 颜色定义
 RED='\033[0;31m'
@@ -376,12 +376,53 @@ stop_all_services() {
 # 查看端口流量
 view_port_traffic() {
     clear
-    if [ -f "$WORK_DIR/view_port_traffic.sh" ]; then
-        bash "$WORK_DIR/view_port_traffic.sh"
+    echo -e "${CYAN}正在从 GitHub 获取最新版端口流量查看工具...${NC}"
+    echo ""
+    
+    # GitHub 原始文件链接
+    local GITHUB_RAW="https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/view_port_traffic.sh"
+    local TEMP_FILE="/tmp/view_port_traffic_latest.sh"
+    
+    # 下载最新版本
+    if wget -q --timeout=10 --tries=3 -O "$TEMP_FILE" "$GITHUB_RAW"; then
+        if [ -s "$TEMP_FILE" ] && head -1 "$TEMP_FILE" | grep -q "^#!/bin/bash"; then
+            chmod +x "$TEMP_FILE"
+            echo -e "${GREEN}✓ 获取成功，正在启动...${NC}"
+            echo ""
+            sleep 1
+            
+            # 直接运行临时文件
+            bash "$TEMP_FILE"
+            
+            # 运行完成后清理临时文件
+            rm -f "$TEMP_FILE"
+        else
+            echo -e "${RED}✗ 下载的文件无效${NC}"
+            echo -e "${YELLOW}尝试使用本地版本...${NC}"
+            echo ""
+            
+            if [ -f "$WORK_DIR/view_port_traffic.sh" ]; then
+                bash "$WORK_DIR/view_port_traffic.sh"
+            else
+                echo -e "${RED}本地也没有找到脚本文件${NC}"
+                echo -e "${YELLOW}请先安装端口流量限制功能${NC}"
+            fi
+            rm -f "$TEMP_FILE"
+        fi
     else
-        echo -e "${RED}端口流量查看脚本不存在！${NC}"
-        echo -e "${YELLOW}请先安装端口流量限制功能${NC}"
+        echo -e "${RED}✗ 无法连接到 GitHub${NC}"
+        echo -e "${YELLOW}尝试使用本地版本...${NC}"
+        echo ""
+        
+        if [ -f "$WORK_DIR/view_port_traffic.sh" ]; then
+            bash "$WORK_DIR/view_port_traffic.sh"
+        else
+            echo -e "${RED}本地也没有找到脚本文件${NC}"
+            echo -e "${YELLOW}请先安装端口流量限制功能${NC}"
+        fi
+        rm -f "$TEMP_FILE"
     fi
+    
     echo ""
     read -p "按回车键继续..."
 }
