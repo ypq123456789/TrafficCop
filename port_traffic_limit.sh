@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Port Traffic Limit - 端口流量限制脚本 v2.8
+# Port Traffic Limit - 端口流量限制脚本 v2.9
 # 功能：为多个端口设置独立的流量限制（支持JSON配置）
-# 最后更新：2025-10-19 03:20
+# 最后更新：2025-10-19 03:25
 
-SCRIPT_VERSION="2.8"
-LAST_UPDATE="2025-10-19 03:20"
+SCRIPT_VERSION="2.9"
+LAST_UPDATE="2025-10-19 03:25"
 
 WORK_DIR="/root/TrafficCop"
 PORT_CONFIG_FILE="$WORK_DIR/ports_traffic_config.json"
