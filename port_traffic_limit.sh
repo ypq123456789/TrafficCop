@@ -160,10 +160,19 @@ list_all_ports() {
     fi
     
     local index=1
-    jq -r '.ports[] | "\(.port)|\(.description)|\(.traffic_limit)|\(.traffic_tolerance)|\(.limit_mode)"' "$PORT_CONFIG_FILE" | while IFS='|' read -r port desc limit tolerance mode; do
-        echo "  ${GREEN}[$index]${NC} 端口 $port ($desc) - 限制: ${limit}GB, 容错: ${tolerance}GB, 模式: $mode"
+    local total=$(jq -r '.ports | length' "$PORT_CONFIG_FILE")
+    
+    for ((i=0; i<total; i++)); do
+        local port=$(jq -r ".ports[$i].port" "$PORT_CONFIG_FILE")
+        local desc=$(jq -r ".ports[$i].description" "$PORT_CONFIG_FILE")
+        local limit=$(jq -r ".ports[$i].traffic_limit" "$PORT_CONFIG_FILE")
+        local tolerance=$(jq -r ".ports[$i].traffic_tolerance" "$PORT_CONFIG_FILE")
+        local mode=$(jq -r ".ports[$i].limit_mode" "$PORT_CONFIG_FILE")
+        
+        echo -e "  ${GREEN}[$index]${NC} 端口 $port ($desc) - 限制: ${limit}GB, 容错: ${tolerance}GB, 模式: $mode"
         index=$((index + 1))
     done
+    
     echo -e "${CYAN}====================================================${NC}"
     return 0
 }
@@ -505,14 +514,16 @@ view_port_status() {
     echo ""
     
     local index=1
-    jq -r '.ports[] | @json' "$PORT_CONFIG_FILE" | while read -r port_json; do
-        local port=$(echo "$port_json" | jq -r '.port')
-        local desc=$(echo "$port_json" | jq -r '.description')
-        local limit=$(echo "$port_json" | jq -r '.traffic_limit')
-        local tolerance=$(echo "$port_json" | jq -r '.traffic_tolerance')
-        local mode=$(echo "$port_json" | jq -r '.limit_mode')
-        local speed=$(echo "$port_json" | jq -r '.limit_speed')
-        local interface=$(echo "$port_json" | jq -r '.main_interface')
+    local total=$(jq -r '.ports | length' "$PORT_CONFIG_FILE")
+    
+    for ((i=0; i<total; i++)); do
+        local port=$(jq -r ".ports[$i].port" "$PORT_CONFIG_FILE")
+        local desc=$(jq -r ".ports[$i].description" "$PORT_CONFIG_FILE")
+        local limit=$(jq -r ".ports[$i].traffic_limit" "$PORT_CONFIG_FILE")
+        local tolerance=$(jq -r ".ports[$i].traffic_tolerance" "$PORT_CONFIG_FILE")
+        local mode=$(jq -r ".ports[$i].limit_mode" "$PORT_CONFIG_FILE")
+        local speed=$(jq -r ".ports[$i].limit_speed" "$PORT_CONFIG_FILE")
+        local interface=$(jq -r ".ports[$i].main_interface" "$PORT_CONFIG_FILE")
         
         echo -e "${GREEN}[$index]${NC} ${GREEN}端口 $port${NC} - $desc"
         echo -e "    流量限制: ${YELLOW}${limit}GB${NC} (容错: ${tolerance}GB)"
@@ -522,14 +533,14 @@ view_port_status() {
         # 获取当前流量
         local usage=$(get_port_traffic_usage "$port" "$interface")
         local total_gb=$(echo "$usage" | cut -d',' -f3)
-        local percentage=$(echo "scale=1; $total_gb * 100 / $limit" | bc)
+        local percentage=$(echo "scale=1; $total_gb * 100 / $limit" | bc 2>/dev/null || echo "0")
         
         echo -e "    当前使用: ${CYAN}${total_gb}GB${NC} / ${limit}GB (${percentage}%)"
         
         # 状态图标
-        if (( $(echo "$percentage >= 90" | bc -l) )); then
+        if (( $(echo "$percentage >= 90" | bc -l 2>/dev/null || echo "0") )); then
             echo -e "    状态: ${RED}⚠️  接近限制${NC}"
-        elif (( $(echo "$percentage >= 70" | bc -l) )); then
+        elif (( $(echo "$percentage >= 70" | bc -l 2>/dev/null || echo "0") )); then
             echo -e "    状态: ${YELLOW}🟡 需要关注${NC}"
         else
             echo -e "    状态: ${GREEN}✅ 正常${NC}"
@@ -545,7 +556,6 @@ view_port_status() {
 
 # 修改端口配置
 modify_port_config() {
-    clear
     list_all_ports
     
     if [ ! -f "$PORT_CONFIG_FILE" ] || [ "$(jq -r '.ports | length' "$PORT_CONFIG_FILE")" -eq 0 ]; then
@@ -677,7 +687,6 @@ port_config_wizard_with_port() {
 
 # 解除端口限速
 remove_port_limit() {
-    clear
     list_all_ports
     
     if [ ! -f "$PORT_CONFIG_FILE" ] || [ "$(jq -r '.ports | length' "$PORT_CONFIG_FILE")" -eq 0 ]; then
