@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Port Traffic Limit - 端口流量限制脚本 v2.2
+# Port Traffic Limit - 端口流量限制脚本 v2.3
 # 功能：为多个端口设置独立的流量限制（支持JSON配置）
-# 最后更新：2025-10-19 02:30
+# 最后更新：2025-10-19 02:35
 
-SCRIPT_VERSION="2.2"
-LAST_UPDATE="2025-10-19 02:30"
+SCRIPT_VERSION="2.3"
+LAST_UPDATE="2025-10-19 02:35"
 
 WORK_DIR="/root/TrafficCop"
 PORT_CONFIG_FILE="$WORK_DIR/ports_traffic_config.json"
@@ -836,6 +836,82 @@ view_crontab_status() {
     read -p "按回车键继续..." dummy
 }
 
+# 更新脚本
+update_script() {
+    clear
+    echo -e "${CYAN}==================== 更新脚本 ====================${NC}"
+    echo ""
+    echo -e "${YELLOW}准备从 GitHub 下载最新版本...${NC}"
+    echo ""
+    
+    # GitHub 原始文件链接
+    local GITHUB_RAW="https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/port_traffic_limit.sh"
+    local TEMP_FILE="/tmp/port_traffic_limit_new.sh"
+    
+    # 显示当前版本
+    echo -e "${CYAN}当前版本: ${NC}v${SCRIPT_VERSION} (${LAST_UPDATE})"
+    echo ""
+    
+    # 下载新版本
+    echo -e "${YELLOW}正在下载...${NC}"
+    if wget -q --timeout=10 --tries=3 -O "$TEMP_FILE" "$GITHUB_RAW"; then
+        # 检查下载的文件是否有效
+        if [ -s "$TEMP_FILE" ] && head -1 "$TEMP_FILE" | grep -q "^#!/bin/bash"; then
+            # 提取新版本号
+            local new_version=$(grep '^SCRIPT_VERSION=' "$TEMP_FILE" | head -1 | cut -d'"' -f2)
+            local new_update=$(grep '^LAST_UPDATE=' "$TEMP_FILE" | head -1 | cut -d'"' -f2)
+            
+            echo -e "${GREEN}✓ 下载成功${NC}"
+            echo ""
+            echo -e "${CYAN}最新版本: ${NC}v${new_version} (${new_update})"
+            echo ""
+            
+            # 比较版本
+            if [ "$new_version" = "$SCRIPT_VERSION" ]; then
+                echo -e "${YELLOW}当前已是最新版本${NC}"
+                rm -f "$TEMP_FILE"
+            else
+                echo -e "${GREEN}发现新版本！${NC}"
+                echo ""
+                read -p "是否要更新到最新版本？[Y/n]: " confirm
+                [ -z "$confirm" ] && confirm="y"
+                
+                if [[ "$confirm" = "y" || "$confirm" = "Y" ]]; then
+                    # 备份当前版本
+                    local BACKUP_FILE="${PORT_SCRIPT_PATH}.backup.$(date +%Y%m%d_%H%M%S)"
+                    cp "$PORT_SCRIPT_PATH" "$BACKUP_FILE"
+                    echo -e "${GREEN}✓ 已备份当前版本到: $BACKUP_FILE${NC}"
+                    
+                    # 替换脚本
+                    mv "$TEMP_FILE" "$PORT_SCRIPT_PATH"
+                    chmod +x "$PORT_SCRIPT_PATH"
+                    
+                    echo -e "${GREEN}✓ 更新成功！${NC}"
+                    echo ""
+                    echo -e "${CYAN}提示：脚本将在3秒后重启以应用更新...${NC}"
+                    sleep 3
+                    
+                    # 重启脚本
+                    exec "$PORT_SCRIPT_PATH"
+                else
+                    echo -e "${YELLOW}取消更新${NC}"
+                    rm -f "$TEMP_FILE"
+                fi
+            fi
+        else
+            echo -e "${RED}✗ 下载的文件无效${NC}"
+            rm -f "$TEMP_FILE"
+        fi
+    else
+        echo -e "${RED}✗ 下载失败${NC}"
+        echo -e "${YELLOW}请检查网络连接或稍后重试${NC}"
+        rm -f "$TEMP_FILE"
+    fi
+    
+    echo ""
+    read -p "按回车键继续..." dummy
+}
+
 # 交互式主菜单
 interactive_menu() {
     while true; do
@@ -848,10 +924,11 @@ interactive_menu() {
         echo "3) 解除端口限速"
         echo "4) 查看端口配置及流量使用情况"
         echo "5) 查看定时任务配置"
+        echo "6) 更新脚本到最新版本"
         echo "0) 退出"
         echo -e "${CYAN}===========================================${NC}"
         
-        read -p "请选择操作 [0-5]: " choice
+        read -p "请选择操作 [0-6]: " choice
         
         case $choice in
             1)
@@ -868,6 +945,9 @@ interactive_menu() {
                 ;;
             5)
                 view_crontab_status
+                ;;
+            6)
+                update_script
                 ;;
             0)
                 echo -e "${GREEN}退出程序${NC}"
