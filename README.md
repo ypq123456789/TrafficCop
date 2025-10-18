@@ -61,7 +61,7 @@ sudo tc qdisc del dev $(ip route | grep default | cut -d ' ' -f 5) root
 ## 一键安装脚本
 ### 一键安装交互式脚本
 ```
-bash <(curl -sL https://raw.githubusercontent.com/ypq123456789/TrafficCop/交互式脚本.png)
+bash <(curl -sL https://raw.githubusercontent.com/ypq123456789/TrafficCop/trafficcop-manager.sh)
 ```
 #### 功能
 
@@ -86,7 +86,7 @@ bash <(curl -sL https://raw.githubusercontent.com/ypq123456789/TrafficCop/交互
 4. 灵活操作 - 完成一项操作后返回主菜单，可继续选择其他操作
 5. 用户友好 - 每个操作都有确认提示，避免误操作
    
-![image](https://github.com/user-attachments/assets/bc12c7e6-bba3-498d-a0bc-6ed8ce561e84)
+![image](交互式脚本.png)
 
 
 ### 一键全家桶TG推送（调用api，版本最新，可能会403）：
