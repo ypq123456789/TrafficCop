@@ -60,14 +60,13 @@ bash <(curl -sL https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/t
 3. Install PushPlus Notifications - Add PushPlus push notifications
 4. Install ServerChan Notifications - Add ServerChan push notifications
 5. Install Port Traffic Limit - Set independent traffic limits for multiple ports (Multi-Port 2.0)
-6. Remove Traffic Limits - Instantly remove current traffic restrictions
-7. Remove Port Traffic Limits - Remove traffic limits for specific ports
+6. View Port Traffic - Real-time view of all configured port traffic usage (NEW 2.0)
+7. Machine Limit Management - Complete machine-level traffic limit enable/disable/restore functionality (NEW v2.4)
 8. View Logs - View log files for various services
 9. View Current Configuration - View configuration files for various services
 10. Use Preset Configurations - Apply optimized preset configurations for different service providers
 11. Stop All Services - Stop all TrafficCop-related services
-12. View Port Traffic - Real-time view of all configured port traffic usage (NEW 2.0)
-13. Manage Port Configuration - Interactive menu to add/modify/delete port configurations (NEW 2.0)
+12. Update All Scripts to Latest Version - One-click update for all components
 
 #### Advantages
 1. One-stop management - Users only need to remember one command to manage all TrafficCop functions

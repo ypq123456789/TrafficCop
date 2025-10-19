@@ -61,7 +61,7 @@ sudo tc qdisc del dev $(ip route | grep default | cut -d ' ' -f 5) root
 ## 一键安装脚本
 ### 一键安装交互式脚本
 ```
-bash <(curl -sL https://raw.githubusercontent.com/ypq123456789/TrafficCop/trafficcop-manager.sh)
+bash <(curl -sL https://raw.githubusercontent.com/ypq123456789/TrafficCop/main/trafficcop-manager.sh)
 ```
 #### 功能
 
@@ -70,14 +70,13 @@ bash <(curl -sL https://raw.githubusercontent.com/ypq123456789/TrafficCop/traffi
 3. 安装PushPlus通知功能 - 添加PushPlus推送通知
 4. 安装Server酱通知功能 - 添加Server酱推送通知
 5. 安装端口流量限制 - 为多个端口设置独立的流量限制（支持多端口 2.0）
-6. 解除流量限制 - 一键解除当前的流量限制
-7. 解除端口流量限制 - 解除指定端口的流量限制
+6. 查看端口流量状态 - 实时查看所有配置端口的流量使用情况（新增 2.0）
+7. 机器限速管理 - 完整的机器级限速启用/禁用/恢复功能（新增 v2.4）
 8. 查看日志 - 查看各种服务的日志文件
 9. 查看当前配置 - 查看各种服务的配置文件
 10. 使用预设配置 - 应用针对不同服务商优化的预设配置
 11. 停止所有服务 - 停止所有TrafficCop相关服务
-12. 查看端口流量 - 实时查看所有配置端口的流量使用情况（新增 2.0）
-13. 管理端口配置 - 添加/修改/删除端口配置的交互式菜单（新增 2.0）
+12. 更新所有脚本到最新版本 - 一键更新所有组件
 
 #### 优势
 1. 一站式管理 - 用户只需记住一个命令，即可管理所有TrafficCop功能
