@@ -33,9 +33,9 @@ get_port_traffic_usage() {
     case $traffic_mode in
         out) usage_bytes=$tx_bytes ;;
         in) usage_bytes=$rx_bytes ;;
-        total) usage_bytes=$((rx_bytes + tx_bytes)) ;;
+        total) usage_bytes=$(echo "$rx_bytes + $tx_bytes" | bc 2>/dev/null || echo "0") ;;
         max) usage_bytes=$(echo "$rx_bytes $tx_bytes" | tr ' ' '\n' | sort -rn | head -n1) ;;
-        *) usage_bytes=$((rx_bytes + tx_bytes)) ;;
+        *) usage_bytes=$(echo "$rx_bytes + $tx_bytes" | bc 2>/dev/null || echo "0") ;;
     esac
     
     if [ -n "$usage_bytes" ] && [ "$usage_bytes" -gt 0 ]; then
