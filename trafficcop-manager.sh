@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # TrafficCop 管理器 - 交互式管理工具
-# 版本 1.9
-# 最后更新：2025-10-19 03:25
+# 版本 2.0
+# 最后更新：2025-10-19 16:30
 
-SCRIPT_VERSION="1.9"
-LAST_UPDATE="2025-10-19 03:25"
+SCRIPT_VERSION="2.0"
+LAST_UPDATE="2025-10-19 16:30"
 
 # 颜色定义
 RED='\033[0;31m'
@@ -331,6 +331,100 @@ use_preset_config() {
     read -p "按回车键继续..."
 }
 
+# 更新所有脚本
+update_all_scripts() {
+    echo -e "${CYAN}正在更新所有TrafficCop脚本...${NC}"
+    echo ""
+    
+    # 备份现有配置文件
+    echo -e "${YELLOW}备份配置文件...${NC}"
+    [ -f "$WORK_DIR/traffic_monitor_config.txt" ] && cp "$WORK_DIR/traffic_monitor_config.txt" "$WORK_DIR/traffic_monitor_config.txt.backup"
+    [ -f "$WORK_DIR/ports_traffic_config.json" ] && cp "$WORK_DIR/ports_traffic_config.json" "$WORK_DIR/ports_traffic_config.json.backup"
+    [ -f "$WORK_DIR/tg_config.txt" ] && cp "$WORK_DIR/tg_config.txt" "$WORK_DIR/tg_config.txt.backup"
+    [ -f "$WORK_DIR/pushplus_config.txt" ] && cp "$WORK_DIR/pushplus_config.txt" "$WORK_DIR/pushplus_config.txt.backup"
+    [ -f "$WORK_DIR/serverchan_config.txt" ] && cp "$WORK_DIR/serverchan_config.txt" "$WORK_DIR/serverchan_config.txt.backup"
+    
+    # 脚本列表（脚本名称:本地文件名）
+    local scripts=(
+        "trafficcop.sh:traffic_monitor.sh"
+        "view_port_traffic.sh:view_port_traffic.sh"
+        "port_traffic_limit.sh:port_traffic_limit.sh"
+        "tg_notifier.sh:tg_notifier.sh"
+        "pushplus_notifier.sh:pushplus_notifier.sh"
+        "serverchan_notifier.sh:serverchan_notifier.sh"
+        "port_traffic_helper.sh:port_traffic_helper.sh"
+        "remove_traffic_limit.sh:remove_traffic_limit.sh"
+        "debug_bc_errors.sh:debug_bc_errors.sh"
+        "fix_strategies_demo.sh:fix_strategies_demo.sh"
+    )
+    
+    local success_count=0
+    local total_count=${#scripts[@]}
+    
+    echo -e "${YELLOW}开始下载脚本文件...${NC}"
+    echo ""
+    
+    for script_info in "${scripts[@]}"; do
+        local repo_name="${script_info%%:*}"
+        local local_name="${script_info##*:}"
+        local local_path="$WORK_DIR/$local_name"
+        
+        echo -n "更新 $local_name... "
+        
+        if curl -fsSL "$REPO_URL/$repo_name" -o "$local_path.new" 2>/dev/null; then
+            # 验证下载的文件
+            if [ -s "$local_path.new" ] && head -1 "$local_path.new" | grep -q "^#!/bin/bash"; then
+                # 备份旧文件
+                [ -f "$local_path" ] && mv "$local_path" "$local_path.old"
+                mv "$local_path.new" "$local_path"
+                chmod +x "$local_path"
+                echo -e "${GREEN}✓${NC}"
+                ((success_count++))
+            else
+                echo -e "${RED}✗ (文件无效)${NC}"
+                rm -f "$local_path.new"
+                # 恢复旧文件
+                [ -f "$local_path.old" ] && mv "$local_path.old" "$local_path"
+            fi
+        else
+            echo -e "${RED}✗ (下载失败)${NC}"
+            rm -f "$local_path.new"
+        fi
+    done
+    
+    echo ""
+    echo -e "${CYAN}更新完成统计：${NC}"
+    echo -e "成功更新: ${GREEN}$success_count${NC}/$total_count 个脚本"
+    
+    if [ $success_count -gt 0 ]; then
+        echo ""
+        echo -e "${YELLOW}恢复配置文件...${NC}"
+        [ -f "$WORK_DIR/traffic_monitor_config.txt.backup" ] && mv "$WORK_DIR/traffic_monitor_config.txt.backup" "$WORK_DIR/traffic_monitor_config.txt"
+        [ -f "$WORK_DIR/ports_traffic_config.json.backup" ] && mv "$WORK_DIR/ports_traffic_config.json.backup" "$WORK_DIR/ports_traffic_config.json"
+        [ -f "$WORK_DIR/tg_config.txt.backup" ] && mv "$WORK_DIR/tg_config.txt.backup" "$WORK_DIR/tg_config.txt"
+        [ -f "$WORK_DIR/pushplus_config.txt.backup" ] && mv "$WORK_DIR/pushplus_config.txt.backup" "$WORK_DIR/pushplus_config.txt"
+        [ -f "$WORK_DIR/serverchan_config.txt.backup" ] && mv "$WORK_DIR/serverchan_config.txt.backup" "$WORK_DIR/serverchan_config.txt"
+        
+        echo -e "${GREEN}✓ 所有脚本已更新到最新版本！${NC}"
+        echo -e "${GREEN}✓ 配置文件已恢复！${NC}"
+        
+        # 清理旧备份文件
+        rm -f "$WORK_DIR"/*.old
+        
+        echo ""
+        echo -e "${CYAN}主要更新内容：${NC}"
+        echo -e "• 修复了所有 bc 语法错误问题"
+        echo -e "• 添加了错误处理机制"
+        echo -e "• 新增了调试和修复策略工具"
+        echo -e "• 提升了脚本稳定性"
+    else
+        echo -e "${RED}更新失败，请检查网络连接${NC}"
+    fi
+    
+    echo ""
+    read -p "按回车键继续..."
+}
+
 # 停止所有服务
 stop_all_services() {
     echo -e "${CYAN}正在停止所有TrafficCop服务...${NC}"
@@ -468,6 +562,7 @@ show_main_menu() {
     echo -e "${YELLOW}8) 查看当前配置${NC}"
     echo -e "${YELLOW}9) 使用预设配置${NC}"
     echo -e "${YELLOW}10) 停止所有服务${NC}"
+    echo -e "${GREEN}11) 🔄 更新所有脚本到最新版本${NC}"
     echo -e "${YELLOW}0) 退出${NC}"
     echo -e "${PURPLE}====================================${NC}"
     echo ""
@@ -480,7 +575,7 @@ main() {
     
     while true; do
         show_main_menu
-        read -p "请选择操作 [0-10]: " choice
+        read -p "请选择操作 [0-11]: " choice
         
         case $choice in
             1)
@@ -512,6 +607,9 @@ main() {
                 ;;
             10)
                 stop_all_services
+                ;;
+            11)
+                update_all_scripts
                 ;;
             0)
                 echo -e "${GREEN}感谢使用TrafficCop管理工具！${NC}"
