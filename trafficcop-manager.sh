@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # TrafficCop 管理器 - 交互式管理工具
-# 版本 2.1
-# 最后更新：2025-10-19 17:00
+# 版本 2.2
+# 最后更新：2025-10-19 17:15
 
-SCRIPT_VERSION="2.1"
-LAST_UPDATE="2025-10-19 17:00"
+SCRIPT_VERSION="2.2"
+LAST_UPDATE="2025-10-19 17:15"
 
 # 颜色定义
 RED='\033[0;31m'
@@ -555,12 +555,13 @@ show_main_menu() {
     echo -e "${YELLOW}3) 安装/管理PushPlus通知${NC}"
     echo -e "${YELLOW}4) 安装/管理Server酱通知${NC}"
     echo -e "${YELLOW}5) 安装/管理端口流量限制${NC}"
-    echo -e "${YELLOW}6) 解除流量限制${NC}"
-    echo -e "${YELLOW}7) 查看日志${NC}"
-    echo -e "${YELLOW}8) 查看当前配置${NC}"
-    echo -e "${YELLOW}9) 使用预设配置${NC}"
-    echo -e "${YELLOW}10) 停止所有服务${NC}"
-    echo -e "${GREEN}11) 更新所有脚本到最新版本${NC}"
+    echo -e "${CYAN}6) 查看端口流量状态${NC}"
+    echo -e "${YELLOW}7) 解除流量限制${NC}"
+    echo -e "${YELLOW}8) 查看日志${NC}"
+    echo -e "${YELLOW}9) 查看当前配置${NC}"
+    echo -e "${YELLOW}10) 使用预设配置${NC}"
+    echo -e "${YELLOW}11) 停止所有服务${NC}"
+    echo -e "${GREEN}12) 更新所有脚本到最新版本${NC}"
     echo -e "${YELLOW}0) 退出${NC}"
     echo -e "${PURPLE}====================================${NC}"
     echo ""
@@ -573,7 +574,7 @@ main() {
     
     while true; do
         show_main_menu
-        read -p "请选择操作 [0-11]: " choice
+        read -p "请选择操作 [0-12]: " choice
         
         case $choice in
             1)
@@ -592,21 +593,24 @@ main() {
                 manage_port_config
                 ;;
             6)
-                remove_traffic_limit
+                view_port_traffic
                 ;;
             7)
-                view_logs
+                remove_traffic_limit
                 ;;
             8)
-                view_config
+                view_logs
                 ;;
             9)
-                use_preset_config
+                view_config
                 ;;
             10)
-                stop_all_services
+                use_preset_config
                 ;;
             11)
+                stop_all_services
+                ;;
+            12)
                 update_all_scripts
                 ;;
             0)
