@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # TrafficCop 管理器 - 交互式管理工具
-# 版本 2.0
-# 最后更新：2025-10-19 16:30
+# 版本 2.1
+# 最后更新：2025-10-19 17:00
 
-SCRIPT_VERSION="2.0"
-LAST_UPDATE="2025-10-19 16:30"
+SCRIPT_VERSION="2.1"
+LAST_UPDATE="2025-10-19 17:00"
 
 # 颜色定义
 RED='\033[0;31m'
@@ -354,8 +354,6 @@ update_all_scripts() {
         "serverchan_notifier.sh:serverchan_notifier.sh"
         "port_traffic_helper.sh:port_traffic_helper.sh"
         "remove_traffic_limit.sh:remove_traffic_limit.sh"
-        "debug_bc_errors.sh:debug_bc_errors.sh"
-        "fix_strategies_demo.sh:fix_strategies_demo.sh"
     )
     
     local success_count=0
@@ -414,9 +412,9 @@ update_all_scripts() {
         echo ""
         echo -e "${CYAN}主要更新内容：${NC}"
         echo -e "• 修复了所有 bc 语法错误问题"
-        echo -e "• 添加了错误处理机制"
-        echo -e "• 新增了调试和修复策略工具"
-        echo -e "• 提升了脚本稳定性"
+        echo -e "• 修复了科学记数法导致的流量统计错误"
+        echo -e "• 大幅提升端口流量统计准确性"
+        echo -e "• 优化错误处理机制，提升脚本稳定性"
     else
         echo -e "${RED}更新失败，请检查网络连接${NC}"
     fi
@@ -562,7 +560,7 @@ show_main_menu() {
     echo -e "${YELLOW}8) 查看当前配置${NC}"
     echo -e "${YELLOW}9) 使用预设配置${NC}"
     echo -e "${YELLOW}10) 停止所有服务${NC}"
-    echo -e "${GREEN}11) 🔄 更新所有脚本到最新版本${NC}"
+    echo -e "${GREEN}11) 更新所有脚本到最新版本${NC}"
     echo -e "${YELLOW}0) 退出${NC}"
     echo -e "${PURPLE}====================================${NC}"
     echo ""
