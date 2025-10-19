@@ -416,7 +416,8 @@ port_config_wizard() {
             traffic_mode=${TRAFFIC_MODE:-"total"}
             traffic_period=${TRAFFIC_PERIOD:-"monthly"}
             period_start_day=${PERIOD_START_DAY:-1}
-            limit_speed=${LIMIT_SPEED:-20}
+            # 端口限速独立设置，不受机器限速影响
+            limit_speed=20
             main_interface=${MAIN_INTERFACE:-$(ip route | grep default | awk '{print $5}' | head -n1)}
             limit_mode=${LIMIT_MODE:-"tc"}
             
@@ -696,7 +697,8 @@ port_config_wizard_with_port() {
         traffic_mode=${TRAFFIC_MODE:-"total"}
         traffic_period=${TRAFFIC_PERIOD:-"monthly"}
         period_start_day=${PERIOD_START_DAY:-1}
-        limit_speed=${LIMIT_SPEED:-20}
+        # 端口限速独立设置，不受机器限速影响
+        limit_speed=20
         main_interface=${MAIN_INTERFACE:-$(ip route | grep default | awk '{print $5}' | head -n1)}
         limit_mode=${LIMIT_MODE:-"tc"}
     else
