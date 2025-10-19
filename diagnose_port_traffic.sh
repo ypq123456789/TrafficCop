@@ -20,7 +20,7 @@ iptables -L INPUT -v -n -x 2>/dev/null | grep "dpt:$port" | awk '{print "字段1
 echo ""
 
 echo "累加计算："
-rx_bytes=$(iptables -L INPUT -v -n -x 2>/dev/null | grep "dpt:$port" | awk '{sum+=$2} END {print sum+0}')
+rx_bytes=$(iptables -L INPUT -v -n -x 2>/dev/null | grep "dpt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
 echo "rx_bytes = $rx_bytes"
 echo ""
 
@@ -34,7 +34,7 @@ iptables -L OUTPUT -v -n -x 2>/dev/null | grep "spt:$port" | awk '{print "字段
 echo ""
 
 echo "累加计算："
-tx_bytes=$(iptables -L OUTPUT -v -n -x 2>/dev/null | grep "spt:$port" | awk '{sum+=$2} END {print sum+0}')
+tx_bytes=$(iptables -L OUTPUT -v -n -x 2>/dev/null | grep "spt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
 echo "tx_bytes = $tx_bytes"
 echo ""
 

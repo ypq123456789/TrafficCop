@@ -209,9 +209,9 @@ get_port_traffic_usage() {
     local interface=$2
     
     # 获取入站流量（字节）
-    local in_bytes=$(iptables -L INPUT -v -n -x | grep "dpt:$port" | awk '{sum+=$2} END {print sum+0}')
+    local in_bytes=$(iptables -L INPUT -v -n -x | grep "dpt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
     # 获取出站流量（字节）
-    local out_bytes=$(iptables -L OUTPUT -v -n -x | grep "spt:$port" | awk '{sum+=$2} END {print sum+0}')
+    local out_bytes=$(iptables -L OUTPUT -v -n -x | grep "spt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
     
     # 转换为GB（使用printf格式化，确保显示前导零）
     # 使用 bc 时屏蔽 stderr 并在出错时返回 0，保证不会打印 (standard_in) 1: syntax error
