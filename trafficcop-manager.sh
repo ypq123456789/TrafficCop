@@ -1,14 +1,38 @@
 #!/bin/bash
 
 # TrafficCop 管理器 - 交互式管理工具
-# 版本 2.2
-# 最后更新：2025-10-19 17:15
+# 版本 2.3
+# 最后更新：2025-10-19 18:30
 
-SCRIPT_VERSION="2.2"
-LAST_UPDATE="2025-10-19 17:15"
+SCRIPT_VERSION="2.3"
+LAST_UPDATE="2025-10-19 18:30"
 
 # 颜色定义
-RED='\033[0;31m'
+R# 解除流量限制
+remove_traffic_limit() {
+    echo -e "${CYAN}正在解除流量限制...${NC}"
+    install_script "remove_traffic_limit.sh"
+    run_script "$WORK_DIR/remove_traffic_limit.sh"
+    echo -e "${GREEN}流量限制解除完成！${NC}"
+    read -p "按回车键继续..."
+}
+
+# 机器限速管理
+manage_machine_limit() {
+    echo -e "${CYAN}正在启动机器限速管理器...${NC}"
+    
+    # 下载并运行机器限速管理器
+    echo -e "${YELLOW}正在下载机器限速管理器...${NC}"
+    install_script "machine_limit_manager.sh"
+    
+    if [ -f "$WORK_DIR/machine_limit_manager.sh" ]; then
+        run_script "$WORK_DIR/machine_limit_manager.sh"
+    else
+        echo -e "${RED}无法下载机器限速管理器${NC}"
+        echo -e "${YELLOW}尝试使用旧方式解除限速...${NC}"
+        remove_traffic_limit
+    fi
+}[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 BLUE='\033[0;34m'
@@ -556,12 +580,13 @@ show_main_menu() {
     echo -e "${YELLOW}4) 安装/管理Server酱通知${NC}"
     echo -e "${YELLOW}5) 安装/管理端口流量限制${NC}"
     echo -e "${CYAN}6) 查看端口流量状态${NC}"
-    echo -e "${YELLOW}7) 解除流量限制${NC}"
-    echo -e "${YELLOW}8) 查看日志${NC}"
-    echo -e "${YELLOW}9) 查看当前配置${NC}"
-    echo -e "${YELLOW}10) 使用预设配置${NC}"
-    echo -e "${YELLOW}11) 停止所有服务${NC}"
-    echo -e "${GREEN}12) 更新所有脚本到最新版本${NC}"
+    echo -e "${GREEN}7) 机器限速管理 (启用/禁用)${NC}"
+    echo -e "${YELLOW}8) 解除流量限制 (旧方式)${NC}"
+    echo -e "${YELLOW}9) 查看日志${NC}"
+    echo -e "${YELLOW}10) 查看当前配置${NC}"
+    echo -e "${YELLOW}11) 使用预设配置${NC}"
+    echo -e "${YELLOW}12) 停止所有服务${NC}"
+    echo -e "${GREEN}13) 更新所有脚本到最新版本${NC}"
     echo -e "${YELLOW}0) 退出${NC}"
     echo -e "${PURPLE}====================================${NC}"
     echo ""
@@ -574,7 +599,7 @@ main() {
     
     while true; do
         show_main_menu
-        read -p "请选择操作 [0-12]: " choice
+        read -p "请选择操作 [0-13]: " choice
         
         case $choice in
             1)
@@ -596,21 +621,24 @@ main() {
                 view_port_traffic
                 ;;
             7)
-                remove_traffic_limit
+                manage_machine_limit
                 ;;
             8)
-                view_logs
+                remove_traffic_limit
                 ;;
             9)
-                view_config
+                view_logs
                 ;;
             10)
-                use_preset_config
+                view_config
                 ;;
             11)
-                stop_all_services
+                use_preset_config
                 ;;
             12)
+                stop_all_services
+                ;;
+            13)
                 update_all_scripts
                 ;;
             0)
