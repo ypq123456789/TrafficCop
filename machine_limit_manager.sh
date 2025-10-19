@@ -126,14 +126,15 @@ enable_machine_limit() {
     # 2. 添加定时任务
     add_cron_job
     
-    # 3. 启动监控
-    echo "启动TrafficCop监控..."
+    # 3. 立即执行一次监控（测试配置）
+    echo "启动TrafficCop监控测试..."
     cd "$WORK_DIR"
-    bash "$SCRIPT_PATH" --cron &
+    bash "$SCRIPT_PATH" --cron
     
     echo ""
     echo -e "${GREEN}✓ 机器限速已启用${NC}"
-    echo -e "${CYAN}监控将在后台运行，每5分钟检查一次${NC}"
+    echo -e "${CYAN}监控将通过定时任务每5分钟执行一次${NC}"
+    echo -e "${CYAN}刚才已执行一次测试，可在日志中查看结果${NC}"
 }
 
 # 恢复之前的配置
@@ -173,9 +174,18 @@ show_status() {
         echo -e "配置状态: ${YELLOW}未配置${NC}"
     fi
     
-    # 检查进程
-    if pgrep -f "trafficcop.sh" > /dev/null; then
-        echo -e "监控进程: ${GREEN}运行中${NC}"
+    # 检查进程状态（检查最近的执行记录而不是实时进程）
+    local last_run=$(grep "当前版本" "$WORK_DIR/traffic_monitor.log" 2>/dev/null | tail -1 | awk '{print $1, $2}')
+    if [ -n "$last_run" ]; then
+        local last_run_timestamp=$(date -d "$last_run" +%s 2>/dev/null || echo "0")
+        local current_timestamp=$(date +%s)
+        local time_diff=$((current_timestamp - last_run_timestamp))
+        
+        if [ $time_diff -lt 600 ]; then  # 10分钟内有执行记录
+            echo -e "监控进程: ${GREEN}运行中${NC} (最后执行: $last_run)"
+        else
+            echo -e "监控进程: ${YELLOW}空闲中${NC} (最后执行: $last_run)"
+        fi
     else
         echo -e "监控进程: ${RED}未运行${NC}"
     fi
@@ -200,6 +210,47 @@ show_status() {
         echo -e "配置备份: ${GREEN}存在${NC}"
     else
         echo -e "配置备份: ${YELLOW}不存在${NC}"
+    fi
+}
+
+# 详细状态检查
+show_detailed_status() {
+    echo -e "${CYAN}==================== 详细状态 ====================${NC}"
+    echo ""
+    
+    # 基本状态
+    show_status
+    echo ""
+    
+    # 检查配置文件内容
+    echo -e "${CYAN}配置文件内容:${NC}"
+    if [ -f "$CONFIG_FILE" ]; then
+        cat "$CONFIG_FILE"
+    else
+        echo -e "${RED}配置文件不存在${NC}"
+    fi
+    echo ""
+    
+    # 检查定时任务详情
+    echo -e "${CYAN}定时任务详情:${NC}"
+    crontab -l 2>/dev/null | grep -v "^#" | grep "trafficcop\|traffic_monitor" || echo "无相关定时任务"
+    echo ""
+    
+    # 检查最近的日志
+    echo -e "${CYAN}最近的监控日志 (最后10行):${NC}"
+    if [ -f "$WORK_DIR/traffic_monitor.log" ]; then
+        tail -10 "$WORK_DIR/traffic_monitor.log"
+    else
+        echo "日志文件不存在"
+    fi
+    echo ""
+    
+    # 检查当前流量使用
+    echo -e "${CYAN}当前流量统计:${NC}"
+    if command -v vnstat >/dev/null 2>&1; then
+        vnstat -i $(get_main_interface) --oneline 2>/dev/null | head -1 || echo "无法获取流量统计"
+    else
+        echo "vnstat 未安装"
     fi
 }
 
@@ -263,7 +314,7 @@ main() {
                 ;;
             4)
                 echo ""
-                show_status
+                show_detailed_status
                 read -p "按回车键继续..."
                 ;;
             5)
