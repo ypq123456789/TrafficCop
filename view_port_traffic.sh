@@ -40,7 +40,8 @@ get_port_traffic_usage() {
     
     if [ -n "$usage_bytes" ] && [ "$usage_bytes" -gt 0 ]; then
         # 使用 awk 确保显示前导零（例如 0.02 而不是 .02）
-        local gb_value=$(echo "scale=6; $usage_bytes/1024/1024/1024" | bc)
+        # 对 bc 的调用加上 stderr 重定向并在出错时返回 0，避免出现 "(standard_in) 1: syntax error"
+        local gb_value=$(echo "scale=6; $usage_bytes/1024/1024/1024" | bc 2>/dev/null || echo "0")
         printf "%.3f" $(echo "$gb_value" | awk '{printf "%.6f", $1}')
     else
         echo "0.000"
@@ -59,9 +60,10 @@ calculate_percentage() {
     local usage=$1
     local limit=$2
     
-    if (( $(echo "$limit > 0" | bc -l) )); then
+    # 使用 bc 时屏蔽 stderr 并在出错时返回默认值，防止语法错误输出
+    if (( $(echo "$limit > 0" | bc -l 2>/dev/null || echo "0") )); then
         # 使用 printf 确保显示前导零
-        printf "%.2f" $(echo "scale=2; ($usage / $limit) * 100" | bc)
+        printf "%.2f" $(echo "scale=2; ($usage / $limit) * 100" | bc 2>/dev/null || echo "0")
     else
         echo "0.00"
     fi
@@ -71,9 +73,9 @@ calculate_percentage() {
 get_status_color() {
     local percentage=$1
     
-    if (( $(echo "$percentage >= 90" | bc -l) )); then
+    if (( $(echo "$percentage >= 90" | bc -l 2>/dev/null || echo "0") )); then
         echo "$RED"
-    elif (( $(echo "$percentage >= 75" | bc -l) )); then
+    elif (( $(echo "$percentage >= 75" | bc -l 2>/dev/null || echo "0") )); then
         echo "$YELLOW"
     else
         echo "$GREEN"
@@ -84,7 +86,8 @@ get_status_color() {
 show_progress_bar() {
     local percentage=$1
     local width=30
-    local filled=$(echo "scale=0; ($percentage * $width) / 100" | bc)
+    # 计算填充长度，屏蔽 bc stderr 并在出错时使用 0
+    local filled=$(echo "scale=0; ($percentage * $width) / 100" | bc 2>/dev/null || echo 0)
     
     # 确保filled不为负数且不超过width
     if [ "$filled" -lt 0 ]; then
@@ -123,16 +126,17 @@ show_port_info() {
     
     # 获取当前流量使用
     local current_usage=$(get_port_traffic_usage "$port" "$interface" "$traffic_mode")
-    local limit_threshold=$(echo "$traffic_limit - $traffic_tolerance" | bc)
+    # 计算阈值，屏蔽 bc 语法错误
+    local limit_threshold=$(echo "$traffic_limit - $traffic_tolerance" | bc 2>/dev/null || echo 0)
     local percentage=$(calculate_percentage "$current_usage" "$traffic_limit")
     
     # 确定状态
     local status
     local status_color
-    if (( $(echo "$current_usage > $limit_threshold" | bc -l) )); then
+    if (( $(echo "$current_usage > $limit_threshold" | bc -l 2>/dev/null || echo "0") )); then
         status="⚠️ 已限制"
         status_color="$RED"
-    elif (( $(echo "$current_usage > ($traffic_limit * 0.8)" | bc -l) )); then
+    elif (( $(echo "$current_usage > ($traffic_limit * 0.8)" | bc -l 2>/dev/null || echo "0") )); then
         status="⚡ 接近限制"
         status_color="$YELLOW"
     else
@@ -227,8 +231,8 @@ show_all_ports() {
         local traffic_limit=$(echo "$port_config" | jq -r '.traffic_limit')
         
         local current_usage=$(get_port_traffic_usage "$port" "$interface" "$traffic_mode")
-        total_usage=$(echo "$total_usage + $current_usage" | bc)
-        total_limit=$(echo "$total_limit + $traffic_limit" | bc)
+    total_usage=$(echo "$total_usage + $current_usage" | bc 2>/dev/null || echo "$total_usage")
+    total_limit=$(echo "$total_limit + $traffic_limit" | bc 2>/dev/null || echo "$total_limit")
     done
     
     local total_percentage=$(calculate_percentage "$total_usage" "$total_limit")

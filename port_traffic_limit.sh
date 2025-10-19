@@ -214,9 +214,10 @@ get_port_traffic_usage() {
     local out_bytes=$(iptables -L OUTPUT -v -n -x | grep "spt:$port" | awk '{sum+=$2} END {print sum+0}')
     
     # 转换为GB（使用printf格式化，确保显示前导零）
-    local in_gb=$(printf "%.2f" $(echo "scale=2; $in_bytes / 1024 / 1024 / 1024" | bc))
-    local out_gb=$(printf "%.2f" $(echo "scale=2; $out_bytes / 1024 / 1024 / 1024" | bc))
-    local total_gb=$(printf "%.2f" $(echo "scale=2; $in_gb + $out_gb" | bc))
+    # 使用 bc 时屏蔽 stderr 并在出错时返回 0，保证不会打印 (standard_in) 1: syntax error
+    local in_gb=$(printf "%.2f" $(echo "scale=2; $in_bytes / 1024 / 1024 / 1024" | bc 2>/dev/null || echo "0"))
+    local out_gb=$(printf "%.2f" $(echo "scale=2; $out_bytes / 1024 / 1024 / 1024" | bc 2>/dev/null || echo "0"))
+    local total_gb=$(printf "%.2f" $(echo "scale=2; $in_gb + $out_gb" | bc 2>/dev/null || echo "0"))
     
     echo "$in_gb,$out_gb,$total_gb"
 }
@@ -310,17 +311,18 @@ check_and_limit_port_traffic() {
     esac
     
     # 计算触发阈值和使用率
-    local trigger_limit=$(echo "scale=2; $traffic_limit - $traffic_tolerance" | bc)
+    # 计算触发阈值和使用率，屏蔽 bc stderr 并提供默认值
+    local trigger_limit=$(echo "scale=2; $traffic_limit - $traffic_tolerance" | bc 2>/dev/null || echo "0")
     local usage_percentage=0
-    if (( $(echo "$traffic_limit > 0" | bc -l) )); then
-        usage_percentage=$(echo "scale=1; ($current_usage / $traffic_limit) * 100" | bc)
+    if (( $(echo "$traffic_limit > 0" | bc -l 2>/dev/null || echo "0") )); then
+        usage_percentage=$(echo "scale=1; ($current_usage / $traffic_limit) * 100" | bc 2>/dev/null || echo "0")
     fi
     
     # 详细记录每个端口的流量信息（入站/出站/总计）
     echo "$(date '+%Y-%m-%d %H:%M:%S') 端口 $port: 入站=${in_gb}GB, 出站=${out_gb}GB, 总计=${total_gb}GB, 当前=${current_usage}GB, 限制=${traffic_limit}GB (${usage_percentage}%)" >> "$PORT_LOG_FILE"
     
     # 检查是否超限
-    if (( $(echo "$current_usage >= $trigger_limit" | bc -l) )); then
+    if (( $(echo "$current_usage >= $trigger_limit" | bc -l 2>/dev/null || echo "0") )); then
         if [ "$limit_mode" = "tc" ]; then
             apply_tc_limit "$port" "$interface" "$limit_speed"
             echo "$(date '+%Y-%m-%d %H:%M:%S') [警告] 端口 $port 已触发TC限速（${current_usage}GB >= ${trigger_limit}GB）" >> "$PORT_LOG_FILE"
@@ -544,6 +546,7 @@ view_port_status() {
         # 获取当前流量
         local usage=$(get_port_traffic_usage "$port" "$interface")
         local total_gb=$(echo "$usage" | cut -d',' -f3)
+        # 计算百分比时屏蔽 bc stderr 并提供默认值
         local percentage=$(echo "scale=1; $total_gb * 100 / $limit" | bc 2>/dev/null || echo "0")
         
         echo -e "    当前使用: ${CYAN}${total_gb}GB${NC} / ${limit}GB (${percentage}%)"

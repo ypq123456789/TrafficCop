@@ -253,7 +253,7 @@ get_port_traffic_summary() {
             # 直接调用 iptables 获取流量（与 port_traffic_limit.sh 一致）
             local in_bytes=$(iptables -L INPUT -v -n -x 2>/dev/null | grep "dpt:$port" | awk '{sum+=$2} END {print sum+0}')
             local out_bytes=$(iptables -L OUTPUT -v -n -x 2>/dev/null | grep "spt:$port" | awk '{sum+=$2} END {print sum+0}')
-            local total_gb=$(echo "scale=2; ($in_bytes + $out_bytes) / 1024 / 1024 / 1024" | bc)
+            local total_gb=$(echo "scale=2; ($in_bytes + $out_bytes) / 1024 / 1024 / 1024" | bc 2>/dev/null || echo "0")
             
             # 格式化显示（确保前导零）
             total_gb=$(printf "%.2f" $total_gb)

@@ -409,8 +409,8 @@ get_traffic_usage() {
 
     # echo "用量字节数: $usage" >&2
     if [ -n "$usage" ]; then
-        # 将字节转换为 GiB，并确保结果至少有一位小数
-        usage=$(echo "scale=3; x=$usage/1024/1024/1024; if(x<1) print 0; x" | bc)
+        # 将字节转换为 GiB，并确保结果至少有一位小数，屏蔽 bc 错误输出
+        usage=$(echo "scale=3; x=$usage/1024/1024/1024; if(x<1) print 0; x" | bc 2>/dev/null || echo "0.000")
         # echo "将字节转换为 GiB: $usage" >&2
         echo $usage
     else
@@ -423,11 +423,11 @@ get_traffic_usage() {
 # 修改 check_and_limit_traffic 函数
 check_and_limit_traffic() {
     local current_usage=$(get_traffic_usage)
-    local limit_threshold=$(echo "$TRAFFIC_LIMIT - $TRAFFIC_TOLERANCE" | bc)
+    local limit_threshold=$(echo "$TRAFFIC_LIMIT - $TRAFFIC_TOLERANCE" | bc 2>/dev/null || echo "0")
     
     echo "$(date '+%Y-%m-%d %H:%M:%S') 当前使用流量: $current_usage GB，限制流量: $limit_threshold GB" | tee -a "$LOG_FILE"
     
-    if (( $(echo "$current_usage > $limit_threshold" | bc -l) )); then
+    if (( $(echo "$current_usage > $limit_threshold" | bc -l 2>/dev/null || echo "0") )); then
         echo "$(date '+%Y-%m-%d %H:%M:%S') 流量超出限制" | tee -a "$LOG_FILE"
         if [ "$LIMIT_MODE" = "tc" ]; then
             echo "$(date '+%Y-%m-%d %H:%M:%S') 使用 TC 模式限速" | tee -a "$LOG_FILE"
@@ -514,7 +514,7 @@ fi
         start_time=$(date +%s.%N)
      if read -t 5 -n 1 modify_config; then
     end_time=$(date +%s.%N)
-    duration=$(echo "$end_time - $start_time" | bc)
+    duration=$(echo "$end_time - $start_time" | bc 2>/dev/null || echo "0")
     echo ""  # 换行
     echo "$(date '+%Y-%m-%d %H:%M:%S') 收到用户输入: '${modify_config}' (ASCII: $(printf '%d' "'$modify_config" 2>/dev/null || echo "N/A"))" | tee -a "$LOG_FILE"
     echo "$(date '+%Y-%m-%d %H:%M:%S') 等待时间: $duration 秒" | tee -a "$LOG_FILE"
@@ -529,7 +529,7 @@ fi
     fi
 else
     end_time=$(date +%s.%N)
-    duration=$(echo "$end_time - $start_time" | bc)
+    duration=$(echo "$end_time - $start_time" | bc 2>/dev/null || echo "0")
     echo ""  # 换行
     echo "$(date '+%Y-%m-%d %H:%M:%S') 等待超时，无用户输入" | tee -a "$LOG_FILE"
     echo "$(date '+%Y-%m-%d %H:%M:%S') 等待时间: $duration 秒" | tee -a "$LOG_FILE"
