@@ -60,8 +60,11 @@ cd "$WORK_DIR" || exit 1
 # 设置时区为上海（东八区）
 export TZ='Asia/Shanghai'
 
+# 端口流量数据缓存文件
+PORT_DATA_CACHE="/tmp/port_traffic_cache.json"
+
 echo "----------------------------------------------"| tee -a "$CRON_LOG"
-echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：9.5"  
+echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：9.6"  
 
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
@@ -93,6 +96,32 @@ get_valid_input() {
     done
 }
 
+# 保存端口流量数据到缓存
+save_port_traffic_data() {
+    if [ -f "$WORK_DIR/view_port_traffic.sh" ]; then
+        local port_data=$(bash "$WORK_DIR/view_port_traffic.sh" --json 2>/dev/null)
+        if [ -n "$port_data" ] && echo "$port_data" | jq -e '.ports' >/dev/null 2>&1; then
+            echo "$port_data" | jq ". + {\"timestamp\": \"$(date '+%Y-%m-%d %H:%M:%S')\", \"data_source\": \"manual\"}" > "$PORT_DATA_CACHE"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : 端口流量数据已保存到缓存"| tee -a "$CRON_LOG"
+        fi
+    fi
+}
+
+# 从缓存加载端口流量数据
+load_port_traffic_data() {
+    if [ -f "$PORT_DATA_CACHE" ]; then
+        local cache_age=$(( $(date +%s) - $(stat -c %Y "$PORT_DATA_CACHE" 2>/dev/null || echo 0) ))
+        local cache_age_minutes=$(( cache_age / 60 ))
+        
+        if [ $cache_age_minutes -le 60 ]; then
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : 读取端口流量缓存，文件年龄: ${cache_age_minutes}分钟"| tee -a "$CRON_LOG"
+            cat "$PORT_DATA_CACHE" 2>/dev/null
+        else
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : 端口流量缓存已过期(${cache_age_minutes}分钟)，删除缓存文件"| tee -a "$CRON_LOG"
+            rm -f "$PORT_DATA_CACHE"
+        fi
+    fi
+}
 
 # 读取配置
 read_config() {
@@ -455,15 +484,11 @@ daily_report() {
         if [ "$port_count" -gt 0 ]; then
             echo "$(date '+%Y-%m-%d %H:%M:%S') : 检测到 $port_count 个端口流量配置，添加端口信息"| tee -a "$CRON_LOG"
             
-            # 如果有 view_port_traffic.sh 脚本，使用它
-            if [ -f "$view_script" ]; then
-                local port_data=$(bash "$view_script" --json 2>/dev/null)
-            else
-                # 否则直接读取配置文件和 iptables 统计
-                local port_data=""
-            fi
+            # 尝试从缓存加载准确的端口数据
+            local port_data=$(load_port_traffic_data)
             
             if [ -n "$port_data" ] && echo "$port_data" | jq -e '.ports' >/dev/null 2>&1; then
+                echo "$(date '+%Y-%m-%d %H:%M:%S') : 使用缓存的端口流量数据"| tee -a "$CRON_LOG"
                 local actual_port_count=$(echo "$port_data" | jq -r '.ports | length' 2>/dev/null || echo "0")
                 
                 if [ "$actual_port_count" -gt 0 ]; then
@@ -506,7 +531,53 @@ daily_report() {
                     echo "$(date '+%Y-%m-%d %H:%M:%S') : JSON数据中没有端口信息"| tee -a "$CRON_LOG"
                 fi
             else
-                echo "$(date '+%Y-%m-%d %H:%M:%S') : 无法获取有效的端口流量JSON数据"| tee -a "$CRON_LOG"
+                echo "$(date '+%Y-%m-%d %H:%M:%S') : 无法获取缓存的端口流量数据，尝试实时获取"| tee -a "$CRON_LOG"
+                
+                # 备用方案：尝试实时获取数据
+                if [ -f "$view_script" ]; then
+                    local fallback_data=$(bash "$view_script" --json 2>/dev/null)
+                    if [ -n "$fallback_data" ] && echo "$fallback_data" | jq -e '.ports' >/dev/null 2>&1; then
+                        port_data="$fallback_data"
+                        echo "$(date '+%Y-%m-%d %H:%M:%S') : 使用实时端口流量数据作为备用"| tee -a "$CRON_LOG"
+                        # 重新处理端口数据
+                        local actual_port_count=$(echo "$port_data" | jq -r '.ports | length' 2>/dev/null || echo "0")
+                        if [ "$actual_port_count" -gt 0 ]; then
+                            message="${message}%0A%0A🔌 端口流量详情："
+                            local i=0
+                            while [ $i -lt $actual_port_count ]; do
+                                local port=$(echo "$port_data" | jq -r ".ports[$i].port" 2>/dev/null)
+                                local port_desc=$(echo "$port_data" | jq -r ".ports[$i].description" 2>/dev/null)
+                                local port_usage=$(echo "$port_data" | jq -r ".ports[$i].usage" 2>/dev/null)
+                                local port_limit=$(echo "$port_data" | jq -r ".ports[$i].limit" 2>/dev/null)
+                                
+                                if [ -n "$port" ] && [ "$port" != "null" ] && [ "$port_usage" != "null" ]; then
+                                    local port_usage_formatted=$(printf "%.2f" "$port_usage" 2>/dev/null || echo "$port_usage")
+                                    local port_limit_formatted=$(printf "%.2f" "$port_limit" 2>/dev/null || echo "$port_limit")
+                                    
+                                    local port_percentage=0
+                                    if [ -n "$port_limit" ] && [ "$port_limit" != "null" ] && (( $(echo "$port_limit > 0" | bc -l 2>/dev/null || echo "0") )); then
+                                        port_percentage=$(printf "%.2f" $(echo "scale=2; ($port_usage / $port_limit) * 100" | bc 2>/dev/null || echo "0"))
+                                    fi
+                                    
+                                    local status_icon="✅"
+                                    if (( $(echo "$port_percentage >= 90" | bc -l 2>/dev/null || echo "0") )); then
+                                        status_icon="🔴"
+                                    elif (( $(echo "$port_percentage >= 75" | bc -l 2>/dev/null || echo "0") )); then
+                                        status_icon="🟡"
+                                    fi
+                                    
+                                    message="${message}%0A${status_icon} 端口 ${port} (${port_desc})：${port_usage_formatted}GB / ${port_limit_formatted}GB"
+                                fi
+                                i=$((i + 1))
+                            done
+                            echo "$(date '+%Y-%m-%d %H:%M:%S') : 已添加 $actual_port_count 个端口的流量信息（备用数据）"| tee -a "$CRON_LOG"
+                        fi
+                    else
+                        echo "$(date '+%Y-%m-%d %H:%M:%S') : 实时数据获取也失败，跳过端口流量显示"| tee -a "$CRON_LOG"
+                    fi
+                else
+                    echo "$(date '+%Y-%m-%d %H:%M:%S') : view_port_traffic.sh脚本不存在，跳过端口流量显示"| tee -a "$CRON_LOG"
+                fi
             fi
         else
             echo "$(date '+%Y-%m-%d %H:%M:%S') : 没有配置端口流量监控"| tee -a "$CRON_LOG"
@@ -596,9 +667,13 @@ if [[ "$*" == *"-cron"* ]]; then
                         exit 0
                         ;;
                     c|C)
+                        # 检查流量时保存当前准确的端口数据
+                        save_port_traffic_data
                         check_and_notify
                         ;;
                     d|D)
+                        # 手动发送每日报告前保存当前准确的端口数据
+                        save_port_traffic_data
                         daily_report
                         ;;
                     r|R)
