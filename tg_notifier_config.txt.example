@@ -1,0 +1,7 @@
+# Telegram Bot Configuration Template
+# Copy this file to tg_notifier_config.txt and fill in your actual values
+
+BOT_TOKEN="YOUR_BOT_TOKEN_HERE"
+CHAT_ID="YOUR_CHAT_ID_HERE"
+DAILY_REPORT_TIME=08:00
+MACHINE_NAME="Your Server Name"

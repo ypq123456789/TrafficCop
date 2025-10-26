@@ -1,0 +1,22 @@
+# 忽略配置文件（包含敏感信息）
+tg_notifier_config.txt
+traffic_monitor_config.txt
+
+# 忽略日志文件
+*.log
+last_traffic_notification
+
+# 忽略缓存文件
+port_traffic_cache.json
+
+# 忽略备份文件
+*.backup*
+*.bak
+
+# 忽略IDE文件
+.vscode/
+*.code-workspace
+
+# 忽略临时文件
+*.tmp
+*.temp
