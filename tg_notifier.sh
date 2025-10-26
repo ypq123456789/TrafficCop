@@ -114,7 +114,7 @@ load_port_traffic_data() {
         local cache_age_minutes=$(( cache_age / 60 ))
         
         if [ $cache_age_minutes -le 60 ]; then
-            echo "$(date '+%Y-%m-%d %H:%M:%S') : 读取端口流量缓存，文件年龄: ${cache_age_minutes}分钟"| tee -a "$CRON_LOG"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : 读取端口流量缓存，文件年龄: ${cache_age_minutes}分钟"| tee -a "$CRON_LOG" >&2
             cat "$PORT_DATA_CACHE" 2>/dev/null
         else
             echo "$(date '+%Y-%m-%d %H:%M:%S') : 端口流量缓存已过期(${cache_age_minutes}分钟)，删除缓存文件"| tee -a "$CRON_LOG"
@@ -487,6 +487,12 @@ daily_report() {
             # 尝试从缓存加载准确的端口数据
             local port_data=$(load_port_traffic_data)
             
+            # 调试：显示获取到的端口数据（只显示前100个字符避免日志过长）
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : [调试] 获取到的端口数据长度: ${#port_data}字符"| tee -a "$CRON_LOG"
+            if [ -n "$port_data" ]; then
+                echo "$(date '+%Y-%m-%d %H:%M:%S') : [调试] 数据预览: $(echo "$port_data" | head -c 100)..."| tee -a "$CRON_LOG"
+            fi
+            
             if [ -n "$port_data" ] && echo "$port_data" | jq -e '.ports' >/dev/null 2>&1; then
                 echo "$(date '+%Y-%m-%d %H:%M:%S') : 使用缓存的端口流量数据"| tee -a "$CRON_LOG"
                 local actual_port_count=$(echo "$port_data" | jq -r '.ports | length' 2>/dev/null || echo "0")
@@ -501,6 +507,9 @@ daily_report() {
                         local port_desc=$(echo "$port_data" | jq -r ".ports[$i].description" 2>/dev/null)
                         local port_usage=$(echo "$port_data" | jq -r ".ports[$i].usage" 2>/dev/null)
                         local port_limit=$(echo "$port_data" | jq -r ".ports[$i].limit" 2>/dev/null)
+                        
+                        # 调试：显示每个端口的原始数据
+                        echo "$(date '+%Y-%m-%d %H:%M:%S') : [调试] 端口[$i] port=$port, desc=$port_desc, usage=$port_usage, limit=$port_limit"| tee -a "$CRON_LOG"
                         
                         if [ -n "$port" ] && [ "$port" != "null" ] && [ "$port_usage" != "null" ]; then
                             # 格式化流量显示（保留2位小数）
@@ -587,6 +596,10 @@ daily_report() {
     fi
     
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 准备发送消息"| tee -a "$CRON_LOG"
+    
+    # 调试：显示即将发送的消息内容
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : [调试] 发送到TG的消息内容:"| tee -a "$CRON_LOG"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : [调试] $message"| tee -a "$CRON_LOG"
 
     local url="https://api.telegram.org/bot${BOT_TOKEN}/sendMessage"
     local response
