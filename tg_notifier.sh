@@ -4,6 +4,11 @@
 WORK_DIR="/root/TrafficCop"
 mkdir -p "$WORK_DIR"
 
+# 导入端口流量辅助函数
+if [ -f "$WORK_DIR/port_traffic_helper.sh" ]; then
+    source "$WORK_DIR/port_traffic_helper.sh"
+fi
+
 # 更新文件路径
 CONFIG_FILE="$WORK_DIR/tg_notifier_config.txt"
 LOG_FILE="$WORK_DIR/traffic_monitor.log"
@@ -218,13 +223,24 @@ initial_config() {
 # 发送限速警告
 send_throttle_warning() {
     local url="https://api.telegram.org/bot${BOT_TOKEN}/sendMessage"
-    local port_summary=$(get_port_traffic_summary)
+    local port_summary=$(get_port_traffic_summary_for_tg)
     local message="⚠️ [${MACHINE_NAME}]限速警告：流量已达到限制，已启动 TC 模式限速。${port_summary}"
     curl -s -X POST "$url" -d "chat_id=$CHAT_ID" -d "text=$message"
 }
 
-# 获取端口流量摘要
-get_port_traffic_summary() {
+# 获取端口流量摘要（专为Telegram格式化）
+get_port_traffic_summary_for_tg() {
+    # 如果有 port_traffic_helper.sh 中的函数，优先使用
+    if command -v get_port_traffic_summary &> /dev/null; then
+        local summary=$(get_port_traffic_summary 5)
+        if [ -n "$summary" ]; then
+            # 转换换行符为URL编码格式
+            echo "$summary" | sed 's/\n/%0A/g'
+            return
+        fi
+    fi
+    
+    # 兼容性实现（如果port_traffic_helper.sh不可用）
     local ports_config_file="$WORK_DIR/ports_traffic_config.json"
     local summary=""
     
@@ -240,31 +256,32 @@ get_port_traffic_summary() {
     
     summary="%0A%0A🔌 端口流量详情："
     
-    # 遍历所有端口（最多显示5个）
-    local max_display=5
-    local displayed=0
-    
-    for ((i=0; i<port_count && displayed<max_display; i++)); do
-        local port=$(jq -r ".ports[$i].port" "$ports_config_file" 2>/dev/null)
-        local interface=$(jq -r ".ports[$i].main_interface" "$ports_config_file" 2>/dev/null)
-        local limit=$(jq -r ".ports[$i].traffic_limit" "$ports_config_file" 2>/dev/null)
-        
-        if [ -n "$port" ] && [ "$port" != "null" ]; then
-            # 直接调用 iptables 获取流量（与 port_traffic_limit.sh 一致）
-            local in_bytes=$(iptables -L INPUT -v -n -x 2>/dev/null | grep "dpt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
-            local out_bytes=$(iptables -L OUTPUT -v -n -x 2>/dev/null | grep "spt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
-            local total_gb=$(echo "scale=2; ($in_bytes + $out_bytes) / 1024 / 1024 / 1024" | bc 2>/dev/null || echo "0")
+    # 使用与view_port_traffic.sh相同的方法获取流量
+    if [ -f "$WORK_DIR/view_port_traffic.sh" ]; then
+        local port_data=$(bash "$WORK_DIR/view_port_traffic.sh" --json 2>/dev/null)
+        if [ -n "$port_data" ]; then
+            local max_display=5
+            local displayed=0
             
-            # 格式化显示（确保前导零）
-            total_gb=$(printf "%.2f" $total_gb)
+            for ((i=0; i<port_count && displayed<max_display; i++)); do
+                local port=$(echo "$port_data" | jq -r ".ports[$i].port" 2>/dev/null)
+                local port_usage=$(echo "$port_data" | jq -r ".ports[$i].usage" 2>/dev/null)
+                local port_limit=$(echo "$port_data" | jq -r ".ports[$i].limit" 2>/dev/null)
+                
+                if [ -n "$port" ] && [ "$port" != "null" ]; then
+                    local port_percentage=0
+                    if (( $(echo "$port_limit > 0" | bc -l 2>/dev/null || echo "0") )); then
+                        port_percentage=$(echo "scale=0; ($port_usage / $port_limit) * 100" | bc 2>/dev/null || echo "0")
+                    fi
+                    summary="${summary}%0A✓ 端口 ${port}: ${port_usage}GB / ${port_limit}GB (${port_percentage}%)"
+                    displayed=$((displayed + 1))
+                fi
+            done
             
-            summary="${summary}%0A✓ 端口 ${port}: ${total_gb}GB / ${limit}GB"
-            displayed=$((displayed + 1))
+            if [ "$port_count" -gt "$max_display" ]; then
+                summary="${summary}%0A...及其他 $((port_count - max_display)) 个端口"
+            fi
         fi
-    done
-    
-    if [ "$port_count" -gt "$max_display" ]; then
-        summary="${summary}%0A...及其他 $((port_count - max_display)) 个端口"
     fi
     
     echo "$summary"
@@ -273,7 +290,7 @@ get_port_traffic_summary() {
 # 发送限速解除通知
 send_throttle_lifted() {
     local url="https://api.telegram.org/bot${BOT_TOKEN}/sendMessage"
-    local port_summary=$(get_port_traffic_summary)
+    local port_summary=$(get_port_traffic_summary_for_tg)
     local message="✅ [${MACHINE_NAME}]限速解除：流量已恢复正常，所有限制已清除。${port_summary}"
     curl -s -X POST "$url" -d "chat_id=$CHAT_ID" -d "text=$message"
 }
@@ -288,7 +305,7 @@ send_new_cycle_notification() {
 # 发送关机警告
 send_shutdown_warning() {
     local url="https://api.telegram.org/bot${BOT_TOKEN}/sendMessage"
-    local port_summary=$(get_port_traffic_summary)
+    local port_summary=$(get_port_traffic_summary_for_tg)
     local message="🚨 [${MACHINE_NAME}]关机警告：流量已达到严重限制，系统将在 1 分钟后关机！${port_summary}"
     curl -s -X POST "$url" -d "chat_id=$CHAT_ID" -d "text=$message"
 }

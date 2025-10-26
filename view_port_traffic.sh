@@ -334,7 +334,7 @@ main() {
             fi
             first=false
             
-            echo -n "{\"port\":$port,\"description\":\"$description\",\"usage\":$current_usage,\"limit\":$traffic_limit}"
+            echo -n "{\"port\":\"$port\",\"description\":\"$description\",\"usage\":$current_usage,\"limit\":$traffic_limit}"
         done
         
         echo ']}'
