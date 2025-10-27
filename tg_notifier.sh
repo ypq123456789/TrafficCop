@@ -96,25 +96,73 @@ get_valid_input() {
     done
 }
 
-# 保存端口流量数据到缓存
+# 保存端口流量数据到缓存（带历史记录和详细调试）
 save_port_traffic_data() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : [调试] 开始执行 save_port_traffic_data"| tee -a "$CRON_LOG"
+    
     if [ -f "$WORK_DIR/view_port_traffic.sh" ]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : [调试] 找到 view_port_traffic.sh 文件"| tee -a "$CRON_LOG"
+        
+        # 详细记录执行环境
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : [调试] WORK_DIR=$WORK_DIR"| tee -a "$CRON_LOG"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : [调试] PWD=$(pwd)"| tee -a "$CRON_LOG"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : [调试] 执行命令: bash $WORK_DIR/view_port_traffic.sh --json"| tee -a "$CRON_LOG"
+        
         local port_data
         port_data=$(bash "$WORK_DIR/view_port_traffic.sh" --json 2>/dev/null)
+        local exit_code=$?
+        
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : [调试] view_port_traffic.sh 退出码: $exit_code"| tee -a "$CRON_LOG"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : [调试] 原始输出长度: ${#port_data} 字符"| tee -a "$CRON_LOG"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : [调试] 原始输出前200字符: $(echo "$port_data" | head -c 200)"| tee -a "$CRON_LOG"
+        
+        local timestamp=$(date '+%Y-%m-%d_%H:%M:%S')
+        local caller_info=""
+        
+        # 识别调用来源
+        if [[ "${BASH_SOURCE[1]}" == *"tg_notifier.sh"* ]]; then
+            local line_num=$(caller 0 | cut -d' ' -f1)
+            caller_info="_line${line_num}"
+        fi
+        
         if [ -n "$port_data" ]; then
-            local tmpfile="${PORT_DATA_CACHE}.tmp.$$"
+            # 创建带时间戳的历史缓存文件
+            local history_cache="/tmp/port_traffic_cache_${timestamp}${caller_info}.json"
+            local tmpfile="${history_cache}.tmp.$$"
+            
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : [调试] 尝试解析JSON并添加元数据"| tee -a "$CRON_LOG"
+            
             # 先写到临时文件并附加元数据，再验证JSON结构
-            echo "$port_data" | jq ". + {\"timestamp\": \"$(date '+%Y-%m-%d %H:%M:%S')\", \"data_source\": \"manual\"}" > "$tmpfile" 2>/dev/null || true
+            echo "$port_data" | jq ". + {\"timestamp\": \"$(date '+%Y-%m-%d %H:%M:%S')\", \"data_source\": \"manual\", \"caller\": \"${caller_info}\", \"exit_code\": $exit_code}" > "$tmpfile" 2>/dev/null || true
+            
             if [ -s "$tmpfile" ] && jq -e '.ports' "$tmpfile" >/dev/null 2>&1; then
-                mv -f "$tmpfile" "$PORT_DATA_CACHE"
-                chmod 644 "$PORT_DATA_CACHE" 2>/dev/null || true
-                echo "$(date '+%Y-%m-%d %H:%M:%S') : 端口流量数据已保存到缓存"| tee -a "$CRON_LOG"
+                mv -f "$tmpfile" "$history_cache"
+                chmod 644 "$history_cache" 2>/dev/null || true
+                
+                # 创建/更新最新缓存的符号链接
+                ln -sf "$history_cache" "$PORT_DATA_CACHE" 2>/dev/null || cp "$history_cache" "$PORT_DATA_CACHE"
+                
+                # 记录详细日志，包括数据预览
+                local usage_summary=$(echo "$port_data" | jq -r '.ports[] | "\(.port):\(.usage)GB"' 2>/dev/null | tr '\n' ' ' || echo "无法解析端口数据")
+                echo "$(date '+%Y-%m-%d %H:%M:%S') : 端口流量数据已保存到缓存 $history_cache"| tee -a "$CRON_LOG"
+                echo "$(date '+%Y-%m-%d %H:%M:%S') : [调试] 缓存数据摘要: $usage_summary"| tee -a "$CRON_LOG"
+                
+                # 清理超过24小时的历史缓存文件
+                find /tmp -name "port_traffic_cache_*" -type f -mtime +1 -delete 2>/dev/null || true
             else
-                echo "$(date '+%Y-%m-%d %H:%M:%S') : 生成缓存失败，临时文件无效，已删除"| tee -a "$CRON_LOG"
+                echo "$(date '+%Y-%m-%d %H:%M:%S') : 生成缓存失败，临时文件无效或JSON解析失败"| tee -a "$CRON_LOG"
+                echo "$(date '+%Y-%m-%d %H:%M:%S') : [调试] 临时文件大小: $(wc -c "$tmpfile" 2>/dev/null || echo "文件不存在")"| tee -a "$CRON_LOG"
+                echo "$(date '+%Y-%m-%d %H:%M:%S') : [调试] 原始数据: $port_data"| tee -a "$CRON_LOG"
                 rm -f "$tmpfile" 2>/dev/null || true
             fi
+        else
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : view_port_traffic.sh返回空数据"| tee -a "$CRON_LOG"
         fi
+    else
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : view_port_traffic.sh 文件不存在: $WORK_DIR/view_port_traffic.sh"| tee -a "$CRON_LOG"
     fi
+    
+    echo "$(date '+%Y-%m-%d %H:%M:%S') : [调试] save_port_traffic_data 执行完成"| tee -a "$CRON_LOG"
 }
 
 # 从缓存加载端口流量数据
