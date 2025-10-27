@@ -107,9 +107,11 @@ save_port_traffic_data() {
         echo "$(date '+%Y-%m-%d %H:%M:%S') : [调试] WORK_DIR=$WORK_DIR"| tee -a "$CRON_LOG"
         echo "$(date '+%Y-%m-%d %H:%M:%S') : [调试] PWD=$(pwd)"| tee -a "$CRON_LOG"
         echo "$(date '+%Y-%m-%d %H:%M:%S') : [调试] 执行命令: bash $WORK_DIR/view_port_traffic.sh --json"| tee -a "$CRON_LOG"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : [调试] 当前PATH: $PATH"| tee -a "$CRON_LOG"
         
         local port_data
-        port_data=$(bash "$WORK_DIR/view_port_traffic.sh" --json 2>/dev/null)
+        # 确保在正确的环境中执行，包含必要的系统路径
+        port_data=$(cd "$WORK_DIR" && PATH="/usr/sbin:/usr/bin:/sbin:/bin:$PATH" bash view_port_traffic.sh --json 2>/dev/null)
         local exit_code=$?
         
         echo "$(date '+%Y-%m-%d %H:%M:%S') : [调试] view_port_traffic.sh 退出码: $exit_code"| tee -a "$CRON_LOG"
