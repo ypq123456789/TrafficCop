@@ -99,10 +99,20 @@ get_valid_input() {
 # 保存端口流量数据到缓存
 save_port_traffic_data() {
     if [ -f "$WORK_DIR/view_port_traffic.sh" ]; then
-        local port_data=$(bash "$WORK_DIR/view_port_traffic.sh" --json 2>/dev/null)
-        if [ -n "$port_data" ] && echo "$port_data" | jq -e '.ports' >/dev/null 2>&1; then
-            echo "$port_data" | jq ". + {\"timestamp\": \"$(date '+%Y-%m-%d %H:%M:%S')\", \"data_source\": \"manual\"}" > "$PORT_DATA_CACHE"
-            echo "$(date '+%Y-%m-%d %H:%M:%S') : 端口流量数据已保存到缓存"| tee -a "$CRON_LOG"
+        local port_data
+        port_data=$(bash "$WORK_DIR/view_port_traffic.sh" --json 2>/dev/null)
+        if [ -n "$port_data" ]; then
+            local tmpfile="${PORT_DATA_CACHE}.tmp.$$"
+            # 先写到临时文件并附加元数据，再验证JSON结构
+            echo "$port_data" | jq ". + {\"timestamp\": \"$(date '+%Y-%m-%d %H:%M:%S')\", \"data_source\": \"manual\"}" > "$tmpfile" 2>/dev/null || true
+            if [ -s "$tmpfile" ] && jq -e '.ports' "$tmpfile" >/dev/null 2>&1; then
+                mv -f "$tmpfile" "$PORT_DATA_CACHE"
+                chmod 644 "$PORT_DATA_CACHE" 2>/dev/null || true
+                echo "$(date '+%Y-%m-%d %H:%M:%S') : 端口流量数据已保存到缓存"| tee -a "$CRON_LOG"
+            else
+                echo "$(date '+%Y-%m-%d %H:%M:%S') : 生成缓存失败，临时文件无效，已删除"| tee -a "$CRON_LOG"
+                rm -f "$tmpfile" 2>/dev/null || true
+            fi
         fi
     fi
 }
@@ -114,6 +124,17 @@ load_port_traffic_data() {
         local cache_age_minutes=$(( cache_age / 60 ))
         
         if [ $cache_age_minutes -le 60 ]; then
+            # 先校验缓存文件是否为有效JSON并包含ports字段
+            if [ ! -s "$PORT_DATA_CACHE" ]; then
+                echo "$(date '+%Y-%m-%d %H:%M:%S') : 缓存文件存在但为空，删除并返回"| tee -a "$CRON_LOG"
+                rm -f "$PORT_DATA_CACHE" 2>/dev/null || true
+                return
+            fi
+            if ! jq -e '.ports' "$PORT_DATA_CACHE" >/dev/null 2>&1; then
+                echo "$(date '+%Y-%m-%d %H:%M:%S') : 缓存文件不是有效JSON或缺少ports字段，删除并返回"| tee -a "$CRON_LOG"
+                rm -f "$PORT_DATA_CACHE" 2>/dev/null || true
+                return
+            fi
             echo "$(date '+%Y-%m-%d %H:%M:%S') : 读取端口流量缓存，文件年龄: ${cache_age_minutes}分钟"| tee -a "$CRON_LOG" >&2
             cat "$PORT_DATA_CACHE" 2>/dev/null
         else
@@ -634,8 +655,10 @@ if [[ "$*" == *"-cron"* ]]; then
         # 继续执行其他操作
         check_and_notify "false"
         
-        # 检查是否需要发送每日报告
-        current_time=$(TZ='Asia/Shanghai' date +%H:%M)
+    # 检查是否需要发送每日报告
+    # 先刷新缓存，保证定时发送时有最新的端口数据（在cron环境下主动生成缓存）
+    save_port_traffic_data 2>/dev/null || true
+    current_time=$(TZ='Asia/Shanghai' date +%H:%M)
         echo "$(date '+%Y-%m-%d %H:%M:%S') : 当前时间: $current_time, 设定的报告时间: $DAILY_REPORT_TIME" >> "$CRON_LOG"
         if [ "$current_time" == "$DAILY_REPORT_TIME" ]; then
             echo "$(date '+%Y-%m-%d %H:%M:%S') : 时间匹配，准备发送每日报告" >> "$CRON_LOG"
