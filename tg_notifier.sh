@@ -106,11 +106,9 @@ save_port_traffic_data() {
         # 详细记录执行环境
         echo "$(date '+%Y-%m-%d %H:%M:%S') : [调试] WORK_DIR=$WORK_DIR"| tee -a "$CRON_LOG"
         echo "$(date '+%Y-%m-%d %H:%M:%S') : [调试] PWD=$(pwd)"| tee -a "$CRON_LOG"
-        echo "$(date '+%Y-%m-%d %H:%M:%S') : [调试] 执行命令: bash $WORK_DIR/view_port_traffic.sh --json"| tee -a "$CRON_LOG"
-        echo "$(date '+%Y-%m-%d %H:%M:%S') : [调试] 当前PATH: $PATH"| tee -a "$CRON_LOG"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : [调试] 执行命令: cd $WORK_DIR && PATH='/usr/sbin:/usr/bin:/sbin:/bin:$PATH' bash view_port_traffic.sh --json"| tee -a "$CRON_LOG"
         
         local port_data
-        # 确保在正确的环境中执行，包含必要的系统路径
         port_data=$(cd "$WORK_DIR" && PATH="/usr/sbin:/usr/bin:/sbin:/bin:$PATH" bash view_port_traffic.sh --json 2>/dev/null)
         local exit_code=$?
         
@@ -518,6 +516,20 @@ $correct_entry"
     crontab -l
 }
 
+# 更新cron任务中的时间（当修改每日报告时间时调用）
+update_cron_time() {
+    local new_time="$1"
+    echo "正在更新cron任务时间为: $new_time"
+    
+    # 重新读取配置以获取最新时间
+    read_config
+    
+    # 重新设置cron任务
+    setup_cron
+    
+    echo "cron任务时间已更新"
+}
+
 # 每日报告
 daily_report() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 开始生成每日报告"| tee -a "$CRON_LOG"
@@ -726,70 +738,116 @@ if [[ "$*" == *"-cron"* ]]; then
     fi
 
     else
-        # 交互模式
-        echo "进入交互模式"
-          if ! read_config; then
+        # 菜单模式 (替换原来的交互模式)
+        if ! read_config; then
             echo "需要进行初始化配置。"
             initial_config
         fi
         
         setup_cron
         
-# 直接显示当前配置摘要
-        echo "当前配置摘要："
-        echo "机器名称: $MACHINE_NAME"
-        echo "每日报告时间: $DAILY_REPORT_TIME"
-        echo "Bot Token: ${BOT_TOKEN:0:10}..." # 只显示前10个字符
-        echo "Chat ID: $CHAT_ID"
-        
-        echo "脚本正在运行中。按 'q' 退出，按 'c' 检查流量，按 'd' 手动发送每日报告，按 'r' 重新加载配置，按 't' 发送测试消息，按 'm' 修改配置，按 'h' 修改每日报告时间。"
+        # 显示菜单
         while true; do
-            read -n 1 -t 1 input
-            if [ -n "$input" ]; then
+            clear
+            echo "======================================"
+            echo "      Telegram 通知脚本管理菜单"
+            echo "======================================"
+            echo "当前配置摘要："
+            echo "机器名称: $MACHINE_NAME"
+            echo "每日报告时间: $DAILY_REPORT_TIME"
+            echo "Bot Token: ${BOT_TOKEN:0:10}..." # 只显示前10个字符
+            echo "Chat ID: $CHAT_ID"
+            echo "======================================"
+            echo "1. 检查流量并推送"
+            echo "2. 手动发送每日报告"
+            echo "3. 发送测试消息"
+            echo "4. 重新加载配置"
+            echo "5. 修改配置"
+            echo "6. 修改每日报告时间"
+            echo "7. 查看缓存调试信息"
+            echo "0. 退出"
+            echo "======================================"
+            echo -n "请选择操作 [0-7]: "
+            
+            read choice
+            echo
+            
+            case $choice in
+                0)
+                    echo "退出脚本。"
+                    exit 0
+                    ;;
+                1)
+                    echo "正在检查流量并推送..."
+                    # 检查流量时保存当前准确的端口数据
+                    save_port_traffic_data
+                    check_and_notify
+                    ;;
+                2)
+                    echo "正在发送每日报告..."
+                    # 手动发送每日报告前保存当前准确的端口数据
+                    save_port_traffic_data
+                    daily_report
+                    ;;
+                3)
+                    echo "正在发送测试消息..."
+                    test_telegram_notification
+                    ;;
+                4)
+                    echo "正在重新加载配置..."
+                    read_config
+                    echo "配置已重新加载。"
+                    ;;
+                5)
+                    echo "进入配置修改模式..."
+                    initial_config
+                    ;;
+                6)
+                    echo "修改每日报告时间"
+                    echo -n "请输入新的每日报告时间 (HH:MM): "
+                    read -r new_time
+                    if [[ $new_time =~ ^([0-1][0-9]|2[0-3]):[0-5][0-9]$ ]]; then
+                        # 直接使用命令行工具修改配置，避免交互环境问题
+                        cp "$CONFIG_FILE" "$CONFIG_FILE.backup"
+                        awk -v new_time="$new_time" '
+                        /^DAILY_REPORT_TIME=/ { print "DAILY_REPORT_TIME=" new_time; next }
+                        { print }
+                        ' "$CONFIG_FILE.backup" > "$CONFIG_FILE"
+                        
+                        echo "每日报告时间已更新为 $new_time"
+                        # 更新 cron 任务
+                        update_cron_time "$new_time"
+                        # 修改时间后立即刷新缓存
+                        echo "正在刷新端口流量缓存..."
+                        save_port_traffic_data
+                        echo "缓存已刷新，定时推送将使用最新数据。"
+                    else
+                        echo "无效的时间格式。请使用 HH:MM 格式 (如: 09:30)"
+                    fi
+                    ;;
+                7)
+                    echo "查看最近的缓存调试信息..."
+                    echo "最近5个缓存文件："
+                    ls -lt /tmp/port_traffic_cache_*.json 2>/dev/null | head -5
+                    echo
+                    echo "最新缓存内容："
+                    latest_cache=$(ls -t /tmp/port_traffic_cache_*.json 2>/dev/null | head -1)
+                    if [ -n "$latest_cache" ]; then
+                        echo "文件: $latest_cache"
+                        cat "$latest_cache" | jq '.' 2>/dev/null || cat "$latest_cache"
+                    else
+                        echo "未找到缓存文件"
+                    fi
+                    ;;
+                *)
+                    echo "无效的选择，请输入 0-7"
+                    ;;
+            esac
+            
+            if [ "$choice" != "0" ]; then
                 echo
-                case $input in
-                    q|Q) 
-                        echo "退出脚本。"
-                        exit 0
-                        ;;
-                    c|C)
-                        # 检查流量时保存当前准确的端口数据
-                        save_port_traffic_data
-                        check_and_notify
-                        ;;
-                    d|D)
-                        # 手动发送每日报告前保存当前准确的端口数据
-                        save_port_traffic_data
-                        daily_report
-                        ;;
-                    r|R)
-                        read_config
-                        echo "配置已重新加载。"
-                        ;;
-                    t|T)
-                        test_telegram_notification
-                        ;;
-                    m|M)
-                        initial_config
-                        ;;
-                    h|H)
-                        echo "请输入新的每日报告时间 (HH:MM): "
-                        read -r new_time
-                        if [[ $new_time =~ ^([0-1][0-9]|2[0-3]):[0-5][0-9]$ ]]; then
-                            sed -i "s/DAILY_REPORT_TIME=.*/DAILY_REPORT_TIME=$new_time/" "$CONFIG_FILE"
-                            echo "每日报告时间已更新为 $new_time"
-                            # 修改时间后刷新缓存，确保后续定时推送有准确数据
-                            save_port_traffic_data
-                        else
-                            echo "无效的时间格式。未更改。"
-                        fi
-                        ;;
-                    *)
-                        echo "无效的输入: $input"
-                        ;;
-                esac
-
-                echo "脚本正在运行中。按 'q' 退出，按 'c' 检查流量，按 'd' 手动发送每日报告，按 'r' 重新加载配置，按 't' 发送测试消息，按 'm' 修改配置，按 'h' 修改每日报告时间。"
+                echo "按 Enter 键继续..."
+                read
             fi
         done
     fi
