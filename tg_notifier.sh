@@ -728,6 +728,8 @@ if [[ "$*" == *"-cron"* ]]; then
                         if [[ $new_time =~ ^([0-1][0-9]|2[0-3]):[0-5][0-9]$ ]]; then
                             sed -i "s/DAILY_REPORT_TIME=.*/DAILY_REPORT_TIME=$new_time/" "$CONFIG_FILE"
                             echo "每日报告时间已更新为 $new_time"
+                            # 修改时间后刷新缓存，确保后续定时推送有准确数据
+                            save_port_traffic_data
                         else
                             echo "无效的时间格式。未更改。"
                         fi
