@@ -6,7 +6,7 @@ export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 WORK_DIR="/root/TrafficCop"
 CONFIG_FILE="$WORK_DIR/traffic_monitor_config.txt"
 LOG_FILE="$WORK_DIR/traffic_monitor.log"
-SCRIPT_PATH="$WORK_DIR/traffic_monitor.sh"
+SCRIPT_PATH="$WORK_DIR/trafficcop.sh"
 LOCK_FILE="$WORK_DIR/traffic_monitor.lock"
 
 # 设置时区为上海（东八区）
@@ -50,6 +50,12 @@ migrate_files() {
     if [ -f "/root/traffic_monitor.sh" ]; then
         rm "/root/traffic_monitor.sh"
         echo "$(date '+%Y-%m-%d %H:%M:%S') 旧的脚本文件已删除" | tee -a "$LOG_FILE"
+    fi
+    
+    # 创建软链接以保持向后兼容（如果crontab中仍在使用旧名称）
+    if [ ! -e "$WORK_DIR/traffic_monitor.sh" ] && [ -f "$WORK_DIR/trafficcop.sh" ]; then
+        ln -sf "$WORK_DIR/trafficcop.sh" "$WORK_DIR/traffic_monitor.sh"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 已创建 traffic_monitor.sh 软链接" | tee -a "$LOG_FILE"
     fi
 
     # 迁移软件包安装标志文件
@@ -386,35 +392,49 @@ get_traffic_usage() {
     
     echo "$(date '+%Y-%m-%d %H:%M:%S') 周期开始日期: $start_date, 周期结束日期: $end_date" >&2
     
-    local vnstat_output=$(vnstat -i $MAIN_INTERFACE --begin "$start_date" --end "$end_date" --oneline b)
-    # echo "vnstat输出: $vnstat_output" >&2
+    # 使用 vnstat JSON API 获取每日流量数据
+    local vnstat_json=$(vnstat -i $MAIN_INTERFACE --json 2>/dev/null)
     
-    local usage
+    if [ -z "$vnstat_json" ]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 错误: 无法获取 vnstat JSON 数据" >&2
+        echo "0.000"
+        return 1
+    fi
+    
+    # 将日期转换为时间戳用于比较
+    local start_ts=$(date -d "$start_date" +%s)
+    local end_ts=$(date -d "$end_date 23:59:59" +%s)
+    
+    # 根据 TRAFFIC_MODE 累加对应的流量
+    local usage_bytes
     case $TRAFFIC_MODE in
         out)
-            usage=$(echo "$vnstat_output" | cut -d';' -f10)
+            usage_bytes=$(echo "$vnstat_json" | jq --argjson start_ts "$start_ts" --argjson end_ts "$end_ts" \
+                '[.interfaces[0].traffic.day[] | select(.timestamp >= $start_ts and .timestamp <= $end_ts) | .tx] | add // 0')
             ;;
         in)
-            usage=$(echo "$vnstat_output" | cut -d';' -f9)
+            usage_bytes=$(echo "$vnstat_json" | jq --argjson start_ts "$start_ts" --argjson end_ts "$end_ts" \
+                '[.interfaces[0].traffic.day[] | select(.timestamp >= $start_ts and .timestamp <= $end_ts) | .rx] | add // 0')
             ;;
         total)
-            usage=$(echo "$vnstat_output" | cut -d';' -f11)
+            usage_bytes=$(echo "$vnstat_json" | jq --argjson start_ts "$start_ts" --argjson end_ts "$end_ts" \
+                '[.interfaces[0].traffic.day[] | select(.timestamp >= $start_ts and .timestamp <= $end_ts) | (.rx + .tx)] | add // 0')
             ;;
         max)
-            local rx=$(echo "$vnstat_output" | cut -d';' -f9)
-            local tx=$(echo "$vnstat_output" | cut -d';' -f10)
-            usage=$(echo "$rx $tx" | tr ' ' '\n' | sort -rn | head -n1)
+            local rx_bytes=$(echo "$vnstat_json" | jq --argjson start_ts "$start_ts" --argjson end_ts "$end_ts" \
+                '[.interfaces[0].traffic.day[] | select(.timestamp >= $start_ts and .timestamp <= $end_ts) | .rx] | add // 0')
+            local tx_bytes=$(echo "$vnstat_json" | jq --argjson start_ts "$start_ts" --argjson end_ts "$end_ts" \
+                '[.interfaces[0].traffic.day[] | select(.timestamp >= $start_ts and .timestamp <= $end_ts) | .tx] | add // 0')
+            usage_bytes=$(printf '%s\n%s' "$rx_bytes" "$tx_bytes" | sort -rn | head -n1)
             ;;
     esac
 
-    # echo "用量字节数: $usage" >&2
-    if [ -n "$usage" ]; then
-        # 将字节转换为 GiB，并确保结果至少有一位小数，屏蔽 bc 错误输出
-        usage=$(echo "scale=3; x=$usage/1024/1024/1024; if(x<1) print 0; x" | bc 2>/dev/null || echo "0.000")
-        # echo "将字节转换为 GiB: $usage" >&2
-        echo $usage
+    if [ -n "$usage_bytes" ] && [ "$usage_bytes" != "null" ] && [ "$usage_bytes" != "0" ]; then
+        # 将字节转换为 GiB，使用 printf 确保格式正确
+        local usage_gib=$(echo "scale=3; $usage_bytes/1024/1024/1024" | bc 2>/dev/null || echo "0.000")
+        # 确保小数点前至少有一个0
+        printf "%.3f\n" "$usage_gib" 2>/dev/null || echo "0.000"
     else
-        # echo "无法获取用量字节数" >&2
         echo "0.000"
     fi
 }
