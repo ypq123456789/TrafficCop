@@ -6,7 +6,7 @@ export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 WORK_DIR="/root/TrafficCop"
 CONFIG_FILE="$WORK_DIR/traffic_monitor_config.txt"
 LOG_FILE="$WORK_DIR/traffic_monitor.log"
-SCRIPT_PATH="$WORK_DIR/traffic_monitor.sh"
+SCRIPT_PATH="$WORK_DIR/trafficcop.sh"
 LOCK_FILE="$WORK_DIR/traffic_monitor.lock"
 
 # 设置时区为上海（东八区）
@@ -50,6 +50,12 @@ migrate_files() {
     if [ -f "/root/traffic_monitor.sh" ]; then
         rm "/root/traffic_monitor.sh"
         echo "$(date '+%Y-%m-%d %H:%M:%S') 旧的脚本文件已删除" | tee -a "$LOG_FILE"
+    fi
+    
+    # 创建软链接以保持向后兼容（如果crontab中仍在使用旧名称）
+    if [ ! -e "$WORK_DIR/traffic_monitor.sh" ] && [ -f "$WORK_DIR/trafficcop.sh" ]; then
+        ln -sf "$WORK_DIR/trafficcop.sh" "$WORK_DIR/traffic_monitor.sh"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 已创建 traffic_monitor.sh 软链接" | tee -a "$LOG_FILE"
     fi
 
     # 迁移软件包安装标志文件
