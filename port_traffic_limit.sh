@@ -188,19 +188,43 @@ init_iptables_rules() {
     local port=$1
     local interface=$2
     
-    # 检查并添加INPUT规则
-    if ! iptables -L INPUT -v -n | grep -q "dpt:$port"; then
-        iptables -I INPUT -i "$interface" -p tcp --dport "$port" -j ACCEPT
-        iptables -I INPUT -i "$interface" -p udp --dport "$port" -j ACCEPT
+    # 检查是否使用UFW
+    local use_ufw=false
+    if iptables -L ufw-user-input -n &>/dev/null; then
+        use_ufw=true
     fi
     
-    # 检查并添加OUTPUT规则
-    if ! iptables -L OUTPUT -v -n | grep -q "spt:$port"; then
-        iptables -I OUTPUT -o "$interface" -p tcp --sport "$port" -j ACCEPT
-        iptables -I OUTPUT -o "$interface" -p udp --sport "$port" -j ACCEPT
+    if [ "$use_ufw" = true ]; then
+        # UFW环境：添加规则到ufw-user-input和ufw-user-output链
+        echo -e "${YELLOW}检测到UFW防火墙，将规则添加到UFW链${NC}"
+        
+        # 检查并添加INPUT规则（UFW入站规则通常已由ufw命令创建，这里只是确保）
+        if ! iptables -L ufw-user-input -v -n | grep -q "dpt:$port"; then
+            echo -e "${YELLOW}注意：端口 $port 未在UFW中开放，建议运行: ufw allow $port${NC}"
+        fi
+        
+        # 检查并添加OUTPUT规则（关键：UFW默认不统计出站，需要手动添加）
+        if ! iptables -L ufw-user-output -v -n | grep -q "spt:$port"; then
+            iptables -I ufw-user-output -o "$interface" -p tcp --sport "$port" -j ACCEPT
+            iptables -I ufw-user-output -o "$interface" -p udp --sport "$port" -j ACCEPT
+            echo -e "${GREEN}已添加UFW出站统计规则（端口 $port）${NC}"
+        fi
+    else
+        # 标准iptables环境
+        # 检查并添加INPUT规则
+        if ! iptables -L INPUT -v -n | grep -q "dpt:$port"; then
+            iptables -I INPUT -i "$interface" -p tcp --dport "$port" -j ACCEPT
+            iptables -I INPUT -i "$interface" -p udp --dport "$port" -j ACCEPT
+        fi
+        
+        # 检查并添加OUTPUT规则
+        if ! iptables -L OUTPUT -v -n | grep -q "spt:$port"; then
+            iptables -I OUTPUT -o "$interface" -p tcp --sport "$port" -j ACCEPT
+            iptables -I OUTPUT -o "$interface" -p udp --sport "$port" -j ACCEPT
+        fi
+        
+        echo -e "${GREEN}iptables规则已初始化（端口 $port）${NC}"
     fi
-    
-    echo -e "${GREEN}iptables规则已初始化（端口 $port）${NC}"
 }
 
 # 获取端口流量使用量
