@@ -32,8 +32,14 @@ get_port_traffic_usage() {
         rx_bytes=$(iptables -L INPUT -v -n -x 2>/dev/null | grep "dpt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
     fi
     
-    # 获取出站流量（字节）- 优先检查UFW链，如果不存在则检查标准链  
-    local tx_bytes=$(iptables -L ufw-user-output -v -n -x 2>/dev/null | grep "spt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
+    # 获取出站流量（字节）- UFW环境下需要从ufw-before-output读取
+    # 首先检查ufw-before-output（UFW环境下的正确位置）
+    local tx_bytes=$(iptables -L ufw-before-output -v -n -x 2>/dev/null | grep "spt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
+    # 如果为空，尝试ufw-user-output（兼容性）
+    if [ -z "$tx_bytes" ] || [ "$tx_bytes" = "0" ]; then
+        tx_bytes=$(iptables -L ufw-user-output -v -n -x 2>/dev/null | grep "spt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
+    fi
+    # 最后尝试标准OUTPUT链
     if [ -z "$tx_bytes" ] || [ "$tx_bytes" = "0" ]; then
         tx_bytes=$(iptables -L OUTPUT -v -n -x 2>/dev/null | grep "spt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
     fi

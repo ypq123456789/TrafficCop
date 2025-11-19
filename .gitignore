@@ -25,3 +25,4 @@ port_traffic_cache.json
 # 忽略临时文件
 *.tmp
 *.temp
+CLAUDE.md
