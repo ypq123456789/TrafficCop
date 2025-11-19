@@ -392,33 +392,68 @@ get_traffic_usage() {
     
     echo "$(date '+%Y-%m-%d %H:%M:%S') 周期开始日期: $start_date, 周期结束日期: $end_date" >&2
     
-    local vnstat_output=$(vnstat -i $MAIN_INTERFACE --begin "$start_date" --end "$end_date" --oneline b)
-    # echo "vnstat输出: $vnstat_output" >&2
+    # 使用 vnstat JSON API 获取每日流量数据(更准确的日期范围过滤)
+    local vnstat_json=$(vnstat -i $MAIN_INTERFACE --json 2>/dev/null)
     
-    local usage
+    if [ -z "$vnstat_json" ]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 错误: 无法获取 vnstat JSON 数据" >&2
+        echo "0.000"
+        return 1
+    fi
+    
+    # 将日期转换为时间戳用于比较
+    local start_ts=$(date -d "$start_date" +%s)
+    local end_ts=$(date -d "$end_date 23:59:59" +%s)  # 包含结束日期的全天
+    
+    # 根据 TRAFFIC_MODE 累加对应的流量
+    local usage_bytes
     case $TRAFFIC_MODE in
         out)
-            usage=$(echo "$vnstat_output" | cut -d';' -f10)
+            # 仅统计发送流量(tx)
+            usage_bytes=$(echo "$vnstat_json" | jq -r --arg start "$start_ts" --arg end "$end_ts" '
+                [.interfaces[0].traffic.day[] 
+                | select(.timestamp >= ($start | tonumber) and .timestamp <= ($end | tonumber))
+                | .tx] | add // 0
+            ')
             ;;
         in)
-            usage=$(echo "$vnstat_output" | cut -d';' -f9)
+            # 仅统计接收流量(rx)
+            usage_bytes=$(echo "$vnstat_json" | jq -r --arg start "$start_ts" --arg end "$end_ts" '
+                [.interfaces[0].traffic.day[] 
+                | select(.timestamp >= ($start | tonumber) and .timestamp <= ($end | tonumber))
+                | .rx] | add // 0
+            ')
             ;;
         total)
-            usage=$(echo "$vnstat_output" | cut -d';' -f11)
+            # 统计总流量(rx + tx)
+            usage_bytes=$(echo "$vnstat_json" | jq -r --arg start "$start_ts" --arg end "$end_ts" '
+                [.interfaces[0].traffic.day[] 
+                | select(.timestamp >= ($start | tonumber) and .timestamp <= ($end | tonumber))
+                | .rx + .tx] | add // 0
+            ')
             ;;
         max)
-            local rx=$(echo "$vnstat_output" | cut -d';' -f9)
-            local tx=$(echo "$vnstat_output" | cut -d';' -f10)
-            usage=$(echo "$rx $tx" | tr ' ' '\n' | sort -rn | head -n1)
+            # 统计接收和发送中的最大值
+            local rx_bytes=$(echo "$vnstat_json" | jq -r --arg start "$start_ts" --arg end "$end_ts" '
+                [.interfaces[0].traffic.day[] 
+                | select(.timestamp >= ($start | tonumber) and .timestamp <= ($end | tonumber))
+                | .rx] | add // 0
+            ')
+            local tx_bytes=$(echo "$vnstat_json" | jq -r --arg start "$start_ts" --arg end "$end_ts" '
+                [.interfaces[0].traffic.day[] 
+                | select(.timestamp >= ($start | tonumber) and .timestamp <= ($end | tonumber))
+                | .tx] | add // 0
+            ')
+            usage_bytes=$(echo -e "$rx_bytes\n$tx_bytes" | sort -rn | head -n1)
             ;;
     esac
 
-    # echo "用量字节数: $usage" >&2
-    if [ -n "$usage" ]; then
-        # 将字节转换为 GiB，并确保结果至少有一位小数，屏蔽 bc 错误输出
-        usage=$(echo "scale=3; x=$usage/1024/1024/1024; if(x<1) print 0; x" | bc 2>/dev/null || echo "0.000")
-        # echo "将字节转换为 GiB: $usage" >&2
-        echo $usage
+    # echo "用量字节数: $usage_bytes" >&2
+    if [ -n "$usage_bytes" ] && [ "$usage_bytes" != "null" ]; then
+        # 将字节转换为 GiB，并确保结果至少有一位小数
+        local usage_gib=$(echo "scale=3; x=$usage_bytes/1024/1024/1024; if(x<1) print 0; x" | bc 2>/dev/null || echo "0.000")
+        # echo "将字节转换为 GiB: $usage_gib" >&2
+        echo $usage_gib
     else
         # echo "无法获取用量字节数" >&2
         echo "0.000"
