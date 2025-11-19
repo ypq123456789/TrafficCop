@@ -26,8 +26,14 @@ get_port_traffic_usage() {
     local interface=$2
     local traffic_mode=$3
     
-    # 获取入站流量（字节）- 优先检查UFW链，如果不存在则检查标准链
-    local rx_bytes=$(iptables -L ufw-user-input -v -n -x 2>/dev/null | grep "dpt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
+    # 获取入站流量（字节）- UFW环境下需要从ufw-before-input读取
+    # 首先检查ufw-before-input（UFW环境下的正确位置）
+    local rx_bytes=$(iptables -L ufw-before-input -v -n -x 2>/dev/null | grep "dpt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
+    # 如果为空，尝试ufw-user-input（兼容性）
+    if [ -z "$rx_bytes" ] || [ "$rx_bytes" = "0" ]; then
+        rx_bytes=$(iptables -L ufw-user-input -v -n -x 2>/dev/null | grep "dpt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
+    fi
+    # 最后尝试标准INPUT链
     if [ -z "$rx_bytes" ] || [ "$rx_bytes" = "0" ]; then
         rx_bytes=$(iptables -L INPUT -v -n -x 2>/dev/null | grep "dpt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
     fi

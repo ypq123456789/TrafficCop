@@ -195,16 +195,25 @@ init_iptables_rules() {
     fi
     
     if [ "$use_ufw" = true ]; then
-        # UFW环境：需要在ufw-before-output链中添加规则
-        echo -e "${YELLOW}检测到UFW防火墙，将规则添加到UFW链${NC}"
+        # UFW环境：需要在ufw-before-input和ufw-before-output链中添加规则
+        echo -e "${YELLOW}检测到UFW防火墙，将规则添加到UFW-before链${NC}"
         
-        # 检查并添加INPUT规则（UFW入站规则通常已由ufw命令创建，这里只是确保）
+        # 检查端口是否在UFW中开放（提示）
         if ! iptables -L ufw-user-input -v -n | grep -q "dpt:$port"; then
             echo -e "${YELLOW}注意：端口 $port 未在UFW中开放，建议运行: ufw allow $port${NC}"
         fi
         
-        # 检查并添加OUTPUT规则
-        # 关键：必须在ufw-before-output链中，在ESTABLISHED规则之前添加
+        # 添加INPUT规则到ufw-before-input链（在ESTABLISHED规则之前）
+        if ! iptables -L ufw-before-input -v -n | grep -q "dpt:$port"; then
+            # 在第2个位置插入（在lo接口之后，在ESTABLISHED规则之前）
+            iptables -I ufw-before-input 2 -i "$interface" -p tcp --dport "$port" -j ACCEPT
+            iptables -I ufw-before-input 2 -i "$interface" -p udp --dport "$port" -j ACCEPT
+            echo -e "${GREEN}已添加UFW入站统计规则到 ufw-before-input 链（端口 $port）${NC}"
+        else
+            echo -e "${GREEN}UFW入站统计规则已存在（端口 $port）${NC}"
+        fi
+        
+        # 添加OUTPUT规则到ufw-before-output链（在ESTABLISHED规则之前）
         if ! iptables -L ufw-before-output -v -n | grep -q "spt:$port"; then
             # 在第2个位置插入（在lo接口之后，在ESTABLISHED规则之前）
             iptables -I ufw-before-output 2 -o "$interface" -p tcp --sport "$port" -j ACCEPT
@@ -236,8 +245,14 @@ get_port_traffic_usage() {
     local port=$1
     local interface=$2
     
-    # 获取入站流量（字节）- 优先检查UFW链，如果不存在则检查标准链
-    local in_bytes=$(iptables -L ufw-user-input -v -n -x 2>/dev/null | grep "dpt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
+    # 获取入站流量（字节）- UFW环境下需要从ufw-before-input读取
+    # 首先检查ufw-before-input（UFW环境下的正确位置）
+    local in_bytes=$(iptables -L ufw-before-input -v -n -x 2>/dev/null | grep "dpt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
+    # 如果为空，尝试ufw-user-input（兼容性）
+    if [ -z "$in_bytes" ] || [ "$in_bytes" = "0" ]; then
+        in_bytes=$(iptables -L ufw-user-input -v -n -x 2>/dev/null | grep "dpt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
+    fi
+    # 最后尝试标准INPUT链
     if [ -z "$in_bytes" ] || [ "$in_bytes" = "0" ]; then
         in_bytes=$(iptables -L INPUT -v -n -x | grep "dpt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
     fi
