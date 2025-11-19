@@ -208,10 +208,17 @@ get_port_traffic_usage() {
     local port=$1
     local interface=$2
     
-    # 获取入站流量（字节）
-    local in_bytes=$(iptables -L INPUT -v -n -x | grep "dpt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
-    # 获取出站流量（字节）
-    local out_bytes=$(iptables -L OUTPUT -v -n -x | grep "spt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
+    # 获取入站流量（字节）- 优先检查UFW链，如果不存在则检查标准链
+    local in_bytes=$(iptables -L ufw-user-input -v -n -x 2>/dev/null | grep "dpt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
+    if [ -z "$in_bytes" ] || [ "$in_bytes" = "0" ]; then
+        in_bytes=$(iptables -L INPUT -v -n -x | grep "dpt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
+    fi
+    
+    # 获取出站流量（字节）- 优先检查UFW链，如果不存在则检查标准链
+    local out_bytes=$(iptables -L ufw-user-output -v -n -x 2>/dev/null | grep "spt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
+    if [ -z "$out_bytes" ] || [ "$out_bytes" = "0" ]; then
+        out_bytes=$(iptables -L OUTPUT -v -n -x | grep "spt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
+    fi
     
     # 转换为GB（使用printf格式化，确保显示前导零）
     # 使用 bc 时屏蔽 stderr 并在出错时返回 0，保证不会打印 (standard_in) 1: syntax error

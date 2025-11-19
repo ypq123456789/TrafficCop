@@ -26,8 +26,17 @@ get_port_traffic_usage() {
     local interface=$2
     local traffic_mode=$3
     
-    local rx_bytes=$(iptables -L INPUT -v -n -x 2>/dev/null | grep "dpt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
-    local tx_bytes=$(iptables -L OUTPUT -v -n -x 2>/dev/null | grep "spt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
+    # 获取入站流量（字节）- 优先检查UFW链，如果不存在则检查标准链
+    local rx_bytes=$(iptables -L ufw-user-input -v -n -x 2>/dev/null | grep "dpt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
+    if [ -z "$rx_bytes" ] || [ "$rx_bytes" = "0" ]; then
+        rx_bytes=$(iptables -L INPUT -v -n -x 2>/dev/null | grep "dpt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
+    fi
+    
+    # 获取出站流量（字节）- 优先检查UFW链，如果不存在则检查标准链  
+    local tx_bytes=$(iptables -L ufw-user-output -v -n -x 2>/dev/null | grep "spt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
+    if [ -z "$tx_bytes" ] || [ "$tx_bytes" = "0" ]; then
+        tx_bytes=$(iptables -L OUTPUT -v -n -x 2>/dev/null | grep "spt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
+    fi
     
     local usage_bytes
     case $traffic_mode in
