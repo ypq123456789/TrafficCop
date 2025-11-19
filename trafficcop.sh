@@ -410,25 +410,20 @@ get_traffic_usage() {
     case $TRAFFIC_MODE in
         out)
             # 仅统计发送流量(tx)
-            usage_bytes=$(echo "$vnstat_json" | jq -r --arg start "$start_ts" --arg end "$end_ts" \
-                '[.interfaces[0].traffic.day[] | select(.timestamp >= ($start | tonumber) and .timestamp <= ($end | tonumber)) | .tx] | add // 0')
+            usage_bytes=$(echo "$vnstat_json" | jq -r --arg start "$start_ts" --arg end "$end_ts" '[.interfaces[0].traffic.day[] | select(.timestamp >= ($start | tonumber) and .timestamp <= ($end | tonumber)) | .tx] | add // 0')
             ;;
         in)
             # 仅统计接收流量(rx)
-            usage_bytes=$(echo "$vnstat_json" | jq -r --arg start "$start_ts" --arg end "$end_ts" \
-                '[.interfaces[0].traffic.day[] | select(.timestamp >= ($start | tonumber) and .timestamp <= ($end | tonumber)) | .rx] | add // 0')
+            usage_bytes=$(echo "$vnstat_json" | jq -r --arg start "$start_ts" --arg end "$end_ts" '[.interfaces[0].traffic.day[] | select(.timestamp >= ($start | tonumber) and .timestamp <= ($end | tonumber)) | .rx] | add // 0')
             ;;
         total)
             # 统计总流量(rx + tx)
-            usage_bytes=$(echo "$vnstat_json" | jq -r --arg start "$start_ts" --arg end "$end_ts" \
-                '[.interfaces[0].traffic.day[] | select(.timestamp >= ($start | tonumber) and .timestamp <= ($end | tonumber)) | .rx + .tx] | add // 0')
+            usage_bytes=$(echo "$vnstat_json" | jq -r --arg start "$start_ts" --arg end "$end_ts" '[.interfaces[0].traffic.day[] | select(.timestamp >= ($start | tonumber) and .timestamp <= ($end | tonumber)) | .rx + .tx] | add // 0')
             ;;
         max)
             # 统计接收和发送中的最大值
-            local rx_bytes=$(echo "$vnstat_json" | jq -r --arg start "$start_ts" --arg end "$end_ts" \
-                '[.interfaces[0].traffic.day[] | select(.timestamp >= ($start | tonumber) and .timestamp <= ($end | tonumber)) | .rx] | add // 0')
-            local tx_bytes=$(echo "$vnstat_json" | jq -r --arg start "$start_ts" --arg end "$end_ts" \
-                '[.interfaces[0].traffic.day[] | select(.timestamp >= ($start | tonumber) and .timestamp <= ($end | tonumber)) | .tx] | add // 0')
+            local rx_bytes=$(echo "$vnstat_json" | jq -r --arg start "$start_ts" --arg end "$end_ts" '[.interfaces[0].traffic.day[] | select(.timestamp >= ($start | tonumber) and .timestamp <= ($end | tonumber)) | .rx] | add // 0')
+            local tx_bytes=$(echo "$vnstat_json" | jq -r --arg start "$start_ts" --arg end "$end_ts" '[.interfaces[0].traffic.day[] | select(.timestamp >= ($start | tonumber) and .timestamp <= ($end | tonumber)) | .tx] | add // 0')
             usage_bytes=$(echo -e "$rx_bytes\n$tx_bytes" | sort -rn | head -n1)
             ;;
     esac
