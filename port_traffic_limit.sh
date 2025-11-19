@@ -586,57 +586,48 @@ port_config_wizard() {
 
 # 查看端口配置和流量
 view_port_status() {
-    clear
-    if [ ! -f "$PORT_CONFIG_FILE" ] || [ "$(jq -r '.ports | length' "$PORT_CONFIG_FILE")" -eq 0 ]; then
-        echo -e "${YELLOW}当前没有配置任何端口${NC}"
+    # 调用专用的端口流量查看脚本，提供更丰富的图形化显示
+    local view_script="$WORK_DIR/view_port_traffic.sh"
+    
+    if [ -f "$view_script" ]; then
+        clear
+        bash "$view_script"
         echo ""
         read -p "按回车键继续..." dummy
-        return
-    fi
-    
-    echo -e "${CYAN}==================== 端口配置与流量状态 ====================${NC}"
-    echo ""
-    
-    local index=1
-    local total=$(jq -r '.ports | length' "$PORT_CONFIG_FILE")
-    
-    for ((i=0; i<total; i++)); do
-        local port=$(jq -r ".ports[$i].port" "$PORT_CONFIG_FILE")
-        local desc=$(jq -r ".ports[$i].description" "$PORT_CONFIG_FILE")
-        local limit=$(jq -r ".ports[$i].traffic_limit" "$PORT_CONFIG_FILE")
-        local tolerance=$(jq -r ".ports[$i].traffic_tolerance" "$PORT_CONFIG_FILE")
-        local mode=$(jq -r ".ports[$i].limit_mode" "$PORT_CONFIG_FILE")
-        local speed=$(jq -r ".ports[$i].limit_speed" "$PORT_CONFIG_FILE")
-        local interface=$(jq -r ".ports[$i].main_interface" "$PORT_CONFIG_FILE")
-        
-        echo -e "${GREEN}[$index]${NC} ${GREEN}端口 $port${NC} - $desc"
-        echo -e "    流量限制: ${YELLOW}${limit}GB${NC} (容错: ${tolerance}GB)"
-        echo -e "    限制模式: $mode$([ "$mode" = "tc" ] && echo " (${speed}kbit/s)")"
-        echo -e "    网络接口: $interface"
-        
-        # 获取当前流量
-        local usage=$(get_port_traffic_usage "$port" "$interface")
-        local total_gb=$(echo "$usage" | cut -d',' -f3)
-        # 计算百分比时屏蔽 bc stderr 并提供默认值
-        local percentage=$(echo "scale=1; $total_gb * 100 / $limit" | bc 2>/dev/null || echo "0")
-        
-        echo -e "    当前使用: ${CYAN}${total_gb}GB${NC} / ${limit}GB (${percentage}%)"
-        
-        # 状态图标
-        if (( $(echo "$percentage >= 90" | bc -l 2>/dev/null || echo "0") )); then
-            echo -e "    状态: ${RED}⚠️  接近限制${NC}"
-        elif (( $(echo "$percentage >= 70" | bc -l 2>/dev/null || echo "0") )); then
-            echo -e "    状态: ${YELLOW}🟡 需要关注${NC}"
-        else
-            echo -e "    状态: ${GREEN}✅ 正常${NC}"
-        fi
+    else
+        # 如果脚本不存在，提示用户
+        clear
+        echo -e "${YELLOW}端口流量查看脚本不存在${NC}"
+        echo -e "${CYAN}请使用主菜单选项6 '查看端口流量状态' 或手动下载 view_port_traffic.sh${NC}"
         echo ""
-        index=$((index + 1))
-    done
-    
-    echo -e "${CYAN}==========================================================${NC}"
-    echo ""
-    read -p "按回车键继续..." dummy
+        
+        # 提供简化的配置信息显示
+        if [ ! -f "$PORT_CONFIG_FILE" ] || [ "$(jq -r '.ports | length' "$PORT_CONFIG_FILE")" -eq 0 ]; then
+            echo -e "${YELLOW}当前没有配置任何端口${NC}"
+        else
+            echo -e "${CYAN}==================== 端口配置列表 ====================${NC}"
+            echo ""
+            
+            local index=1
+            local total=$(jq -r '.ports | length' "$PORT_CONFIG_FILE")
+            
+            for ((i=0; i<total; i++)); do
+                local port=$(jq -r ".ports[$i].port" "$PORT_CONFIG_FILE")
+                local desc=$(jq -r ".ports[$i].description" "$PORT_CONFIG_FILE")
+                local limit=$(jq -r ".ports[$i].traffic_limit" "$PORT_CONFIG_FILE")
+                
+                echo -e "${GREEN}[$index]${NC} 端口 $port - $desc (限制: ${limit}GB)"
+                index=$((index + 1))
+            done
+            
+            echo -e "${CYAN}====================================================${NC}"
+            echo ""
+            echo -e "${YELLOW}提示：完整的流量状态显示请使用 view_port_traffic.sh${NC}"
+        fi
+        
+        echo ""
+        read -p "按回车键继续..." dummy
+    fi
 }
 
 # 修改端口配置
