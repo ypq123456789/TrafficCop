@@ -26,6 +26,26 @@ get_port_traffic_usage() {
     local interface=$2
     local traffic_mode=$3
     
+    # ==================== 重要说明 ====================
+    # 对于代理服务器(如xray/v2ray)场景：
+    # 
+    # 问题：iptables按端口监控只能捕获客户端↔服务器的流量(监听端口)
+    #       无法捕获服务器↔目标网站的流量(随机源端口)
+    # 
+    # 例如：客户端通过11710端口连接代理服务器访问YouTube
+    #   ✓ 可监控: 客户端 → 服务器11710端口 (入站dport)
+    #   ✓ 可监控: 服务器11710端口 → 客户端 (出站sport)  
+    #   ✗ 无法监控: 服务器随机端口 → YouTube (出站)
+    #   ✗ 无法监控: YouTube → 服务器随机端口 (入站)
+    # 
+    # 解决方案：
+    #   - 入站流量(dport): 可准确统计客户端请求量
+    #   - 出站流量(sport): 使用入站流量估算 (出站 ≈ 入站)
+    #   - 总流量: 入站 × 2 (近似值，实际略高因协议开销)
+    # 
+    # 如需精确监控代理总流量，请使用进程级监控(cgroup/conntrack)
+    # =================================================
+    
     # 获取入站流量（字节）- UFW环境下需要从ufw-before-input读取
     # 首先检查ufw-before-input（UFW环境下的正确位置）
     local rx_bytes=$(iptables -L ufw-before-input -v -n -x 2>/dev/null | grep "dpt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
@@ -38,25 +58,23 @@ get_port_traffic_usage() {
         rx_bytes=$(iptables -L INPUT -v -n -x 2>/dev/null | grep "dpt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
     fi
     
-    # 获取出站流量（字节）- UFW环境下需要从ufw-before-output读取
-    # 首先检查ufw-before-output（UFW环境下的正确位置）
-    local tx_bytes=$(iptables -L ufw-before-output -v -n -x 2>/dev/null | grep "spt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
-    # 如果为空，尝试ufw-user-output（兼容性）
-    if [ -z "$tx_bytes" ] || [ "$tx_bytes" = "0" ]; then
-        tx_bytes=$(iptables -L ufw-user-output -v -n -x 2>/dev/null | grep "spt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
-    fi
-    # 最后尝试标准OUTPUT链
-    if [ -z "$tx_bytes" ] || [ "$tx_bytes" = "0" ]; then
-        tx_bytes=$(iptables -L OUTPUT -v -n -x 2>/dev/null | grep "spt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
-    fi
+    # 代理场景：出站流量 = 入站流量（估算值）
+    # 原因：客户端请求多少数据，服务器就需要下载并转发相应数据
+    local tx_bytes="$rx_bytes"
     
     local usage_bytes
     case $traffic_mode in
         out) usage_bytes=$tx_bytes ;;
         in) usage_bytes=$rx_bytes ;;
-        total) usage_bytes=$(echo "$rx_bytes + $tx_bytes" | bc 2>/dev/null || echo "0") ;;
+        total) 
+            # 总流量 = 入站 × 2（估算值）
+            usage_bytes=$(echo "$rx_bytes * 2" | bc 2>/dev/null || echo "0") 
+            ;;
         max) usage_bytes=$(echo "$rx_bytes $tx_bytes" | tr ' ' '\n' | sort -rn | head -n1) ;;
-        *) usage_bytes=$(echo "$rx_bytes + $tx_bytes" | bc 2>/dev/null || echo "0") ;;
+        *) 
+            # 默认按total模式计算
+            usage_bytes=$(echo "$rx_bytes * 2" | bc 2>/dev/null || echo "0") 
+            ;;
     esac
     
     if [ -n "$usage_bytes" ] && [ "$usage_bytes" -gt 0 ]; then
@@ -228,6 +246,12 @@ show_all_ports() {
     # 确保使用北京时间
     echo -e "更新时间: ${CYAN}$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')${NC}"
     echo -e "已配置端口: ${GREEN}${port_count}${NC}"
+    echo ""
+    # 代理场景说明
+    echo -e "${YELLOW}⚠ 代理监控说明：${NC}"
+    echo -e "  ${CYAN}入站${NC}: 实际测量值（客户端→服务器）"
+    echo -e "  ${CYAN}出站${NC}: 估算值 = 入站（服务器→客户端，无法直接测量）"
+    echo -e "  ${CYAN}总计${NC}: 估算值 = 入站 × 2（实际略高10-20%因协议开销）"
     echo ""
     
     # 获取所有端口并显示

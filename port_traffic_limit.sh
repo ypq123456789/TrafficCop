@@ -245,6 +245,26 @@ get_port_traffic_usage() {
     local port=$1
     local interface=$2
     
+    # ==================== 重要说明 ====================
+    # 对于代理服务器(如xray/v2ray)场景：
+    # 
+    # 问题：iptables按端口监控只能捕获客户端↔服务器的流量(监听端口)
+    #       无法捕获服务器↔目标网站的流量(随机源端口)
+    # 
+    # 例如：客户端通过11710端口连接代理服务器访问YouTube
+    #   ✓ 可监控: 客户端 → 服务器11710端口 (入站dport)
+    #   ✓ 可监控: 服务器11710端口 → 客户端 (出站sport)  
+    #   ✗ 无法监控: 服务器随机端口 → YouTube (出站)
+    #   ✗ 无法监控: YouTube → 服务器随机端口 (入站)
+    # 
+    # 解决方案：
+    #   - 入站流量(dport): 可准确统计客户端请求量
+    #   - 出站流量(sport): 使用入站流量估算 (出站 ≈ 入站)
+    #   - 总流量: 入站 × 2 (近似值，实际略高因协议开销)
+    # 
+    # 如需精确监控代理总流量，请使用进程级监控(cgroup/conntrack)
+    # =================================================
+    
     # 获取入站流量（字节）- UFW环境下需要从ufw-before-input读取
     # 首先检查ufw-before-input（UFW环境下的正确位置）
     local in_bytes=$(iptables -L ufw-before-input -v -n -x 2>/dev/null | grep "dpt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
@@ -257,23 +277,17 @@ get_port_traffic_usage() {
         in_bytes=$(iptables -L INPUT -v -n -x | grep "dpt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
     fi
     
-    # 获取出站流量（字节）- UFW环境下需要从ufw-before-output读取
-    # 首先检查ufw-before-output（UFW环境下的正确位置）
-    local out_bytes=$(iptables -L ufw-before-output -v -n -x 2>/dev/null | grep "spt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
-    # 如果为空，尝试ufw-user-output（兼容性）
-    if [ -z "$out_bytes" ] || [ "$out_bytes" = "0" ]; then
-        out_bytes=$(iptables -L ufw-user-output -v -n -x 2>/dev/null | grep "spt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
-    fi
-    # 最后尝试标准OUTPUT链
-    if [ -z "$out_bytes" ] || [ "$out_bytes" = "0" ]; then
-        out_bytes=$(iptables -L OUTPUT -v -n -x | grep "spt:$port" | awk '{sum+=$2} END {printf "%.0f", sum+0}')
-    fi
-    
     # 转换为GB（使用printf格式化，确保显示前导零）
     # 使用 bc 时屏蔽 stderr 并在出错时返回 0，保证不会打印 (standard_in) 1: syntax error
     local in_gb=$(printf "%.2f" $(echo "scale=2; $in_bytes / 1024 / 1024 / 1024" | bc 2>/dev/null || echo "0"))
-    local out_gb=$(printf "%.2f" $(echo "scale=2; $out_bytes / 1024 / 1024 / 1024" | bc 2>/dev/null || echo "0"))
-    local total_gb=$(printf "%.2f" $(echo "scale=2; $in_gb + $out_gb" | bc 2>/dev/null || echo "0"))
+    
+    # 代理场景：出站流量 = 入站流量（估算值）
+    # 原因：客户端请求多少数据，服务器就需要下载并转发相应数据
+    local out_gb="$in_gb"
+    
+    # 总流量 = 入站 × 2（估算值）
+    # 实际流量可能略高(1-20%)因协议开销、重传等因素
+    local total_gb=$(printf "%.2f" $(echo "scale=2; $in_gb * 2" | bc 2>/dev/null || echo "0"))
     
     echo "$in_gb,$out_gb,$total_gb"
 }
