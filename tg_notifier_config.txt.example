@@ -1,5 +1,5 @@
-# Telegram Bot Configuration Template
-# Copy this file to tg_notifier_config.txt and fill in your actual values
+# Telegram Bot 配置示例
+# 复制此文件为 tg_notifier_config.txt 并填写实际值
 
 BOT_TOKEN="YOUR_BOT_TOKEN_HERE"
 CHAT_ID="YOUR_CHAT_ID_HERE"
