@@ -459,7 +459,6 @@ check_and_limit_traffic() {
     else
         echo "$(date '+%Y-%m-%d %H:%M:%S') 流量正常，清除所有限制" | tee -a "$LOG_FILE"
         tc qdisc del dev $MAIN_INTERFACE root 2>/dev/null
-        shutdown -c 2>/dev/null  # 取消可能存在的关机计划
     fi
 }
 
