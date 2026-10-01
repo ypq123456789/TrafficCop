@@ -20,7 +20,13 @@ CRON_LOG="$WORK_DIR/serverchan_notifier_cron.log"
 cd "$WORK_DIR" || exit 1
 
 # 设置时区为上海（东八区）
-export TZ='Asia/Shanghai'
+# 注意：部分精简系统缺少 /usr/share/zoneinfo，TZ='Asia/Shanghai' 会静默失效退回 UTC。
+# 必须显式用 TZ= 探测，确保每日报告时间按北京时间触发。
+if [ "$(TZ='Asia/Shanghai' date '+%z' 2>/dev/null)" = "+0800" ]; then
+    export TZ='Asia/Shanghai'
+else
+    export TZ='CST-8'
+fi
 
 echo "----------------------------------------------"| tee -a "$CRON_LOG"
 echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：1.0"  
@@ -432,7 +438,7 @@ main() {
             check_and_notify "false"
             
             # 检查是否需要发送每日报告
-            current_time=$(TZ='Asia/Shanghai' date +%H:%M)
+            current_time=$(date +%H:%M)
             echo "$(date '+%Y-%m-%d %H:%M:%S') : 当前时间: $current_time, 设定的报告时间: $DAILY_REPORT_TIME" >> "$CRON_LOG"
             if [ "$current_time" == "$DAILY_REPORT_TIME" ]; then
                 echo "$(date '+%Y-%m-%d %H:%M:%S') : 时间匹配，准备发送每日报告" >> "$CRON_LOG"
