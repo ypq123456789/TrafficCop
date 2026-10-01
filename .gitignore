@@ -26,3 +26,6 @@ port_traffic_cache.json
 *.tmp
 *.temp
 CLAUDE.md
+
+# 忽略 WorkBuddy 本地工作数据（记忆/缓存，非项目交付物）
+.workbuddy/

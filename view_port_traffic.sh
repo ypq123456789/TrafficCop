@@ -6,7 +6,13 @@
 SCRIPT_VERSION="1.3"
 
 # 设置时区为上海（东八区）
-export TZ='Asia/Shanghai'
+# 注意：部分精简系统缺少 /usr/share/zoneinfo，TZ='Asia/Shanghai' 会静默失效退回 UTC。
+# 必须显式用 TZ= 探测，避免显示时间与 CDT 北京时间周期不一致。
+if [ "$(TZ='Asia/Shanghai' date '+%z' 2>/dev/null)" = "+0800" ]; then
+    export TZ='Asia/Shanghai'
+else
+    export TZ='CST-8'
+fi
 
 WORK_DIR="/root/TrafficCop"
 PORTS_CONFIG_FILE="$WORK_DIR/ports_traffic_config.json"
@@ -244,7 +250,7 @@ show_all_ports() {
     echo -e "${PURPLE}╚════════════════════════════════════════╝${NC}"
     echo ""
     # 确保使用北京时间
-    echo -e "更新时间: ${CYAN}$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')${NC}"
+    echo -e "更新时间: ${CYAN}$(date '+%Y-%m-%d %H:%M:%S')${NC}"
     echo -e "已配置端口: ${GREEN}${port_count}${NC}"
     echo ""
     # 代理场景说明

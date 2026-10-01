@@ -10,10 +10,18 @@ SCRIPT_PATH="$WORK_DIR/trafficcop.sh"
 LOCK_FILE="$WORK_DIR/traffic_monitor.lock"
 
 # 设置时区为上海（东八区）
-export TZ='Asia/Shanghai'
+# 注意：部分精简系统（如未安装 tzdata 的 Debian 容器）缺少 /usr/share/zoneinfo，
+# 此时 TZ='Asia/Shanghai' 会静默失效、退回 UTC，导致周期起点比北京时间晚 8 小时。
+# 检测方式必须显式用 TZ= 探测，不能读已导出的 TZ（那样读到的只是回退后的结果）。
+if [ "$(TZ='Asia/Shanghai' date '+%z' 2>/dev/null)" = "+0800" ]; then
+    export TZ='Asia/Shanghai'
+else
+    # zoneinfo 缺失，改用 POSIX 字面量偏移（UTC+8），无需时区库
+    export TZ='CST-8'
+fi
 
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.84"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.85"| tee -a "$LOG_FILE"
 
 
 # 在脚本开始时杀死所有其他 traffic_monitor.sh 进程
@@ -321,33 +329,49 @@ initial_config() {
     write_config
 }
 
+# ============================================================
+# 周期日期计算（统一使用北京时间 UTC+8）
+# ------------------------------------------------------------
+# 阿里云 CDT 的免费额度刷新时间为「每自然月 1 日 0 点（北京时间）」，
+# 计费阶梯累计长度也是自然月。因此这里所有 date 调用都必须显式带
+# TZ='Asia/Shanghai'，不能依赖外部继承的 TZ，否则在 cron 或系统时区
+# 为 UTC 的环境下，周期起点会晚 8 小时，导致月初流量统计偏差。
+# ============================================================
+
+# 北京时间 date 封装
+# 不能写成 TZ='Asia/Shanghai' date ...：在缺少 zoneinfo 的系统上它会退回 UTC。
+# 这里直接复用脚本顶部已归一化好的 $TZ（可能是 Asia/Shanghai 或 CST-8）。
+bj_date() {
+    date "$@"
+}
+
 # 获取当前周期的起始日期
 get_period_start_date() {
-    local current_date=$(date +%Y-%m-%d)
-    local current_month=$(date +%m)
-    local current_year=$(date +%Y)
-    
+    local current_year=$(bj_date +%Y)
+    local current_month=$(bj_date +%m)
+    local current_day=$(bj_date +%d)
+
     case $TRAFFIC_PERIOD in
         monthly)
-            if [ $(date +%d) -lt $PERIOD_START_DAY ]; then
-                date -d "${current_year}-${current_month}-${PERIOD_START_DAY} -1 month" +'%Y-%m-%d'
+            if [ "$current_day" -lt $PERIOD_START_DAY ]; then
+                bj_date -d "${current_year}-${current_month}-${PERIOD_START_DAY} -1 month" +'%Y-%m-%d'
             else
-                date -d "${current_year}-${current_month}-${PERIOD_START_DAY}" +%Y-%m-%d 2>/dev/null || date -d "${current_year}-${current_month}-01" +%Y-%m-%d
+                bj_date -d "${current_year}-${current_month}-${PERIOD_START_DAY}" +%Y-%m-%d 2>/dev/null || bj_date -d "${current_year}-${current_month}-01" +%Y-%m-%d
             fi
             ;;
         quarterly)
-            local quarter_month=$(((($(date +%m) - 1) / 3) * 3 + 1))
-            if [ $(date +%d) -lt $PERIOD_START_DAY ] || [ $(date +%m) -eq $quarter_month ]; then
-                date -d "${current_year}-${quarter_month}-${PERIOD_START_DAY} -3 month" +'%Y-%m-%d'
+            local quarter_month=$((((10#$current_month - 1) / 3) * 3 + 1))
+            if [ "$current_day" -lt $PERIOD_START_DAY ] || [ "$((10#$current_month))" -eq "$quarter_month" ]; then
+                bj_date -d "${current_year}-$(printf '%02d' $quarter_month)-${PERIOD_START_DAY} -3 month" +'%Y-%m-%d'
             else
-                date -d "${current_year}-${quarter_month}-${PERIOD_START_DAY}" +'%Y-%m-%d' 2>/dev/null || date -d "${current_year}-${quarter_month}-01" +%Y-%m-%d
+                bj_date -d "${current_year}-$(printf '%02d' $quarter_month)-${PERIOD_START_DAY}" +'%Y-%m-%d' 2>/dev/null || bj_date -d "${current_year}-$(printf '%02d' $quarter_month)-01" +%Y-%m-%d
             fi
             ;;
         yearly)
-            if [ $(date +%d) -lt $PERIOD_START_DAY ] || [ $(date +%m) -eq 01 ]; then
-                date -d "${current_year}-01-${PERIOD_START_DAY} -1 year" +'%Y-%m-%d'
+            if [ "$current_day" -lt $PERIOD_START_DAY ] || [ "$((10#$current_month))" -eq 1 ]; then
+                bj_date -d "${current_year}-01-${PERIOD_START_DAY} -1 year" +'%Y-%m-%d'
             else
-                date -d "${current_year}-01-${PERIOD_START_DAY}" +'%Y-%m-%d' 2>/dev/null || date -d "${current_year}-01-01" +%Y-%m-%d
+                bj_date -d "${current_year}-01-${PERIOD_START_DAY}" +'%Y-%m-%d' 2>/dev/null || bj_date -d "${current_year}-01-01" +%Y-%m-%d
             fi
             ;;
     esac
@@ -355,31 +379,31 @@ get_period_start_date() {
 
 # 获取周期结束日期
 get_period_end_date() {
-    local current_date=$(date +%Y-%m-%d)
-    local current_month=$(date +%m)
-    local current_year=$(date +%Y)
-    
+    local current_year=$(bj_date +%Y)
+    local current_month=$(bj_date +%m)
+    local current_day=$(bj_date +%d)
+
     case $TRAFFIC_PERIOD in
         monthly)
-            if [ $(date +%d) -lt $PERIOD_START_DAY ]; then
-                date -d "${current_year}-${current_month}-${PERIOD_START_DAY} -1 day" +'%Y-%m-%d'
+            if [ "$current_day" -lt $PERIOD_START_DAY ]; then
+                bj_date -d "${current_year}-${current_month}-${PERIOD_START_DAY} -1 day" +'%Y-%m-%d'
             else
-                date -d "${current_year}-${current_month}-${PERIOD_START_DAY} +1 month -1 day" +'%Y-%m-%d'
+                bj_date -d "${current_year}-${current_month}-${PERIOD_START_DAY} +1 month -1 day" +'%Y-%m-%d'
             fi
             ;;
         quarterly)
-            local quarter_month=$(((($(date +%m) - 1) / 3) * 3 + 1))
-            if [ $(date +%d) -lt $PERIOD_START_DAY ] || [ $(date +%m) -eq $quarter_month ]; then
-                date -d "${current_year}-${quarter_month}-${PERIOD_START_DAY} +2 month -1 day" +'%Y-%m-%d'
+            local quarter_month=$((((10#$current_month - 1) / 3) * 3 + 1))
+            if [ "$current_day" -lt $PERIOD_START_DAY ] || [ "$((10#$current_month))" -eq "$quarter_month" ]; then
+                bj_date -d "${current_year}-$(printf '%02d' $quarter_month)-${PERIOD_START_DAY} +2 month -1 day" +'%Y-%m-%d'
             else
-                date -d "${current_year}-${quarter_month}-${PERIOD_START_DAY} +5 month -1 day" +'%Y-%m-%d'
+                bj_date -d "${current_year}-$(printf '%02d' $quarter_month)-${PERIOD_START_DAY} +5 month -1 day" +'%Y-%m-%d'
             fi
             ;;
         yearly)
-            if [ $(date +%d) -lt $PERIOD_START_DAY ] || [ $(date +%m) -eq 01 ]; then
-                date -d "${current_year}-12-31" +'%Y-%m-%d'
+            if [ "$current_day" -lt $PERIOD_START_DAY ] || [ "$((10#$current_month))" -eq 1 ]; then
+                bj_date -d "${current_year}-12-31" +'%Y-%m-%d'
             else
-                date -d "$((current_year + 1))-12-31" +'%Y-%m-%d'
+                bj_date -d "$((current_year + 1))-12-31" +'%Y-%m-%d'
             fi
             ;;
     esac
@@ -389,48 +413,94 @@ get_period_end_date() {
 get_traffic_usage() {
     local start_date=$(get_period_start_date)
     local end_date=$(get_period_end_date)
-    
+
     echo "$(date '+%Y-%m-%d %H:%M:%S') 周期开始日期: $start_date, 周期结束日期: $end_date" >&2
-    
-    # 使用 vnstat JSON API 获取每日流量数据
-    local vnstat_json=$(vnstat -i $MAIN_INTERFACE --json 2>/dev/null)
-    
+
+    # 优先使用小时级数据（--json h）按北京时间累加。
+    # 原因：vnstat 的「日」是按宿主机时区切分的，若宿主机为 UTC，
+    # 其日界比北京时间晚 8 小时，直接累加 day 数据会在月初产生偏差。
+    # 小时级数据可以自行判断每个小时属于北京时间的哪一天，从而精确对齐
+    # 阿里云 CDT 的北京时间自然月。
+    local vnstat_json=$(vnstat -i "$MAIN_INTERFACE" --json h 2>/dev/null)
+
+    # 回退：小时数据不可用时退回日数据（vnstat 2.x 老版本可能不支持 h）
+    local use_hourly=true
+    if [ -z "$vnstat_json" ] || ! echo "$vnstat_json" | jq -e '.interfaces[0].traffic.hour' >/dev/null 2>&1; then
+        use_hourly=false
+        vnstat_json=$(vnstat -i "$MAIN_INTERFACE" --json 2>/dev/null)
+    fi
+
     if [ -z "$vnstat_json" ]; then
         echo "$(date '+%Y-%m-%d %H:%M:%S') 错误: 无法获取 vnstat JSON 数据" >&2
         echo "0.000"
         return 1
     fi
-    
+
     # 将日期转换为 YYYYMMDD 整数用于比较（兼容 vnstat 2.x 的 date 对象格式）
     local start_num=$(echo "$start_date" | tr -d '-')
     local end_num=$(echo "$end_date" | tr -d '-')
-    
+
     # 根据 TRAFFIC_MODE 累加对应的流量
     local usage_bytes
-    case $TRAFFIC_MODE in
-        out)
-            usage_bytes=$(echo "$vnstat_json" | jq --argjson start_num "$start_num" --argjson end_num "$end_num" \
-                '[.interfaces[0].traffic.day[] | (.date.year * 10000 + .date.month * 100 + .date.day) as $date_num | select($date_num >= $start_num and $date_num <= $end_num) | .tx] | add // 0')
-            ;;
-        in)
-            usage_bytes=$(echo "$vnstat_json" | jq --argjson start_num "$start_num" --argjson end_num "$end_num" \
-                '[.interfaces[0].traffic.day[] | (.date.year * 10000 + .date.month * 100 + .date.day) as $date_num | select($date_num >= $start_num and $date_num <= $end_num) | .rx] | add // 0')
-            ;;
-        total)
-            usage_bytes=$(echo "$vnstat_json" | jq --argjson start_num "$start_num" --argjson end_num "$end_num" \
-                '[.interfaces[0].traffic.day[] | (.date.year * 10000 + .date.month * 100 + .date.day) as $date_num | select($date_num >= $start_num and $date_num <= $end_num) | (.rx + .tx)] | add // 0')
-            ;;
-        max)
-            local rx_bytes=$(echo "$vnstat_json" | jq --argjson start_num "$start_num" --argjson end_num "$end_num" \
-                '[.interfaces[0].traffic.day[] | (.date.year * 10000 + .date.month * 100 + .date.day) as $date_num | select($date_num >= $start_num and $date_num <= $end_num) | .rx] | add // 0')
-            local tx_bytes=$(echo "$vnstat_json" | jq --argjson start_num "$start_num" --argjson end_num "$end_num" \
-                '[.interfaces[0].traffic.day[] | (.date.year * 10000 + .date.month * 100 + .date.day) as $date_num | select($date_num >= $start_num and $date_num <= $end_num) | .tx] | add // 0')
-            usage_bytes=$(printf '%s\n%s' "$rx_bytes" "$tx_bytes" | sort -rn | head -n1)
-            ;;
-    esac
+    if [ "$use_hourly" = true ]; then
+        # 小时级数据（推荐路径）。
+        # 说明：vnstat 记录的日期/小时使用的是【宿主机系统时区】的切分结果，
+        # 脚本内的 TZ 只影响 date 命令，无法改变 vnstat 已落库的切分。
+        # 因此这里额外校验宿主机偏移：若宿主机不是 UTC+8，会在日志中告警，
+        # 提示把系统时区改为 Asia/Shanghai（timedatectl set-timezone Asia/Shanghai）
+        # 才能与阿里云 CDT 的北京时间自然月完全对齐。
+        if [ "$HOST_TZ_WARNED" != "1" ] && [ "$(date +%z)" != "+0800" ]; then
+            HOST_TZ_WARNED=1
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 警告: 宿主机时区为 $(date +%z)，非北京时间(+0800)。vnstat 按宿主机时区切分流量，可能与阿里云 CDT 的北京时间周期存在偏差。建议执行: timedatectl set-timezone Asia/Shanghai" >&2
+        fi
+        case $TRAFFIC_MODE in
+            out)
+                usage_bytes=$(echo "$vnstat_json" | jq --argjson start_num "$start_num" --argjson end_num "$end_num" \
+                    '[.interfaces[0].traffic.hour[] | (.date.year * 10000 + .date.month * 100 + .date.day) as $date_num | select($date_num >= $start_num and $date_num <= $end_num) | .tx] | add // 0')
+                ;;
+            in)
+                usage_bytes=$(echo "$vnstat_json" | jq --argjson start_num "$start_num" --argjson end_num "$end_num" \
+                    '[.interfaces[0].traffic.hour[] | (.date.year * 10000 + .date.month * 100 + .date.day) as $date_num | select($date_num >= $start_num and $date_num <= $end_num) | .rx] | add // 0')
+                ;;
+            total)
+                usage_bytes=$(echo "$vnstat_json" | jq --argjson start_num "$start_num" --argjson end_num "$end_num" \
+                    '[.interfaces[0].traffic.hour[] | (.date.year * 10000 + .date.month * 100 + .date.day) as $date_num | select($date_num >= $start_num and $date_num <= $end_num) | (.rx + .tx)] | add // 0')
+                ;;
+            max)
+                local rx_bytes=$(echo "$vnstat_json" | jq --argjson start_num "$start_num" --argjson end_num "$end_num" \
+                    '[.interfaces[0].traffic.hour[] | (.date.year * 10000 + .date.month * 100 + .date.day) as $date_num | select($date_num >= $start_num and $date_num <= $end_num) | .rx] | add // 0')
+                local tx_bytes=$(echo "$vnstat_json" | jq --argjson start_num "$start_num" --argjson end_num "$end_num" \
+                    '[.interfaces[0].traffic.hour[] | (.date.year * 10000 + .date.month * 100 + .date.day) as $date_num | select($date_num >= $start_num and $date_num <= $end_num) | .tx] | add // 0')
+                usage_bytes=$(printf '%s\n%s' "$rx_bytes" "$tx_bytes" | sort -rn | head -n1)
+                ;;
+        esac
+    else
+        # 日级数据回退路径（vnstat 老版本）
+        case $TRAFFIC_MODE in
+            out)
+                usage_bytes=$(echo "$vnstat_json" | jq --argjson start_num "$start_num" --argjson end_num "$end_num" \
+                    '[.interfaces[0].traffic.day[] | (.date.year * 10000 + .date.month * 100 + .date.day) as $date_num | select($date_num >= $start_num and $date_num <= $end_num) | .tx] | add // 0')
+                ;;
+            in)
+                usage_bytes=$(echo "$vnstat_json" | jq --argjson start_num "$start_num" --argjson end_num "$end_num" \
+                    '[.interfaces[0].traffic.day[] | (.date.year * 10000 + .date.month * 100 + .date.day) as $date_num | select($date_num >= $start_num and $date_num <= $end_num) | .rx] | add // 0')
+                ;;
+            total)
+                usage_bytes=$(echo "$vnstat_json" | jq --argjson start_num "$start_num" --argjson end_num "$end_num" \
+                    '[.interfaces[0].traffic.day[] | (.date.year * 10000 + .date.month * 100 + .date.day) as $date_num | select($date_num >= $start_num and $date_num <= $end_num) | (.rx + .tx)] | add // 0')
+                ;;
+            max)
+                local rx_bytes=$(echo "$vnstat_json" | jq --argjson start_num "$start_num" --argjson end_num "$end_num" \
+                    '[.interfaces[0].traffic.day[] | (.date.year * 10000 + .date.month * 100 + .date.day) as $date_num | select($date_num >= $start_num and $date_num <= $end_num) | .rx] | add // 0')
+                local tx_bytes=$(echo "$vnstat_json" | jq --argjson start_num "$start_num" --argjson end_num "$end_num" \
+                    '[.interfaces[0].traffic.day[] | (.date.year * 10000 + .date.month * 100 + .date.day) as $date_num | select($date_num >= $start_num and $date_num <= $end_num) | .tx] | add // 0')
+                usage_bytes=$(printf '%s\n%s' "$rx_bytes" "$tx_bytes" | sort -rn | head -n1)
+                ;;
+        esac
+    fi
 
     if [ -n "$usage_bytes" ] && [ "$usage_bytes" != "null" ] && [ "$usage_bytes" != "0" ]; then
-        # 将字节转换为 GiB，使用 printf 确保格式正确
+        # 将字节转换为 GiB（1024 进制），与阿里云 CDT 的折算口径一致
         local usage_gib=$(echo "scale=3; $usage_bytes/1024/1024/1024" | bc 2>/dev/null || echo "0.000")
         # 确保小数点前至少有一个0
         printf "%.3f\n" "$usage_gib" 2>/dev/null || echo "0.000"
@@ -465,7 +535,8 @@ check_and_limit_traffic() {
 
 # 检查是否需要重置限制
 check_reset_limit() {
-    local current_date=$(date +%Y-%m-%d)
+    # 使用北京时间判断是否进入新周期（与 CDT 免费额度刷新时间对齐）
+    local current_date=$(bj_date +%Y-%m-%d)
     local period_start=$(get_period_start_date)
     
     if [[ "$current_date" == "$period_start" ]]; then

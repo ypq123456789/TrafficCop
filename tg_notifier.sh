@@ -58,7 +58,13 @@ migrate_files
 cd "$WORK_DIR" || exit 1
 
 # 设置时区为上海（东八区）
-export TZ='Asia/Shanghai'
+# 注意：部分精简系统缺少 /usr/share/zoneinfo，TZ='Asia/Shanghai' 会静默失效退回 UTC。
+# 必须显式用 TZ= 探测，确保每日报告时间按北京时间触发。
+if [ "$(TZ='Asia/Shanghai' date '+%z' 2>/dev/null)" = "+0800" ]; then
+    export TZ='Asia/Shanghai'
+else
+    export TZ='CST-8'
+fi
 
 # 端口流量数据缓存文件
 PORT_DATA_CACHE="/tmp/port_traffic_cache.json"
@@ -720,7 +726,7 @@ if [[ "$*" == *"-cron"* ]]; then
     # 检查是否需要发送每日报告
     # 先刷新缓存，保证定时发送时有最新的端口数据（在cron环境下主动生成缓存）
     save_port_traffic_data 2>/dev/null || true
-    current_time=$(TZ='Asia/Shanghai' date +%H:%M)
+    current_time=$(date +%H:%M)
         echo "$(date '+%Y-%m-%d %H:%M:%S') : 当前时间: $current_time, 设定的报告时间: $DAILY_REPORT_TIME" >> "$CRON_LOG"
         if [ "$current_time" == "$DAILY_REPORT_TIME" ]; then
             echo "$(date '+%Y-%m-%d %H:%M:%S') : 时间匹配，准备发送每日报告" >> "$CRON_LOG"

@@ -17,7 +17,13 @@ PORT_LOG_FILE="$WORK_DIR/port_traffic_monitor.log"
 PORT_SCRIPT_PATH="$WORK_DIR/port_traffic_limit.sh"
 
 # 设置时区为上海（东八区）
-export TZ='Asia/Shanghai'
+# 注意：部分精简系统缺少 /usr/share/zoneinfo，TZ='Asia/Shanghai' 会静默失效退回 UTC，
+# 导致统计周期与阿里云 CDT 的北京时间自然月不一致。必须显式用 TZ= 探测。
+if [ "$(TZ='Asia/Shanghai' date '+%z' 2>/dev/null)" = "+0800" ]; then
+    export TZ='Asia/Shanghai'
+else
+    export TZ='CST-8'
+fi
 
 # 颜色定义
 RED='\033[0;31m'
