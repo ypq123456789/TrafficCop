@@ -34,7 +34,7 @@ echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：1.9"
 # 检查是否有同名的 crontab 正在执行:
 check_running() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 开始检查是否有其他实例运行" >> "$CRON_LOG"
-    if pidof -x "$(basename "\$0")" -o $$ > /dev/null; then
+    if pidof -x "$(basename "$0")" -o $$ > /dev/null; then
         echo "$(date '+%Y-%m-%d %H:%M:%S') : 另一个脚本实例正在运行，退出脚本" >> "$CRON_LOG"
         echo "另一个脚本实例正在运行，退出脚本"
         exit 1

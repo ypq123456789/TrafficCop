@@ -27,7 +27,7 @@ echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.85"| tee -a "$LOG_FILE"
 # 在脚本开始时杀死所有其他 traffic_monitor.sh 进程
 kill_other_instances() {
     local current_pid=$$
-    local script_name=$(basename "\$0")
+    local script_name=$(basename "$0")
     for pid in $(pgrep -f "$script_name"); do
         if [ "$pid" != "$current_pid" ]; then
             echo "$(date '+%Y-%m-%d %H:%M:%S') 终止其他脚本实例 (PID: $pid)" | tee -a "$LOG_FILE"
@@ -580,7 +580,7 @@ if ! flock -n 9; then
 fi
 
     # 检查是否以 --run 模式运行
-    if [ "\$1" = "--run" ]; then
+    if [ "$1" = "--run" ]; then
         echo "$(date '+%Y-%m-%d %H:%M:%S') 正在以自动化模式运行" | tee -a "$LOG_FILE"
         if read_config; then
             check_reset_limit
