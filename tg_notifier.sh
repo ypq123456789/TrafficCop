@@ -76,7 +76,7 @@ echo "$(date '+%Y-%m-%d %H:%M:%S') : 版本号：9.6"
 check_running() {
     # 新增：添加日志
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 开始检查是否有其他实例运行" >> "$CRON_LOG"
-    if pidof -x "$(basename "\$0")" -o $$ > /dev/null; then
+    if pidof -x "$(basename "$0")" -o $$ > /dev/null; then
         # 新增：添加日志
         echo "$(date '+%Y-%m-%d %H:%M:%S') : 另一个脚本实例正在运行，退出脚本" >> "$CRON_LOG"
         echo "另一个脚本实例正在运行，退出脚本"
