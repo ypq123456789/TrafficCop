@@ -53,6 +53,18 @@ npx wrangler secret put REPORT_TOKEN
 `https://trafficcop-logs.<account>.workers.dev/report` 的地址，
 填到客户端的 `REPORT_URL`，令牌填 `REPORT_TOKEN`。
 
+### 本仓库已部署实例
+
+| 项 | 值 |
+|---|---|
+| 上报端点 | `https://trafficcop-logs.1524640484.workers.dev/report` |
+| R2 桶 | `trafficcop-logs` |
+| 生命周期 | `expire-logs-90d`（`logs/` 前缀，90 天自动清理） |
+| 上报令牌 | 由部署者私下分发，**不入库** |
+
+> 令牌不写进仓库。需要新增/更换客户端时，用 `wrangler secret put REPORT_TOKEN`
+> 推送新值，再把同一个值告诉客户端；吊销时换一个值即可，全部老客户端立即失效。
+
 ## 客户端开启方式
 
 在客户端的配置文件里加：
@@ -108,3 +120,6 @@ bash .workbuddy/run_all_report_tests.sh
 
 覆盖 7 组、共 99 条断言：上报场景、UTF-8 合法性、locale 隔离、Worker 接收端、
 端到端串联、主脚本集成、编码还原。
+
+已用本仓库部署实例做过一次真实链路验证：客户端脚本 → Worker → R2 落盘 →
+控制台回读，中文机器名「杨培强的电脑」经 GBK 还原后显示正确。
