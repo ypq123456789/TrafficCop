@@ -35,6 +35,23 @@ fi
 # 如需改回 1024，修改配置文件中的 CONVERSION_BASE=1024 即可。
 CONVERSION_BASE=${CONVERSION_BASE:-1000}
 
+# ============================================================
+# 日志上报（可选，默认关闭）
+# ------------------------------------------------------------
+# 用于「客户上报 → 我们直接定位原因」。上报内容是结构化 JSON 字段
+# （机器名、用量、脚本版本、cron 是否存活等），存储走 Cloudflare R2。
+#
+# ⚠️ 默认关闭：上报含机器名与流量数字，属客户数据，必须由客户显式开启。
+#    开启方式：在配置文件里设置 ENABLE_REPORT=yes 并填好 REPORT_URL / REPORT_TOKEN。
+# ============================================================
+ENABLE_REPORT=${ENABLE_REPORT:-no}
+REPORT_URL=${REPORT_URL:-}
+REPORT_TOKEN=${REPORT_TOKEN:-}
+REPORT_MACHINE_ID=${REPORT_MACHINE_ID:-}
+# 心跳上报降频：默认每 60 次流量检查才上报一次（约 1 小时一次），
+# 避免每分钟一条把 R2 写操作打满。
+REPORT_HEARTBEAT_EVERY=${REPORT_HEARTBEAT_EVERY:-60}
+
 # 返回「字节 -> GB」的换算除数，供各处 bc 计算复用。
 # 用函数而非散落的字面量，避免多处不一致。
 get_byte_divisor() {
@@ -45,7 +62,15 @@ get_byte_divisor() {
 }
 
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.87"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.88"| tee -a "$LOG_FILE"
+
+# 供上报模块使用的版本号
+SCRIPT_VERSION="1.0.88"
+
+# 载入日志上报模块（可选功能，文件缺失不影响主流程）
+if [ -f "$WORK_DIR/report_lib.sh" ]; then
+    source "$WORK_DIR/report_lib.sh"
+fi
 
 
 # 在脚本开始时杀死所有其他 traffic_monitor.sh 进程
@@ -179,19 +204,37 @@ check_and_install_packages() {
 }
 
 
+# 补齐配置文件里可能缺失的字段（老版本升级场景）
+# 注意：read_config 和 check_existing_setup 是两条独立的 source 路径，
+# 两处都必须调用，漏掉任何一处都会让老用户拿不到默认值。
+apply_config_defaults() {
+    CONVERSION_BASE=${CONVERSION_BASE:-1000}
+    PERIOD_START_DAY=${PERIOD_START_DAY:-1}
+    LIMIT_SPEED=${LIMIT_SPEED:-20}
+    # 上报相关：默认全部关闭，升级的用户不会被自动开启
+    ENABLE_REPORT=${ENABLE_REPORT:-no}
+    REPORT_URL=${REPORT_URL:-}
+    REPORT_TOKEN=${REPORT_TOKEN:-}
+    REPORT_MACHINE_ID=${REPORT_MACHINE_ID:-}
+    REPORT_HEARTBEAT_EVERY=${REPORT_HEARTBEAT_EVERY:-60}
+}
+
 # 检查配置和定时任务
 check_existing_setup() {
      if [ -s "$CONFIG_FILE" ]; then  
         source "$CONFIG_FILE"
         # 与 read_config 保持一致：补老配置文件缺失字段的默认值
-        CONVERSION_BASE=${CONVERSION_BASE:-1000}
-        PERIOD_START_DAY=${PERIOD_START_DAY:-1}
-        LIMIT_SPEED=${LIMIT_SPEED:-20}
+        apply_config_defaults
         echo "$(date '+%Y-%m-%d %H:%M:%S') 配置已存在"| tee -a "$LOG_FILE"
         if crontab -l 2>/dev/null | grep -q "$SCRIPT_PATH --run"; then
             echo "$(date '+%Y-%m-%d %H:%M:%S') 每分钟一次的定时任务已在执行。"| tee -a "$LOG_FILE"
         else
             echo "$(date '+%Y-%m-%d %H:%M:%S') 警告：定时任务未找到，可能需要重新设置。"| tee -a "$LOG_FILE"
+            # 这是「客户流量倒退」的根因之一：cron 丢了但没人知道。
+            # 开启上报时顺手报一条，便于我们侧主动发现。
+            if [ "${ENABLE_REPORT:-no}" = "yes" ] && declare -f report_event >/dev/null 2>&1; then
+                report_event "error" "" "" "" "定时任务未找到，cron 可能已丢失" &
+            fi
         fi
         return 0
     else
@@ -203,12 +246,9 @@ check_existing_setup() {
 read_config() {
     if [ -f "$CONFIG_FILE" ]; then
         source "$CONFIG_FILE"
-        # 老版本配置文件没有 CONVERSION_BASE 字段，source 后仍为空，
+        # 老版本配置文件没有新增字段，source 后仍为空，
         # 此处补默认值，保证升级脚本后老用户不需要重新配置。
-        CONVERSION_BASE=${CONVERSION_BASE:-1000}
-        # 同理兼容其它后加的字段
-        PERIOD_START_DAY=${PERIOD_START_DAY:-1}
-        LIMIT_SPEED=${LIMIT_SPEED:-20}
+        apply_config_defaults
         return 0
     else
         return 1
@@ -227,7 +267,13 @@ LIMIT_SPEED=${LIMIT_SPEED:-20}
 MAIN_INTERFACE=$MAIN_INTERFACE
 LIMIT_MODE=$LIMIT_MODE
 CONVERSION_BASE=${CONVERSION_BASE:-1000}
+ENABLE_REPORT=${ENABLE_REPORT:-no}
+REPORT_URL=${REPORT_URL:-}
+REPORT_TOKEN=${REPORT_TOKEN:-}
+REPORT_MACHINE_ID=${REPORT_MACHINE_ID:-}
+REPORT_HEARTBEAT_EVERY=${REPORT_HEARTBEAT_EVERY:-60}
 EOF
+    chmod 600 "$CONFIG_FILE" 2>/dev/null
     echo "$(date '+%Y-%m-%d %H:%M:%S') 配置已更新"| tee -a "$LOG_FILE"
 }
 
@@ -244,6 +290,11 @@ show_current_config() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') 主要网络接口: $MAIN_INTERFACE"| tee -a "$LOG_FILE"
     echo "$(date '+%Y-%m-%d %H:%M:%S') 限制模式: $LIMIT_MODE"| tee -a "$LOG_FILE"
     echo "$(date '+%Y-%m-%d %H:%M:%S') 流量换算进制: ${CONVERSION_BASE:-1000} (1GB = ${CONVERSION_BASE:-1000}^3 字节)"| tee -a "$LOG_FILE"
+    if [ "${ENABLE_REPORT:-no}" = "yes" ]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 日志上报: 已开启 -> ${REPORT_URL:-未配置}"| tee -a "$LOG_FILE"
+    else
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 日志上报: 已关闭（默认，可在配置文件中开启）"| tee -a "$LOG_FILE"
+    fi
 }
 
 # 检测主要网络接口
@@ -347,6 +398,31 @@ initial_config() {
         case $base_choice in
             2) CONVERSION_BASE=1024; break ;;
             1|"") CONVERSION_BASE=1000; break ;;
+            *) echo "无效输入，请重新选择。" ;;
+        esac
+    done
+
+    # 日志上报（可选，默认关闭）
+    # 涉及客户数据（机器名、流量数字），必须显式同意才开启。
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ------------------------------------------------------"| tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 是否开启「日志上报」？"| tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 开启后，脚本会上报结构化诊断信息（机器名、流量数字、脚本版本、"| tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 定时任务是否存活等），用于出现问题时我们快速定位原因。"| tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 上报内容不含任何业务数据，且随时可关闭。"| tee -a "$LOG_FILE"
+    while true; do
+        read -p "是否开启日志上报？(y/n，默认为n): " report_choice
+        case $report_choice in
+            y|Y)
+                ENABLE_REPORT="yes"
+                read -p "请输入上报地址 (REPORT_URL): " REPORT_URL
+                read -p "请输入上报令牌 (REPORT_TOKEN): " REPORT_TOKEN
+                REPORT_MACHINE_ID=${REPORT_MACHINE_ID:-$(hostname 2>/dev/null || echo unknown)}
+                echo "已开启日志上报，机器标识: $REPORT_MACHINE_ID"
+                break ;;
+            n|N|"")
+                ENABLE_REPORT="no"
+                echo "日志上报保持关闭（推荐的安全默认值）"
+                break ;;
             *) echo "无效输入，请重新选择。" ;;
         esac
     done
@@ -589,7 +665,7 @@ write_state_snapshot() {
   "limit_gb": ${limit:-0},
   "conversion_base": ${CONVERSION_BASE:-1000},
   "period_start": "$period_start",
-  "script_version": "1.0.87",
+  "script_version": "${SCRIPT_VERSION:-1.0.88}",
   "hostname": "$(hostname 2>/dev/null || echo unknown)"
 }
 EOF
@@ -624,6 +700,21 @@ check_and_limit_traffic() {
     # 下游（tg_notifier 每日报告等）必须读这个文件，而不是去 guess 日志里的最后一行——
     # 日志行没有时间戳校验，cron 一旦中断就会读到几天前的陈旧值，导致「流量倒退」假象。
     write_state_snapshot "$current_usage" "$limit_threshold"
+
+    # 心跳上报（可选，默认关闭）。降频：每 REPORT_HEARTBEAT_EVERY 次检查上报一次。
+    # 用计数器文件而非内存变量，因为脚本是「一次运行一次检查」的模型。
+    if [ "${ENABLE_REPORT:-no}" = "yes" ] && declare -f report_event >/dev/null 2>&1; then
+        local hb_file="$WORK_DIR/.report_hb_count"
+        local hb_count=0
+        [ -f "$hb_file" ] && hb_count=$(cat "$hb_file" 2>/dev/null || echo 0)
+        [[ "$hb_count" =~ ^[0-9]+$ ]] || hb_count=0
+        hb_count=$((hb_count + 1))
+        if [ "$hb_count" -ge "${REPORT_HEARTBEAT_EVERY:-60}" ]; then
+            hb_count=0
+            report_event "heartbeat" "$current_usage" "$limit_threshold" "$(get_period_start_date 2>/dev/null)" "" &
+        fi
+        echo "$hb_count" > "$hb_file" 2>/dev/null
+    fi
     
     if (( $(echo "$current_usage > $limit_threshold" | bc -l 2>/dev/null || echo "0") )); then
         echo "$(date '+%Y-%m-%d %H:%M:%S') 流量超出限制" | tee -a "$LOG_FILE"
