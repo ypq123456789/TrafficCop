@@ -262,6 +262,16 @@ read_config() {
 
 # 写入配置
 write_config() {
+    # ⚠️ 安全：REPORT_URL / REPORT_TOKEN / REPORT_MACHINE_ID 来自用户输入或 hostname，
+    # 之后会被 `source "$CONFIG_FILE"` 以 root 身份重新解析。
+    # 若直接裸写，值里出现空格、`;`、`&`、`$(...)`、反引号就会出错甚至执行任意命令
+    # （实测：值中含 $(touch /tmp/x) 时，source 阶段该命令真的被执行）。
+    # 用 printf '%q' 做 shell 转义后再落盘，保证「写进去什么、source 回来就是什么」。
+    local _q_url _q_token _q_machine
+    _q_url=$(printf '%q' "${REPORT_URL:-}")
+    _q_token=$(printf '%q' "${REPORT_TOKEN:-}")
+    _q_machine=$(printf '%q' "${REPORT_MACHINE_ID:-}")
+
     cat > "$CONFIG_FILE" << EOF
 TRAFFIC_MODE=$TRAFFIC_MODE
 TRAFFIC_PERIOD=$TRAFFIC_PERIOD
@@ -273,9 +283,9 @@ MAIN_INTERFACE=$MAIN_INTERFACE
 LIMIT_MODE=$LIMIT_MODE
 CONVERSION_BASE=${CONVERSION_BASE:-1024}
 ENABLE_REPORT=${ENABLE_REPORT:-no}
-REPORT_URL=${REPORT_URL:-}
-REPORT_TOKEN=${REPORT_TOKEN:-}
-REPORT_MACHINE_ID=${REPORT_MACHINE_ID:-}
+REPORT_URL=$_q_url
+REPORT_TOKEN=$_q_token
+REPORT_MACHINE_ID=$_q_machine
 REPORT_HEARTBEAT_EVERY=${REPORT_HEARTBEAT_EVERY:-60}
 EOF
     chmod 600 "$CONFIG_FILE" 2>/dev/null

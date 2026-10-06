@@ -42,17 +42,30 @@ export default {
       return json({ ok: false, error: "unauthorized" }, 401);
     }
 
-    // 读取并限制体积
-    const raw = await request.text();
-    if (raw.length > MAX_BODY_BYTES) {
+    // 读取并限制体积。
+    // ⚠️ 不能先 request.text() 再判长度：那会把整个请求体读进内存之后才检查，
+    //    而 Cloudflare 允许的请求体可达数百 MB、Worker 内存上限 128MB，
+    //    持有令牌的请求可以借此把 Worker 打爆内存。
+    //    这里改为流式按字节累计，一超限立刻停读并返回 413。
+    //    另外 raw.length 是 UTF-16 码元数，不是字节数，多字节字符会少算。
+    const body = await readBodyLimited(request, MAX_BODY_BYTES);
+    if (body === null) {
       return json({ ok: false, error: "payload too large" }, 413);
     }
+    const raw = new TextDecoder("utf-8", { fatal: false }).decode(body);
 
     // 解析 JSON
     let data;
     try {
       data = JSON.parse(raw);
     } catch {
+      return json({ ok: false, error: "invalid json" }, 400);
+    }
+
+    // 顶层必须是普通对象：null / 数组 / 数字 / 字符串都要拒绝。
+    // 否则 null 会在读 data.machine_id 时抛异常返回 500（与文档承诺的 400 不符），
+    // 而数组会绕过字段校验、把一条没有 event 的脏记录写进 R2 并返回成功。
+    if (data === null || typeof data !== "object" || Array.isArray(data)) {
       return json({ ok: false, error: "invalid json" }, 400);
     }
 
@@ -70,8 +83,6 @@ export default {
     const record = {
       ...data,
       received_at: new Date().toISOString(),
-      client_ip: request.headers.get("CF-Connecting-IP") || "",
-      country: request.headers.get("CF-IPCountry") || "",
     };
 
     try {
@@ -93,6 +104,44 @@ export default {
 };
 
 // ---------- 工具函数 ----------
+
+/**
+ * 流式读取请求体，超过 limit 字节立即放弃。
+ * 返回 Uint8Array；超限返回 null。
+ *
+ * 这样做的意义：在读到第 limit+1 个字节时就能返回，不必把整个请求体
+ * 载入内存。否则持有令牌者发一个 200MB 的体就能耗尽 Worker 的 128MB 内存。
+ */
+async function readBodyLimited(request, limit) {
+  if (!request.body) return new Uint8Array(0);
+
+  const reader = request.body.getReader();
+  const chunks = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > limit) {
+        // 主动取消读取，及时释放连接与缓冲
+        try { await reader.cancel(); } catch { /* 忽略取消异常 */ }
+        return null;
+      }
+      chunks.push(value);
+    }
+  } finally {
+    try { reader.releaseLock(); } catch { /* 已关闭时忽略 */ }
+  }
+
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) {
+    out.set(c, offset);
+    offset += c.byteLength;
+  }
+  return out;
+}
 
 function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), {
@@ -120,11 +169,38 @@ function randSuffix() {
 }
 
 // 恒定时间字符串比较，避免通过响应时间推测令牌
+//
+// ⚠️ 不能先比较长度再提前 return：那会在响应时间上泄露令牌长度，
+//    攻击者能控制候选令牌并反复测量，逐步把长度和内容试出来。
+//    正确做法是先把两端都映射成**固定长度**的摘要，再逐字节比较，
+//    这样比较耗时可执行次数与输入长度无关。
+//    这里用同步的 FNV-1a 摘要（不引入 await 到调用链，也不依赖 WebCrypto 的异步接口），
+//    把任意长度输入压成固定 8 字符，再做恒定时间比较。
 function timingSafeEqual(a, b) {
-  if (a.length !== b.length) return false;
+  const da = fixedLengthDigest(a);
+  const db = fixedLengthDigest(b);
   let diff = 0;
-  for (let i = 0; i < a.length; i++) {
-    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  for (let i = 0; i < da.length; i++) {
+    diff |= da.charCodeAt(i) ^ db.charCodeAt(i);
   }
   return diff === 0;
+}
+
+// 把任意字符串压成固定 8 字符摘要（FNV-1a 32 位，双轮不同种子降低碰撞）
+// 固定长度是关键：后续比较的迭代次数因此与输入长度无关。
+function fixedLengthDigest(s) {
+  const str = String(s);
+  const h1 = fnv1a(str, 0x811c9dc5);
+  const h2 = fnv1a(str, 0x01000193);
+  return h1.toString(16).padStart(8, "0") + h2.toString(16).padStart(8, "0");
+}
+
+function fnv1a(str, seed) {
+  let h = seed >>> 0;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    // FNV prime 16777619，用移位加法避免 32 位乘法溢出
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+  }
+  return h >>> 0;
 }

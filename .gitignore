@@ -32,3 +32,4 @@ CLAUDE.md
 
 # 忽略 wrangler 本地缓存（部署产物，含账号态）
 report-worker/.wrangler/
+.wrangler/

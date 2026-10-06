@@ -208,6 +208,13 @@ _sanitize_utf8() {
 
 # ---------- 内部：JSON 字符串转义 ----------
 # 只处理 JSON 必需的最小转义，避免引入 jq 依赖（部分精简系统没有）
+#
+# ⚠️ 必须转义**所有** C0 控制字符（0x00-0x1F），不只是 \n \r \t。
+#    JSON 规范不允许字符串里出现裸控制字符。而 _sanitize_utf8 对 ASCII
+#    是原样保留的，所以 0x01(^A)、0x0b(^K)、0x0c(^L)、0x1b(ESC) 等会漏进
+#    JSON，导致 Worker 端 JSON.parse 失败 -> 该事件被静默丢弃。
+#    典型来源：以 shell 变量保存的文本被 `echo -n`/`printf` 写入 .vnstat_start
+#    等中间文件时混入 FS/GS 之类的控制字节，随后整条上报丢失。
 _json_escape() {
     local s
     s=$(_sanitize_utf8 "$1")
@@ -216,6 +223,36 @@ _json_escape() {
     s="${s//$'\n'/\\n}"    # 换行
     s="${s//$'\r'/\\r}"    # 回车
     s="${s//$'\t'/\\t}"    # 制表符
+
+    # 其余 C0 控制字符（0x01-0x1F，\n \r \t 已处理）统一转成 \u00XX。
+    # 按字节遍历需要 LC_ALL=C，否则 ${s:i:1} 会按「字符」切、拿到 Unicode 码点。
+    # 单独处理是为了不影响上面的快路径：绝大多数上报内容是纯文本，
+    # 会在下面的循环里被原样搬到 out，只有含控制字符时才动它。
+    case "$s" in
+        *[$'\001'-$'\010'$'\013'$'\014'$'\016'-$'\037']*)
+            local out="" ch code i n
+            local _old_lc_all_set=0 _old_lc_all="" _old_lc_set=0 _old_lc=""
+            [ "${LC_ALL+set}" = set ] && { _old_lc_all_set=1; _old_lc_all="$LC_ALL"; }
+            [ "${LC_CTYPE+set}" = set ] && { _old_lc_set=1; _old_lc="$LC_CTYPE"; }
+            export LC_ALL=C
+            n=${#s}
+            for (( i = 0; i < n; i++ )); do
+                ch="${s:i:1}"
+                case "$ch" in
+                    [$'\001'-$'\010'$'\013'$'\014'$'\016'-$'\037'])
+                        printf -v code '%d' "'$ch" 2>/dev/null || code=0
+                        printf -v ch '\\u%04x' "$code"
+                        ;;
+                esac
+                out+="$ch"
+            done
+            # 精确还原 locale（区分「原值为空」与「原本未设置」）
+            if [ "$_old_lc_all_set" -eq 1 ]; then export LC_ALL="$_old_lc_all"; else unset LC_ALL; fi
+            if [ "$_old_lc_set" -eq 1 ]; then export LC_CTYPE="$_old_lc"; else unset LC_CTYPE; fi
+            s="$out"
+            ;;
+    esac
+
     printf '%s' "$s"
 }
 
@@ -344,7 +381,11 @@ upload_full_log() {
     # 优先用 rclone（支持大文件、断点续传）
     if command -v rclone >/dev/null 2>&1 && [ -n "${R2_REMOTE:-}" ]; then
         echo "使用 rclone 上传到 $R2_REMOTE:$R2_BUCKET/logs/$machine_id/"
-        rclone copy "$log_file" "$R2_REMOTE:$R2_BUCKET/logs/$machine_id/" \
+        # ⚠️ 目标对象名必须带 date_tag：若沿用原文件名 traffic_monitor.log，
+        #    同一台机器每次导出都会覆盖上一份，历史上传全部丢失（只留最后一次）。
+        #    用 copyto 指定目标名（copy 只接受目录），保留原始日志的同时带上时间戳。
+        rclone copyto "$log_file" \
+            "$R2_REMOTE:$R2_BUCKET/logs/$machine_id/traffic_monitor-${date_tag}.log" \
             --s3-upload-cutoff 50M \
             --transfers 1 \
             --retries 3 \
