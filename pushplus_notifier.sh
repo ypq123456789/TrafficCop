@@ -394,8 +394,8 @@ check_and_notify() {
 setup_cron() {
     local correct_entry="* * * * * $SCRIPT_PATH -cron"
     local current_crontab=$(crontab -l 2>/dev/null)
-    local pushplus_entries_entries=$(echo "$current_crontab" | grep "pushplus_notifier.sh\.sh")
-    local correct_entries_count=$(echo "$pushplus_entries_entries" | grep -F "$correct_entry" | wc -l)
+    local pushplus_entries=$(echo "$current_crontab" | grep "pushplus_notifier\.sh")
+    local correct_entries_count=$(echo "$pushplus_entries" | grep -F "$correct_entry" | wc -l)
 
     if [ "$correct_entries_count" -eq 1 ]; then
         echo "正确的 crontab 项已存在且只有一个，无需修改。"
@@ -409,8 +409,8 @@ setup_cron() {
         if ! declare -f cron_replace_tasks >/dev/null 2>&1; then
             echo "crontab_safe.sh 缺失，为避免损坏 crontab 已跳过设置。"
             echo "  请手动执行 crontab -e 添加：$correct_entry"
-        elif cron_replace_tasks "pushplus_notifier.sh\.sh" "$correct_entry"; then
-            echo "已更新 crontab。删除了所有旧的 pushplus_notifier.sh.sh 条目，并添加了一个每分钟执行的条目。"
+        elif cron_replace_tasks "pushplus_notifier\.sh" "$correct_entry"; then
+            echo "已更新 crontab。删除了所有旧的 pushplus_notifier.sh 条目，并添加了一个每分钟执行的条目。"
         else
             echo "更新 crontab 失败，原设置保持不变。"
         fi

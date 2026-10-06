@@ -108,11 +108,37 @@ cron_replace_tasks() {
     } > "$tmp_file" 2>/dev/null
 
     if [ ! -s "$tmp_file" ]; then
-        # 不能写空：全删且不补内容 = 清空客户所有任务。
-        # 这种情况应该由调用方显式处理，这里直接失败以免误伤。
+        # ⚠️ 这里要区分两种「空」，二者性质完全不同（CodeRabbit 指出，已实测确认）：
+        #
+        #   (a) **有意的删除**：原内容里确实有匹配行，且调用方没要求补任何行。
+        #       例如 stop_all_services 在「crontab 只有 TrafficCop 任务」的机器上
+        #       删除自己 —— 这时过滤后为空是**正确结果**，必须放行。
+        #       早前一版把它当成危险情况一律拒绝，导致 stop_all_services /
+        #       remove_cron_job / 禁用定时任务在这些机器上永远失败。
+        #
+        #   (b) **意外的清空**：读取失败拿到空内容，或原内容里压根没有匹配行，
+        #       却写了个空 —— 这才是旧写法 `| crontab -` 造成客户任务消失的真凶。
+        #       这种情况必须拒绝。
+        #
+        # 判据：原内容非空 **且** 确实匹配得上要删的模式 -> (a)，允许删空。
         if [ "${#add_lines[@]}" -eq 0 ]; then
-            _cron_log "cron: 新内容为空，已放弃写入（避免清空全部任务）"
             rm -f "$tmp_file" 2>/dev/null
+            if [ -n "$current" ] && printf '%s\n' "$current" | grep -qE -- "$remove_pattern"; then
+                # 有意删空：用 crontab -r（真 cron 的删除命令），并回读确认
+                if crontab -r 2>/dev/null && [ -z "$(_cron_read)" ]; then
+                    _cron_log "cron: 已删除本项目全部任务（crontab 无其他任务）"
+                    rm -f "$backup_log" 2>/dev/null
+                    return 0
+                fi
+                # 删空失败：回滚，绝不留下半成品
+                _cron_log "cron: 删除全部任务失败，正在回滚"
+                [ -s "$backup_log" ] && crontab "$backup_log" 2>/dev/null
+                rm -f "$backup_log" 2>/dev/null
+                return 1
+            fi
+            # (b) 没有匹配行却得到空内容 —— 说明读取异常，拒绝写入
+            _cron_log "cron: 新内容为空且无匹配行，已放弃写入（避免误清空）"
+            rm -f "$backup_log" 2>/dev/null
             return 1
         fi
     fi
