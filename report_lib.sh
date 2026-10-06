@@ -282,7 +282,7 @@ report_event() {
     cron_alive=$(_detect_cron_alive)
     local state_age
     state_age=$(_state_age)
-    local conversion_base="${CONVERSION_BASE:-1000}"
+    local conversion_base="${CONVERSION_BASE:-1024}"
     local vnstat_start
     vnstat_start=$(cat "${WORK_DIR:-/root/TrafficCop}/.vnstat_start" 2>/dev/null || echo "")
 

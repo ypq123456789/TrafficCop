@@ -23,17 +23,21 @@ fi
 # ============================================================
 # 流量换算进制（字节 -> GB）
 # ------------------------------------------------------------
-# 阿里云 CDT 的进制口径在不同文档/界面之间并不一致：
-#   - CDT《流量阶梯累计计费模式》：阶梯示例 10*1024*0.8，即 10TB=10240GB（1024 进制）
-#   - CDT 2.0《账单查询》：账单示例「目录价用量阶梯 [0,10240]」（1024 进制）
-#   - 费用中心《网络计费方式优化-CDT-公网》：「CDT的流量折算规则：1TB=1024GB」（1024 进制）
-#   - 但部分控制台展示位置与用户实测结果更接近 1000 进制
-# 既然文档口径存在矛盾，以「用户账单对得上」为最高优先级：
-#   - 默认 1000：脚本数字与账单/控制台直观一致，便于用户核对
-#   - 且风险更低：若真实是 1024 而按 1000 算，脚本偏大 7.4% -> 提前限速（保守，不额外扣费）
-#                 若真实是 1000 而按 1024 算，脚本偏小 7.4% -> 晚限速（可能超额扣费）
-# 如需改回 1024，修改配置文件中的 CONVERSION_BASE=1024 即可。
-CONVERSION_BASE=${CONVERSION_BASE:-1000}
+# 流量换算进制（字节 -> GB）：1GB 等于 1000^3 还是 1024^3 字节。
+#   - 默认 1024：这是**通用标准口径**（KiB/MiB/GiB 体系，也是绝大多数
+#     VPS 厂商控制台与 vnstat 自身的口径），适用于绝大多数用户。
+#   - 可选 1000：**仅阿里云 CDT 等少数场景**按 1000 计。若你的服务商账单
+#     按 1TB = 1000GB 折算，脚本数字会与账单差 7.4%，此时改成本项为 1000。
+#
+# 改成 1000 的方法（二选一）：
+#   ① 改配置文件：编辑 /root/TrafficCop/traffic_monitor_config.txt，
+#      把 CONVERSION_BASE=1024 改成 CONVERSION_BASE=1000，保存即可（无需重启脚本）。
+#   ② 重新运行 ./trafficcop.sh，在交互提问处选「2. 1000 进制」。
+#
+# ⚠️ 只影响「把字节数显示/比较成 GB」这一步，不改变限速判定逻辑本身。
+# ⚠️ 端口流量脚本会读取同一份配置，三处口径自动保持一致。
+# 非法值或留空一律回退到 1024。
+CONVERSION_BASE=${CONVERSION_BASE:-1024}
 
 # ============================================================
 # 日志上报（可选，默认关闭）
@@ -54,18 +58,19 @@ REPORT_HEARTBEAT_EVERY=${REPORT_HEARTBEAT_EVERY:-60}
 
 # 返回「字节 -> GB」的换算除数，供各处 bc 计算复用。
 # 用函数而非散落的字面量，避免多处不一致。
+# 注意：除 1000 是特例（阿里云 CDT 等），其余（含空值、非法值）一律 1024。
 get_byte_divisor() {
     case "$CONVERSION_BASE" in
-        1024) echo "1073741824" ;;   # 1024^3
-        *)    echo "1000000000" ;;   # 1000^3（默认）
+        1000) echo "1000000000" ;;   # 1000^3（阿里云 CDT 等按 1000 计的场景）
+        *)    echo "1073741824" ;;   # 1024^3（默认 / 通用口径）
     esac
 }
 
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.88"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.89"| tee -a "$LOG_FILE"
 
 # 供上报模块使用的版本号
-SCRIPT_VERSION="1.0.88"
+SCRIPT_VERSION="1.0.89"
 
 # 载入日志上报模块（可选功能，文件缺失不影响主流程）
 if [ -f "$WORK_DIR/report_lib.sh" ]; then
@@ -208,7 +213,7 @@ check_and_install_packages() {
 # 注意：read_config 和 check_existing_setup 是两条独立的 source 路径，
 # 两处都必须调用，漏掉任何一处都会让老用户拿不到默认值。
 apply_config_defaults() {
-    CONVERSION_BASE=${CONVERSION_BASE:-1000}
+    CONVERSION_BASE=${CONVERSION_BASE:-1024}
     PERIOD_START_DAY=${PERIOD_START_DAY:-1}
     LIMIT_SPEED=${LIMIT_SPEED:-20}
     # 上报相关：默认全部关闭，升级的用户不会被自动开启
@@ -266,7 +271,7 @@ PERIOD_START_DAY=${PERIOD_START_DAY:-1}
 LIMIT_SPEED=${LIMIT_SPEED:-20}
 MAIN_INTERFACE=$MAIN_INTERFACE
 LIMIT_MODE=$LIMIT_MODE
-CONVERSION_BASE=${CONVERSION_BASE:-1000}
+CONVERSION_BASE=${CONVERSION_BASE:-1024}
 ENABLE_REPORT=${ENABLE_REPORT:-no}
 REPORT_URL=${REPORT_URL:-}
 REPORT_TOKEN=${REPORT_TOKEN:-}
@@ -289,7 +294,7 @@ show_current_config() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') 限速: ${LIMIT_SPEED:-20} kbit/s"| tee -a "$LOG_FILE"
     echo "$(date '+%Y-%m-%d %H:%M:%S') 主要网络接口: $MAIN_INTERFACE"| tee -a "$LOG_FILE"
     echo "$(date '+%Y-%m-%d %H:%M:%S') 限制模式: $LIMIT_MODE"| tee -a "$LOG_FILE"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') 流量换算进制: ${CONVERSION_BASE:-1000} (1GB = ${CONVERSION_BASE:-1000}^3 字节)"| tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 流量换算进制: ${CONVERSION_BASE:-1024} (1GB = ${CONVERSION_BASE:-1024}^3 字节)"| tee -a "$LOG_FILE"
     if [ "${ENABLE_REPORT:-no}" = "yes" ]; then
         echo "$(date '+%Y-%m-%d %H:%M:%S') 日志上报: 已开启 -> ${REPORT_URL:-未配置}"| tee -a "$LOG_FILE"
     else
@@ -389,15 +394,17 @@ initial_config() {
     done
 
     # 流量换算进制选择
-    # 阿里云文档口径不一致（详见脚本顶部注释），此处让用户按自己账单的实际口径选。
+    # 绝大多数服务商按 1024（通用标准口径），故默认 1024；
+    # 1000 只适用于阿里云 CDT 等少数按 1TB=1000GB 折算的场景。
     while true; do
         echo "$(date '+%Y-%m-%d %H:%M:%S') 请选择流量换算进制（用于把 vnstat 的字节数换算成 GB）："| tee -a "$LOG_FILE"
-        echo "$(date '+%Y-%m-%d %H:%M:%S')   1. 1000 进制（1GB = 1,000,000,000 字节）—— 默认，与阿里云账单/控制台直观一致"| tee -a "$LOG_FILE"
-        echo "$(date '+%Y-%m-%d %H:%M:%S')   2. 1024 进制（1GB = 1,073,741,824 字节）—— 部分 CDT 计费文档采用"| tee -a "$LOG_FILE"
+        echo "$(date '+%Y-%m-%d %H:%M:%S')   1. 1024 进制（1GB = 1,073,741,824 字节）—— 默认，通用标准口径，绝大多数服务商适用"| tee -a "$LOG_FILE"
+        echo "$(date '+%Y-%m-%d %H:%M:%S')   2. 1000 进制（1GB = 1,000,000,000 字节）—— 仅阿里云 CDT 等按 1TB=1000GB 折算的场景"| tee -a "$LOG_FILE"
+        echo "$(date '+%Y-%m-%d %H:%M:%S')   提示：拿不准就选 1。若你的服务商账单按 1000 折算，再改选 2。"| tee -a "$LOG_FILE"
         read -p "请输入选择 (1-2，默认为1): " base_choice
         case $base_choice in
-            2) CONVERSION_BASE=1024; break ;;
-            1|"") CONVERSION_BASE=1000; break ;;
+            2) CONVERSION_BASE=1000; break ;;
+            1|"") CONVERSION_BASE=1024; break ;;
             *) echo "无效输入，请重新选择。" ;;
         esac
     done
@@ -626,7 +633,7 @@ get_traffic_usage() {
     fi
 
     if [ -n "$usage_bytes" ] && [ "$usage_bytes" != "null" ] && [ "$usage_bytes" != "0" ]; then
-        # 字节 -> GB。进制由 CONVERSION_BASE 决定（默认 1000，见文件顶部说明）。
+        # 字节 -> GB。进制由 CONVERSION_BASE 决定（默认 1024，见文件顶部说明）。
         local divisor=$(get_byte_divisor)
         local usage_gb=$(echo "scale=3; $usage_bytes/$divisor" | bc 2>/dev/null || echo "0.000")
         # 确保小数点前至少有一个0
@@ -663,9 +670,9 @@ write_state_snapshot() {
   "epoch": $epoch,
   "usage_gb": ${usage:-0},
   "limit_gb": ${limit:-0},
-  "conversion_base": ${CONVERSION_BASE:-1000},
+  "conversion_base": ${CONVERSION_BASE:-1024},
   "period_start": "$period_start",
-  "script_version": "${SCRIPT_VERSION:-1.0.88}",
+  "script_version": "${SCRIPT_VERSION:-1.0.89}",
   "hostname": "$(hostname 2>/dev/null || echo unknown)"
 }
 EOF
@@ -693,7 +700,7 @@ check_and_limit_traffic() {
     
     # --run（cron）模式不会走 show_current_config，此处显式记录当前进制，
     # 便于事后排查「脚本数字与账单对不上」这类问题。
-    echo "$(date '+%Y-%m-%d %H:%M:%S') 流量换算进制: ${CONVERSION_BASE:-1000} (1GB = ${CONVERSION_BASE:-1000}^3 字节)" | tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 流量换算进制: ${CONVERSION_BASE:-1024} (1GB = ${CONVERSION_BASE:-1024}^3 字节)" | tee -a "$LOG_FILE"
     echo "$(date '+%Y-%m-%d %H:%M:%S') 当前使用流量: $current_usage GB，限制流量: $limit_threshold GB" | tee -a "$LOG_FILE"
 
     # 写入机器可读的状态快照（带时间戳）。
