@@ -16,6 +16,27 @@ fi
 
 WORK_DIR="/root/TrafficCop"
 PORTS_CONFIG_FILE="$WORK_DIR/ports_traffic_config.json"
+MACHINE_CONFIG_FILE="$WORK_DIR/traffic_monitor_config.txt"
+
+# 字节 -> GB 的换算进制：与 trafficcop.sh / port_traffic_limit.sh 共用同一份配置，
+# 保证同一台机器上三处显示的数字口径一致。
+# 默认 1000：与阿里云账单/控制台直观一致，且若真实为 1024 则偏大 7.4%（提前限速，更保守）。
+CONVERSION_BASE=1000
+if [ -f "$MACHINE_CONFIG_FILE" ]; then
+    # 只取需要的字段，避免主配置中的其它变量污染本脚本命名空间
+    _cb=$(grep -E '^CONVERSION_BASE=' "$MACHINE_CONFIG_FILE" 2>/dev/null | tail -n1 | cut -d= -f2)
+    case "$_cb" in
+        1024|1000) CONVERSION_BASE="$_cb" ;;
+    esac
+    unset _cb
+fi
+
+get_byte_divisor() {
+    case "$CONVERSION_BASE" in
+        1024) echo "1073741824" ;;
+        *)    echo "1000000000" ;;
+    esac
+}
 
 # 颜色定义
 RED='\033[0;31m'
@@ -86,7 +107,8 @@ get_port_traffic_usage() {
     if [ -n "$usage_bytes" ] && [ "$usage_bytes" -gt 0 ]; then
         # 使用 awk 确保显示前导零（例如 0.02 而不是 .02）
         # 对 bc 的调用加上 stderr 重定向并在出错时返回 0，避免出现 "(standard_in) 1: syntax error"
-        local gb_value=$(echo "scale=6; $usage_bytes/1024/1024/1024" | bc 2>/dev/null || echo "0")
+        # 进制由 CONVERSION_BASE 决定（默认 1000，与 trafficcop.sh 一致）
+        local gb_value=$(echo "scale=6; $usage_bytes/$(get_byte_divisor)" | bc 2>/dev/null || echo "0")
         printf "%.3f" $(echo "$gb_value" | awk '{printf "%.6f", $1}')
     else
         echo "0.000"
