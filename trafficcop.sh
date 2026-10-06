@@ -23,29 +23,63 @@ fi
 # ============================================================
 # 流量换算进制（字节 -> GB）
 # ------------------------------------------------------------
-# 阿里云 CDT 的进制口径在不同文档/界面之间并不一致：
-#   - CDT《流量阶梯累计计费模式》：阶梯示例 10*1024*0.8，即 10TB=10240GB（1024 进制）
-#   - CDT 2.0《账单查询》：账单示例「目录价用量阶梯 [0,10240]」（1024 进制）
-#   - 费用中心《网络计费方式优化-CDT-公网》：「CDT的流量折算规则：1TB=1024GB」（1024 进制）
-#   - 但部分控制台展示位置与用户实测结果更接近 1000 进制
-# 既然文档口径存在矛盾，以「用户账单对得上」为最高优先级：
-#   - 默认 1000：脚本数字与账单/控制台直观一致，便于用户核对
-#   - 且风险更低：若真实是 1024 而按 1000 算，脚本偏大 7.4% -> 提前限速（保守，不额外扣费）
-#                 若真实是 1000 而按 1024 算，脚本偏小 7.4% -> 晚限速（可能超额扣费）
-# 如需改回 1024，修改配置文件中的 CONVERSION_BASE=1024 即可。
-CONVERSION_BASE=${CONVERSION_BASE:-1000}
+# 流量换算进制（字节 -> GB）：1GB 等于 1000^3 还是 1024^3 字节。
+#   - 默认 1024：这是**通用标准口径**（KiB/MiB/GiB 体系，也是绝大多数
+#     VPS 厂商控制台与 vnstat 自身的口径），适用于绝大多数用户。
+#   - 可选 1000：**仅少数按十进制折算的服务商**需要。是否该改，唯一可靠的
+#     办法是拿脚本数字和自己的账单/控制台对一次：若脚本一直偏小约 7.4%，
+#     说明对方按 1TB = 1000GB 折算，此时改成本项为 1000。
+#     ⚠️ 不要凭服务商名字猜 —— 同家不同产品线口径可能不同，
+#        官方文档与实际计费也偶有不一致，以实际账单为准。
+#
+# 改成 1000 的方法（二选一）：
+#   ① 改配置文件：编辑 /root/TrafficCop/traffic_monitor_config.txt，
+#      把 CONVERSION_BASE=1024 改成 CONVERSION_BASE=1000（若该行不存在，
+#      直接新加一行 CONVERSION_BASE=1000），保存即可（无需重启脚本）。
+#   ② 重新运行 ./trafficcop.sh，在交互提问处选「2. 1000 进制」。
+#
+# ⚠️ 只影响「把字节数显示/比较成 GB」这一步，不改变限速判定逻辑本身。
+# ⚠️ 端口流量脚本会读取同一份配置，三处口径自动保持一致。
+# 非法值或留空一律回退到 1024。
+CONVERSION_BASE=${CONVERSION_BASE:-1024}
+
+# ============================================================
+# 日志上报（可选，默认关闭）
+# ------------------------------------------------------------
+# 用于「客户上报 → 我们直接定位原因」。上报内容是结构化 JSON 字段
+# （机器名、用量、脚本版本、cron 是否存活等），存储走 Cloudflare R2。
+#
+# ⚠️ 默认关闭：上报含机器名与流量数字，属客户数据，必须由客户显式开启。
+#    开启方式：在配置文件里设置 ENABLE_REPORT=yes 并填好 REPORT_URL / REPORT_TOKEN。
+# ============================================================
+ENABLE_REPORT=${ENABLE_REPORT:-no}
+REPORT_URL=${REPORT_URL:-}
+REPORT_TOKEN=${REPORT_TOKEN:-}
+REPORT_MACHINE_ID=${REPORT_MACHINE_ID:-}
+# 心跳上报降频：默认每 60 次流量检查才上报一次（约 1 小时一次），
+# 避免每分钟一条把 R2 写操作打满。
+REPORT_HEARTBEAT_EVERY=${REPORT_HEARTBEAT_EVERY:-60}
 
 # 返回「字节 -> GB」的换算除数，供各处 bc 计算复用。
 # 用函数而非散落的字面量，避免多处不一致。
+# 注意：除 1000 是特例（少数按十进制折算的服务商），其余（含空值、非法值）一律 1024。
 get_byte_divisor() {
     case "$CONVERSION_BASE" in
-        1024) echo "1073741824" ;;   # 1024^3
-        *)    echo "1000000000" ;;   # 1000^3（默认）
+        1000) echo "1000000000" ;;   # 1000^3（少数按十进制折算的服务商）
+        *)    echo "1073741824" ;;   # 1024^3（默认 / 通用口径）
     esac
 }
 
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.87"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.89"| tee -a "$LOG_FILE"
+
+# 供上报模块使用的版本号
+SCRIPT_VERSION="1.0.89"
+
+# 载入日志上报模块（可选功能，文件缺失不影响主流程）
+if [ -f "$WORK_DIR/report_lib.sh" ]; then
+    source "$WORK_DIR/report_lib.sh"
+fi
 
 
 # 在脚本开始时杀死所有其他 traffic_monitor.sh 进程
@@ -179,19 +213,37 @@ check_and_install_packages() {
 }
 
 
+# 补齐配置文件里可能缺失的字段（老版本升级场景）
+# 注意：read_config 和 check_existing_setup 是两条独立的 source 路径，
+# 两处都必须调用，漏掉任何一处都会让老用户拿不到默认值。
+apply_config_defaults() {
+    CONVERSION_BASE=${CONVERSION_BASE:-1024}
+    PERIOD_START_DAY=${PERIOD_START_DAY:-1}
+    LIMIT_SPEED=${LIMIT_SPEED:-20}
+    # 上报相关：默认全部关闭，升级的用户不会被自动开启
+    ENABLE_REPORT=${ENABLE_REPORT:-no}
+    REPORT_URL=${REPORT_URL:-}
+    REPORT_TOKEN=${REPORT_TOKEN:-}
+    REPORT_MACHINE_ID=${REPORT_MACHINE_ID:-}
+    REPORT_HEARTBEAT_EVERY=${REPORT_HEARTBEAT_EVERY:-60}
+}
+
 # 检查配置和定时任务
 check_existing_setup() {
      if [ -s "$CONFIG_FILE" ]; then  
         source "$CONFIG_FILE"
         # 与 read_config 保持一致：补老配置文件缺失字段的默认值
-        CONVERSION_BASE=${CONVERSION_BASE:-1000}
-        PERIOD_START_DAY=${PERIOD_START_DAY:-1}
-        LIMIT_SPEED=${LIMIT_SPEED:-20}
+        apply_config_defaults
         echo "$(date '+%Y-%m-%d %H:%M:%S') 配置已存在"| tee -a "$LOG_FILE"
         if crontab -l 2>/dev/null | grep -q "$SCRIPT_PATH --run"; then
             echo "$(date '+%Y-%m-%d %H:%M:%S') 每分钟一次的定时任务已在执行。"| tee -a "$LOG_FILE"
         else
             echo "$(date '+%Y-%m-%d %H:%M:%S') 警告：定时任务未找到，可能需要重新设置。"| tee -a "$LOG_FILE"
+            # 这是「客户流量倒退」的根因之一：cron 丢了但没人知道。
+            # 开启上报时顺手报一条，便于我们侧主动发现。
+            if [ "${ENABLE_REPORT:-no}" = "yes" ] && declare -f report_event >/dev/null 2>&1; then
+                report_event "error" "" "" "" "定时任务未找到，cron 可能已丢失" &
+            fi
         fi
         return 0
     else
@@ -203,12 +255,9 @@ check_existing_setup() {
 read_config() {
     if [ -f "$CONFIG_FILE" ]; then
         source "$CONFIG_FILE"
-        # 老版本配置文件没有 CONVERSION_BASE 字段，source 后仍为空，
+        # 老版本配置文件没有新增字段，source 后仍为空，
         # 此处补默认值，保证升级脚本后老用户不需要重新配置。
-        CONVERSION_BASE=${CONVERSION_BASE:-1000}
-        # 同理兼容其它后加的字段
-        PERIOD_START_DAY=${PERIOD_START_DAY:-1}
-        LIMIT_SPEED=${LIMIT_SPEED:-20}
+        apply_config_defaults
         return 0
     else
         return 1
@@ -217,6 +266,16 @@ read_config() {
 
 # 写入配置
 write_config() {
+    # ⚠️ 安全：REPORT_URL / REPORT_TOKEN / REPORT_MACHINE_ID 来自用户输入或 hostname，
+    # 之后会被 `source "$CONFIG_FILE"` 以 root 身份重新解析。
+    # 若直接裸写，值里出现空格、`;`、`&`、`$(...)`、反引号就会出错甚至执行任意命令
+    # （实测：值中含 $(touch /tmp/x) 时，source 阶段该命令真的被执行）。
+    # 用 printf '%q' 做 shell 转义后再落盘，保证「写进去什么、source 回来就是什么」。
+    local _q_url _q_token _q_machine
+    _q_url=$(printf '%q' "${REPORT_URL:-}")
+    _q_token=$(printf '%q' "${REPORT_TOKEN:-}")
+    _q_machine=$(printf '%q' "${REPORT_MACHINE_ID:-}")
+
     cat > "$CONFIG_FILE" << EOF
 TRAFFIC_MODE=$TRAFFIC_MODE
 TRAFFIC_PERIOD=$TRAFFIC_PERIOD
@@ -226,8 +285,14 @@ PERIOD_START_DAY=${PERIOD_START_DAY:-1}
 LIMIT_SPEED=${LIMIT_SPEED:-20}
 MAIN_INTERFACE=$MAIN_INTERFACE
 LIMIT_MODE=$LIMIT_MODE
-CONVERSION_BASE=${CONVERSION_BASE:-1000}
+CONVERSION_BASE=${CONVERSION_BASE:-1024}
+ENABLE_REPORT=${ENABLE_REPORT:-no}
+REPORT_URL=$_q_url
+REPORT_TOKEN=$_q_token
+REPORT_MACHINE_ID=$_q_machine
+REPORT_HEARTBEAT_EVERY=${REPORT_HEARTBEAT_EVERY:-60}
 EOF
+    chmod 600 "$CONFIG_FILE" 2>/dev/null
     echo "$(date '+%Y-%m-%d %H:%M:%S') 配置已更新"| tee -a "$LOG_FILE"
 }
 
@@ -243,7 +308,12 @@ show_current_config() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') 限速: ${LIMIT_SPEED:-20} kbit/s"| tee -a "$LOG_FILE"
     echo "$(date '+%Y-%m-%d %H:%M:%S') 主要网络接口: $MAIN_INTERFACE"| tee -a "$LOG_FILE"
     echo "$(date '+%Y-%m-%d %H:%M:%S') 限制模式: $LIMIT_MODE"| tee -a "$LOG_FILE"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') 流量换算进制: ${CONVERSION_BASE:-1000} (1GB = ${CONVERSION_BASE:-1000}^3 字节)"| tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 流量换算进制: ${CONVERSION_BASE:-1024} (1GB = ${CONVERSION_BASE:-1024}^3 字节)"| tee -a "$LOG_FILE"
+    if [ "${ENABLE_REPORT:-no}" = "yes" ]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 日志上报: 已开启 -> ${REPORT_URL:-未配置}"| tee -a "$LOG_FILE"
+    else
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 日志上报: 已关闭（默认，可在配置文件中开启）"| tee -a "$LOG_FILE"
+    fi
 }
 
 # 检测主要网络接口
@@ -338,15 +408,42 @@ initial_config() {
     done
 
     # 流量换算进制选择
-    # 阿里云文档口径不一致（详见脚本顶部注释），此处让用户按自己账单的实际口径选。
+    # 绝大多数服务商按 1024（通用标准口径），故默认 1024；
+    # 1000 只适用于少数按十进制折算的服务商，需用户拿自己账单实测确认。
     while true; do
         echo "$(date '+%Y-%m-%d %H:%M:%S') 请选择流量换算进制（用于把 vnstat 的字节数换算成 GB）："| tee -a "$LOG_FILE"
-        echo "$(date '+%Y-%m-%d %H:%M:%S')   1. 1000 进制（1GB = 1,000,000,000 字节）—— 默认，与阿里云账单/控制台直观一致"| tee -a "$LOG_FILE"
-        echo "$(date '+%Y-%m-%d %H:%M:%S')   2. 1024 进制（1GB = 1,073,741,824 字节）—— 部分 CDT 计费文档采用"| tee -a "$LOG_FILE"
+        echo "$(date '+%Y-%m-%d %H:%M:%S')   1. 1024 进制（1GB = 1,073,741,824 字节）—— 默认，通用标准口径，绝大多数服务商适用"| tee -a "$LOG_FILE"
+        echo "$(date '+%Y-%m-%d %H:%M:%S')   2. 1000 进制（1GB = 1,000,000,000 字节）—— 仅少数按十进制折算的服务商"| tee -a "$LOG_FILE"
+        echo "$(date '+%Y-%m-%d %H:%M:%S')   提示：拿不准就选 1。判断方法：脚本数字一直比你的账单小约 7% 时，才改选 2。"| tee -a "$LOG_FILE"
         read -p "请输入选择 (1-2，默认为1): " base_choice
         case $base_choice in
-            2) CONVERSION_BASE=1024; break ;;
-            1|"") CONVERSION_BASE=1000; break ;;
+            2) CONVERSION_BASE=1000; break ;;
+            1|"") CONVERSION_BASE=1024; break ;;
+            *) echo "无效输入，请重新选择。" ;;
+        esac
+    done
+
+    # 日志上报（可选，默认关闭）
+    # 涉及客户数据（机器名、流量数字），必须显式同意才开启。
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ------------------------------------------------------"| tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 是否开启「日志上报」？"| tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 开启后，脚本会上报结构化诊断信息（机器名、流量数字、脚本版本、"| tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 定时任务是否存活等），用于出现问题时我们快速定位原因。"| tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 上报内容不含任何业务数据，且随时可关闭。"| tee -a "$LOG_FILE"
+    while true; do
+        read -p "是否开启日志上报？(y/n，默认为n): " report_choice
+        case $report_choice in
+            y|Y)
+                ENABLE_REPORT="yes"
+                read -p "请输入上报地址 (REPORT_URL): " REPORT_URL
+                read -p "请输入上报令牌 (REPORT_TOKEN): " REPORT_TOKEN
+                REPORT_MACHINE_ID=${REPORT_MACHINE_ID:-$(hostname 2>/dev/null || echo unknown)}
+                echo "已开启日志上报，机器标识: $REPORT_MACHINE_ID"
+                break ;;
+            n|N|"")
+                ENABLE_REPORT="no"
+                echo "日志上报保持关闭（推荐的安全默认值）"
+                break ;;
             *) echo "无效输入，请重新选择。" ;;
         esac
     done
@@ -550,7 +647,7 @@ get_traffic_usage() {
     fi
 
     if [ -n "$usage_bytes" ] && [ "$usage_bytes" != "null" ] && [ "$usage_bytes" != "0" ]; then
-        # 字节 -> GB。进制由 CONVERSION_BASE 决定（默认 1000，见文件顶部说明）。
+        # 字节 -> GB。进制由 CONVERSION_BASE 决定（默认 1024，见文件顶部说明）。
         local divisor=$(get_byte_divisor)
         local usage_gb=$(echo "scale=3; $usage_bytes/$divisor" | bc 2>/dev/null || echo "0.000")
         # 确保小数点前至少有一个0
@@ -587,9 +684,9 @@ write_state_snapshot() {
   "epoch": $epoch,
   "usage_gb": ${usage:-0},
   "limit_gb": ${limit:-0},
-  "conversion_base": ${CONVERSION_BASE:-1000},
+  "conversion_base": ${CONVERSION_BASE:-1024},
   "period_start": "$period_start",
-  "script_version": "1.0.87",
+  "script_version": "${SCRIPT_VERSION:-1.0.89}",
   "hostname": "$(hostname 2>/dev/null || echo unknown)"
 }
 EOF
@@ -617,13 +714,28 @@ check_and_limit_traffic() {
     
     # --run（cron）模式不会走 show_current_config，此处显式记录当前进制，
     # 便于事后排查「脚本数字与账单对不上」这类问题。
-    echo "$(date '+%Y-%m-%d %H:%M:%S') 流量换算进制: ${CONVERSION_BASE:-1000} (1GB = ${CONVERSION_BASE:-1000}^3 字节)" | tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 流量换算进制: ${CONVERSION_BASE:-1024} (1GB = ${CONVERSION_BASE:-1024}^3 字节)" | tee -a "$LOG_FILE"
     echo "$(date '+%Y-%m-%d %H:%M:%S') 当前使用流量: $current_usage GB，限制流量: $limit_threshold GB" | tee -a "$LOG_FILE"
 
     # 写入机器可读的状态快照（带时间戳）。
     # 下游（tg_notifier 每日报告等）必须读这个文件，而不是去 guess 日志里的最后一行——
     # 日志行没有时间戳校验，cron 一旦中断就会读到几天前的陈旧值，导致「流量倒退」假象。
     write_state_snapshot "$current_usage" "$limit_threshold"
+
+    # 心跳上报（可选，默认关闭）。降频：每 REPORT_HEARTBEAT_EVERY 次检查上报一次。
+    # 用计数器文件而非内存变量，因为脚本是「一次运行一次检查」的模型。
+    if [ "${ENABLE_REPORT:-no}" = "yes" ] && declare -f report_event >/dev/null 2>&1; then
+        local hb_file="$WORK_DIR/.report_hb_count"
+        local hb_count=0
+        [ -f "$hb_file" ] && hb_count=$(cat "$hb_file" 2>/dev/null || echo 0)
+        [[ "$hb_count" =~ ^[0-9]+$ ]] || hb_count=0
+        hb_count=$((hb_count + 1))
+        if [ "$hb_count" -ge "${REPORT_HEARTBEAT_EVERY:-60}" ]; then
+            hb_count=0
+            report_event "heartbeat" "$current_usage" "$limit_threshold" "$(get_period_start_date 2>/dev/null)" "" &
+        fi
+        echo "$hb_count" > "$hb_file" 2>/dev/null
+    fi
     
     if (( $(echo "$current_usage > $limit_threshold" | bc -l 2>/dev/null || echo "0") )); then
         echo "$(date '+%Y-%m-%d %H:%M:%S') 流量超出限制" | tee -a "$LOG_FILE"

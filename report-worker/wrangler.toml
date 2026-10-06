@@ -1,0 +1,18 @@
+name = "trafficcop-logs"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+
+# R2 存储桶绑定
+# 注意：桶名需与建桶命令一致（见 setup-r2.sh）
+[[r2_buckets]]
+binding = "LOGS"
+bucket_name = "trafficcop-logs"
+
+# 可选：自定义域名（需先有 zone）
+# routes = [
+#   { pattern = "logs.example.com/report", custom_domain = true }
+# ]
+
+# 可观测性（便于排查 Worker 自身问题）
+[observability]
+enabled = true
