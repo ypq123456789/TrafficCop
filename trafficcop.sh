@@ -45,7 +45,7 @@ get_byte_divisor() {
 }
 
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.86"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.87"| tee -a "$LOG_FILE"
 
 
 # 在脚本开始时杀死所有其他 traffic_monitor.sh 进程
@@ -561,6 +561,55 @@ get_traffic_usage() {
 }
 
 
+# ============================================================
+# 状态快照：供下游（tg_notifier / serverchan / pushplus）读取
+# ============================================================
+# 背景：原先每日报告用 `tac 日志 | grep -m 1` 抓「当前使用流量…限制流量」，
+# 该行没有时间戳校验。一旦 cron 中断（客户机上真实发生过），日志停止更新，
+# 报告就会读到几天前的旧值，表现为「流量倒退」。
+# 现在改为写一份带时间戳的 JSON 快照，下游按新鲜度判断是否可信。
+STATE_FILE="$WORK_DIR/traffic_state.json"
+
+write_state_snapshot() {
+    local usage="$1"
+    local limit="$2"
+    local ts
+    ts=$(date '+%Y-%m-%d %H:%M:%S')
+    local epoch
+    epoch=$(date +%s)
+    local period_start
+    period_start=$(get_period_start_date 2>/dev/null || echo "")
+
+    # 用 cat 重定向整体覆盖写入，避免半行损坏
+    cat > "$STATE_FILE" <<EOF
+{
+  "timestamp": "$ts",
+  "epoch": $epoch,
+  "usage_gb": ${usage:-0},
+  "limit_gb": ${limit:-0},
+  "conversion_base": ${CONVERSION_BASE:-1000},
+  "period_start": "$period_start",
+  "script_version": "1.0.87",
+  "hostname": "$(hostname 2>/dev/null || echo unknown)"
+}
+EOF
+    chmod 644 "$STATE_FILE" 2>/dev/null
+}
+
+# 读取状态快照的新鲜度（秒）。读不到或解析失败则回显极大值，视为不可信。
+# 用法: state_age_seconds [文件路径]
+state_age_seconds() {
+    local f="${1:-${STATE_FILE:-$WORK_DIR/traffic_state.json}}"
+    [ -f "$f" ] || { echo "999999999"; return; }
+    local epoch
+    epoch=$(grep -o '"epoch"[[:space:]]*:[[:space:]]*[0-9]*' "$f" 2>/dev/null | grep -o '[0-9]*$')
+    [ -n "$epoch" ] || { echo "999999999"; return; }
+    local now
+    now=$(date +%s)
+    echo $((now - epoch))
+}
+
+
 # 修改 check_and_limit_traffic 函数
 check_and_limit_traffic() {
     local current_usage=$(get_traffic_usage)
@@ -570,6 +619,11 @@ check_and_limit_traffic() {
     # 便于事后排查「脚本数字与账单对不上」这类问题。
     echo "$(date '+%Y-%m-%d %H:%M:%S') 流量换算进制: ${CONVERSION_BASE:-1000} (1GB = ${CONVERSION_BASE:-1000}^3 字节)" | tee -a "$LOG_FILE"
     echo "$(date '+%Y-%m-%d %H:%M:%S') 当前使用流量: $current_usage GB，限制流量: $limit_threshold GB" | tee -a "$LOG_FILE"
+
+    # 写入机器可读的状态快照（带时间戳）。
+    # 下游（tg_notifier 每日报告等）必须读这个文件，而不是去 guess 日志里的最后一行——
+    # 日志行没有时间戳校验，cron 一旦中断就会读到几天前的陈旧值，导致「流量倒退」假象。
+    write_state_snapshot "$current_usage" "$limit_threshold"
     
     if (( $(echo "$current_usage > $limit_threshold" | bc -l 2>/dev/null || echo "0") )); then
         echo "$(date '+%Y-%m-%d %H:%M:%S') 流量超出限制" | tee -a "$LOG_FILE"

@@ -543,25 +543,111 @@ daily_report() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') : BOT_TOKEN=${BOT_TOKEN:0:5}... CHAT_ID=$CHAT_ID"| tee -a "$CRON_LOG"
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 日志文件路径: $LOG_FILE"| tee -a "$CRON_LOG"
 
-    # 反向读取日志文件，查找第一个同时包含"当前使用流量"和"限制流量"的行
-    local usage_line=$(tac "$LOG_FILE" | grep -m 1 -E "当前使用流量:.*限制流量:")
+    # ---------------------------------------------------------------
+    # 取数：优先读带时间戳的状态快照，其次回退到日志（并做新鲜度校验）
+    #
+    # 历史缺陷：原先直接 `tac 日志 | grep -m 1` 抓最后一条含「当前使用流量…限制流量」
+    # 的行。该行没有时间戳校验，cron 中断后日志停止更新，报告便读到几天前的陈旧值，
+    # 客户会看到「流量倒退」的假象（真实客户机上已发生）。
+    # 现在优先读 trafficcop.sh 写出的 traffic_state.json，并按新鲜度判断可信度。
+    # ---------------------------------------------------------------
+    local usage_line=""
+    local current_usage=""
+    local limit=""
+    local data_source="日志"
+    local is_stale="false"
+    local stale_hint=""
 
-    if [[ -z "$usage_line" ]]; then
-        echo "$(date '+%Y-%m-%d %H:%M:%S') : 无法在日志中找到同时包含当前使用流量和限制流量的行"| tee -a "$CRON_LOG"
-        return 1
+    # 状态快照路径（与 trafficcop.sh 的 WORK_DIR 一致）
+    local state_file="$WORK_DIR/traffic_state.json"
+    # 允许通过环境变量调整新鲜度阈值（秒），默认 3 小时
+    local stale_threshold="${STATE_STALE_THRESHOLD:-10800}"
+
+    if [ -f "$state_file" ]; then
+        local st_epoch st_now st_age
+        st_epoch=$(grep -o '"epoch"[[:space:]]*:[[:space:]]*[0-9]*' "$state_file" 2>/dev/null | grep -o '[0-9]*$')
+        if [ -n "$st_epoch" ]; then
+            st_now=$(date +%s)
+            st_age=$((st_now - st_epoch))
+            local st_usage st_limit
+            st_usage=$(grep -o '"usage_gb"[[:space:]]*:[[:space:]]*[0-9.]*' "$state_file" 2>/dev/null | grep -o '[0-9.]*$')
+            st_limit=$(grep -o '"limit_gb"[[:space:]]*:[[:space:]]*[0-9.]*' "$state_file" 2>/dev/null | grep -o '[0-9.]*$')
+
+            if [ -n "$st_usage" ] && [ -n "$st_limit" ]; then
+                if [ "$st_age" -le "$stale_threshold" ]; then
+                    current_usage="${st_usage} GB"
+                    limit="${st_limit} GB"
+                    data_source="状态快照"
+                    echo "$(date '+%Y-%m-%d %H:%M:%S') : 使用状态快照，数据年龄 ${st_age}s（阈值 ${stale_threshold}s）"| tee -a "$CRON_LOG"
+                else
+                    # 快照存在但已过期 → 说明主脚本长时间没跑，cron 很可能已失效
+                    is_stale="true"
+                    local age_hours=$((st_age / 3600))
+                    local age_days=$((st_age / 86400))
+                    stale_hint="数据已 ${age_days} 天 ${age_hours} 小时未更新"
+                    current_usage="${st_usage} GB"
+                    limit="${st_limit} GB"
+                    data_source="状态快照(过期)"
+                    echo "$(date '+%Y-%m-%d %H:%M:%S') : 警告：状态快照已过期 ${st_age}s，主脚本可能未在运行"| tee -a "$CRON_LOG"
+                fi
+            else
+                echo "$(date '+%Y-%m-%d %H:%M:%S') : 状态快照存在但字段不完整，回退到日志解析"| tee -a "$CRON_LOG"
+            fi
+        else
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : 状态快照无法解析 epoch，回退到日志解析"| tee -a "$CRON_LOG"
+        fi
+    else
+        echo "$(date '+%Y-%m-%d %H:%M:%S') : 未找到状态快照（老版本安装），回退到日志解析"| tee -a "$CRON_LOG"
     fi
 
-    local current_usage=$(echo "$usage_line" | grep -oP '当前使用流量:\s*\K[0-9.]+ [GBMKgbmk]+')
-    local limit=$(echo "$usage_line" | grep -oP '限制流量:\s*\K[0-9.]+ [GBMKgbmk]+')
+    # 回退路径：从日志解析（老安装兼容）。同时校验该行的时间戳新鲜度。
+    if [ -z "$current_usage" ] || [ -z "$limit" ]; then
+        # 反向读取日志文件，查找第一个同时包含"当前使用流量"和"限制流量"的行
+        usage_line=$(tac "$LOG_FILE" 2>/dev/null | grep -m 1 -E "当前使用流量:.*限制流量:")
 
-    if [[ -z "$current_usage" || -z "$limit" ]]; then
-        echo "$(date '+%Y-%m-%d %H:%M:%S') : 无法从行中提取流量信息"| tee -a "$CRON_LOG"
-        echo "$(date '+%Y-%m-%d %H:%M:%S') : 问题行: $usage_line"| tee -a "$CRON_LOG"
-        return 1
+        if [[ -z "$usage_line" ]]; then
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : 无法在日志中找到同时包含当前使用流量和限制流量的行"| tee -a "$CRON_LOG"
+            return 1
+        fi
+
+        current_usage=$(echo "$usage_line" | grep -oP '当前使用流量:\s*\K[0-9.]+ [GBMKgbmk]+')
+        limit=$(echo "$usage_line" | grep -oP '限制流量:\s*\K[0-9.]+ [GBMKgbmk]+')
+
+        if [[ -z "$current_usage" || -z "$limit" ]]; then
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : 无法从行中提取流量信息"| tee -a "$CRON_LOG"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : 问题行: $usage_line"| tee -a "$CRON_LOG"
+            return 1
+        fi
+
+        # 校验日志行自带的时间戳新鲜度（行首形如 2026-10-06 10:30:00）
+        local line_ts line_epoch
+        line_ts=$(echo "$usage_line" | grep -oE '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}')
+        if [ -n "$line_ts" ]; then
+            line_epoch=$(date -d "$line_ts" +%s 2>/dev/null || echo "")
+            if [ -n "$line_epoch" ]; then
+                local log_age=$(($(date +%s) - line_epoch))
+                if [ "$log_age" -gt "$stale_threshold" ]; then
+                    is_stale="true"
+                    stale_hint="日志数据已 $((log_age / 86400)) 天 $(((log_age % 86400) / 3600)) 小时未更新"
+                    echo "$(date '+%Y-%m-%d %H:%M:%S') : 警告：日志数据已过期 ${log_age}s"| tee -a "$CRON_LOG"
+                fi
+            fi
+        else
+            # 无时间戳的老格式日志行，无法判断新鲜度，保守标记
+            is_stale="unknown"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : 日志行无时间戳，无法校验新鲜度"| tee -a "$CRON_LOG"
+        fi
+        data_source="日志"
     fi
 
     # 构建基础消息
-    local message="📊 [${MACHINE_NAME}]每日流量报告%0A%0A🖥️ 机器总流量：%0A当前使用：$current_usage%0A流量限制：$limit"
+    local message="📊 [${MACHINE_NAME}]每日流量报告%0A%0A"
+    if [ "$is_stale" = "true" ]; then
+        message="${message}⚠️ 注意：${stale_hint}%0A请检查定时任务是否正常运行%0A%0A"
+    elif [ "$is_stale" = "unknown" ]; then
+        message="${message}⚠️ 注意：无法校验数据新鲜度%0A%0A"
+    fi
+    message="${message}🖥️ 本周期流量（数据来源：${data_source}）：%0A当前使用：$current_usage%0A流量限制：$limit"
     
     # 检查是否有端口流量配置
     local ports_config_file="$WORK_DIR/ports_traffic_config.json"
