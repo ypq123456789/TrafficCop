@@ -539,9 +539,14 @@ setup_cron() {
     local correct_entry="* * * * * $SCRIPT_PATH -cron"
     local current_crontab=$(crontab -l 2>/dev/null)
     local tg_notifier_entries=$(echo "$current_crontab" | grep "tg_notifier\.sh")
-    local correct_entries_count=$(echo "$tg_notifier_entries" | grep -F "$correct_entry" | wc -l)
+    local correct_entries_count=$(echo "$tg_notifier_entries" | grep -F -c "$correct_entry")
+    local total_entries_count=$(echo "$tg_notifier_entries" | grep -c .)
 
-    if [ "$correct_entries_count" -eq 1 ]; then
+    # ⚠️ 必须同时校验【总数】，不能只看【正确条目数】。
+    #    若 crontab 里同时有 1 条正确任务和 1 条旧任务（如换过路径的
+    #    /root/tg_notifier.sh），正确条目数仍是 1 —— 只看它会跳过替换，
+    #    旧任务继续执行，导致**每分钟重复通知**。（CodeRabbit 指出）
+    if [ "$correct_entries_count" -eq 1 ] && [ "$total_entries_count" -eq 1 ]; then
         echo "正确的 crontab 项已存在且只有一个，无需修改。"
     else
         # ⚠️ 旧写法是先 `grep -v` 拼字符串、再 `echo ... | crontab -` 写回。

@@ -84,13 +84,24 @@ cron_replace_tasks() {
     local backup_file="$wd/.crontab.bak.$$"
     local log_file="${LOG_FILE:-/dev/null}"
     local backup_log="$wd/.crontab.prev.$$"
-    local current new_content
+    local current
 
     [ -d "$wd" ] || mkdir -p "$wd" 2>/dev/null
 
-    # 备份原始内容（回滚依据，也留一份给人看）
+    # 读当前 crontab。空 crontab 时 `crontab -l` 退出码是 1，属正常。
+    local current
     current=$(_cron_read)
-    printf '%s\n' "$current" > "$backup_log" 2>/dev/null
+
+    # 备份原始内容（回滚依据，也留一份给人看）
+    # ⚠️ 必须先确认备份写成功才能继续。磁盘满 / 只读挂载 / 权限异常时
+    #    备份会静默失败（2>/dev/null 吞掉了错误），此时若还往下走，
+    #    一旦后面 `crontab -r` 删空客户 crontab 就**没有任何东西可回滚**。
+    #    （CodeRabbit 指出，已按此加固）
+    if ! printf '%s\n' "$current" > "$backup_log" 2>/dev/null; then
+        _cron_log "cron: 备份写入失败（磁盘满或目录不可写），已放弃修改"
+        rm -f "$backup_log" 2>/dev/null
+        return 1
+    fi
 
     # ---- 内存里组装新内容，完全不碰 crontab ----
     # 用 grep -F 风格的字面匹配时手动转义；此处统一交给调用方给正则，
@@ -99,13 +110,36 @@ cron_replace_tasks() {
         | grep -vE -- "$remove_pattern" \
         | grep -v '^[[:space:]]*$')
 
-    {
-        [ -n "$new_content" ] && printf '%s\n' "$new_content"
-        local line
-        for line in "${add_lines[@]}"; do
-            [ -n "$line" ] && printf '%s\n' "$line"
-        done
-    } > "$tmp_file" 2>/dev/null
+    # 在**内存里**拼好完整内容，再一次性落盘。
+    # 早前一版用 `{ ...; } > "$tmp_file"` 直接重定向：磁盘满时重定向失败，
+    # 产生一个空文件，而空文件又会被后面的 `[ ! -s ]` 当成「有意的删空」，
+    # 从而执行 crontab -r 把客户任务全删掉。现在先拼字符串、写成功再判断。
+    local final_content="$new_content"
+    local line
+    for line in "${add_lines[@]}"; do
+        [ -n "$line" ] || continue
+        if [ -n "$final_content" ]; then
+            final_content="$final_content
+$line"
+        else
+            final_content="$line"
+        fi
+    done
+
+    # 落盘。两种情形都要确认写成功：
+    #   - 有内容 -> 写文件
+    #   - 无内容 -> 只需创建空文件（后续走「有意的删空」分支）
+    if [ -n "$final_content" ]; then
+        if ! printf '%s\n' "$final_content" > "$tmp_file" 2>/dev/null; then
+            _cron_log "cron: 临时文件写入失败（磁盘满或目录不可写），已放弃修改"
+            rm -f "$tmp_file" "$backup_log" 2>/dev/null
+            return 1
+        fi
+    elif ! : > "$tmp_file" 2>/dev/null; then
+        _cron_log "cron: 临时文件创建失败（磁盘满或目录不可写），已放弃修改"
+        rm -f "$tmp_file" "$backup_log" 2>/dev/null
+        return 1
+    fi
 
     if [ ! -s "$tmp_file" ]; then
         # ⚠️ 这里要区分两种「空」，二者性质完全不同（CodeRabbit 指出，已实测确认）：
