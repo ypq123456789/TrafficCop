@@ -20,8 +20,8 @@ MACHINE_CONFIG_FILE="$WORK_DIR/traffic_monitor_config.txt"
 
 # 字节 -> GB 的换算进制：与 trafficcop.sh / port_traffic_limit.sh 共用同一份配置，
 # 保证同一台机器上三处显示的数字口径一致。
-# 默认 1024（通用标准口径，绝大多数服务商适用）；仅阿里云 CDT 等按 1TB=1000GB
-# 折算的场景才需要在主配置里设 CONVERSION_BASE=1000。
+# 默认 1024（通用标准口径，绝大多数服务商适用）；仅少数按十进制折算的服务商
+# 才需要在主配置里设 CONVERSION_BASE=1000（以自己账单实测为准）。
 # 非法值或缺失一律回退到 1024。
 CONVERSION_BASE=1024
 if [ -f "$MACHINE_CONFIG_FILE" ]; then
@@ -35,7 +35,7 @@ fi
 
 get_byte_divisor() {
     case "$CONVERSION_BASE" in
-        1000) echo "1000000000" ;;   # 1000^3（阿里云 CDT 等）
+        1000) echo "1000000000" ;;   # 1000^3（少数按十进制折算的服务商）
         *)    echo "1073741824" ;;   # 1024^3（默认 / 通用口径）
     esac
 }
