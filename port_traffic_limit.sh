@@ -88,10 +88,22 @@ init_config_file() {
 read_machine_config() {
     if [ -f "$MACHINE_CONFIG_FILE" ]; then
         source "$MACHINE_CONFIG_FILE"
+        # 老版本配置文件没有 CONVERSION_BASE 字段，source 后仍为空，此处补默认值。
+        # 必须与 trafficcop.sh 保持同一默认（1000），否则主脚本与端口脚本的
+        # GB 口径会不一致，同一台机器上出现两套数字。
+        CONVERSION_BASE=${CONVERSION_BASE:-1000}
         return 0
     else
         return 1
     fi
+}
+
+# 字节 -> GB 的换算除数（与 trafficcop.sh 的 get_byte_divisor 保持一致）
+get_byte_divisor() {
+    case "${CONVERSION_BASE:-1000}" in
+        1024) echo "1073741824" ;;   # 1024^3
+        *)    echo "1000000000" ;;   # 1000^3（默认）
+    esac
 }
 
 # 获取端口配置
@@ -284,8 +296,10 @@ get_port_traffic_usage() {
     fi
     
     # 转换为GB（使用printf格式化，确保显示前导零）
+    # 进制由 CONVERSION_BASE 决定（默认 1000，与 trafficcop.sh 一致）
     # 使用 bc 时屏蔽 stderr 并在出错时返回 0，保证不会打印 (standard_in) 1: syntax error
-    local in_gb=$(printf "%.2f" $(echo "scale=2; $in_bytes / 1024 / 1024 / 1024" | bc 2>/dev/null || echo "0"))
+    local byte_divisor=$(get_byte_divisor)
+    local in_gb=$(printf "%.2f" $(echo "scale=2; $in_bytes / $byte_divisor" | bc 2>/dev/null || echo "0"))
     
     # 代理场景：出站流量 = 入站流量（估算值）
     # 原因：客户端请求多少数据，服务器就需要下载并转发相应数据

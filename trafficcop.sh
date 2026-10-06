@@ -20,8 +20,32 @@ else
     export TZ='CST-8'
 fi
 
+# ============================================================
+# 流量换算进制（字节 -> GB）
+# ------------------------------------------------------------
+# 阿里云 CDT 的进制口径在不同文档/界面之间并不一致：
+#   - CDT《流量阶梯累计计费模式》：阶梯示例 10*1024*0.8，即 10TB=10240GB（1024 进制）
+#   - CDT 2.0《账单查询》：账单示例「目录价用量阶梯 [0,10240]」（1024 进制）
+#   - 费用中心《网络计费方式优化-CDT-公网》：「CDT的流量折算规则：1TB=1024GB」（1024 进制）
+#   - 但部分控制台展示位置与用户实测结果更接近 1000 进制
+# 既然文档口径存在矛盾，以「用户账单对得上」为最高优先级：
+#   - 默认 1000：脚本数字与账单/控制台直观一致，便于用户核对
+#   - 且风险更低：若真实是 1024 而按 1000 算，脚本偏大 7.4% -> 提前限速（保守，不额外扣费）
+#                 若真实是 1000 而按 1024 算，脚本偏小 7.4% -> 晚限速（可能超额扣费）
+# 如需改回 1024，修改配置文件中的 CONVERSION_BASE=1024 即可。
+CONVERSION_BASE=${CONVERSION_BASE:-1000}
+
+# 返回「字节 -> GB」的换算除数，供各处 bc 计算复用。
+# 用函数而非散落的字面量，避免多处不一致。
+get_byte_divisor() {
+    case "$CONVERSION_BASE" in
+        1024) echo "1073741824" ;;   # 1024^3
+        *)    echo "1000000000" ;;   # 1000^3（默认）
+    esac
+}
+
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.85"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.86"| tee -a "$LOG_FILE"
 
 
 # 在脚本开始时杀死所有其他 traffic_monitor.sh 进程
@@ -159,6 +183,10 @@ check_and_install_packages() {
 check_existing_setup() {
      if [ -s "$CONFIG_FILE" ]; then  
         source "$CONFIG_FILE"
+        # 与 read_config 保持一致：补老配置文件缺失字段的默认值
+        CONVERSION_BASE=${CONVERSION_BASE:-1000}
+        PERIOD_START_DAY=${PERIOD_START_DAY:-1}
+        LIMIT_SPEED=${LIMIT_SPEED:-20}
         echo "$(date '+%Y-%m-%d %H:%M:%S') 配置已存在"| tee -a "$LOG_FILE"
         if crontab -l 2>/dev/null | grep -q "$SCRIPT_PATH --run"; then
             echo "$(date '+%Y-%m-%d %H:%M:%S') 每分钟一次的定时任务已在执行。"| tee -a "$LOG_FILE"
@@ -175,6 +203,12 @@ check_existing_setup() {
 read_config() {
     if [ -f "$CONFIG_FILE" ]; then
         source "$CONFIG_FILE"
+        # 老版本配置文件没有 CONVERSION_BASE 字段，source 后仍为空，
+        # 此处补默认值，保证升级脚本后老用户不需要重新配置。
+        CONVERSION_BASE=${CONVERSION_BASE:-1000}
+        # 同理兼容其它后加的字段
+        PERIOD_START_DAY=${PERIOD_START_DAY:-1}
+        LIMIT_SPEED=${LIMIT_SPEED:-20}
         return 0
     else
         return 1
@@ -192,6 +226,7 @@ PERIOD_START_DAY=${PERIOD_START_DAY:-1}
 LIMIT_SPEED=${LIMIT_SPEED:-20}
 MAIN_INTERFACE=$MAIN_INTERFACE
 LIMIT_MODE=$LIMIT_MODE
+CONVERSION_BASE=${CONVERSION_BASE:-1000}
 EOF
     echo "$(date '+%Y-%m-%d %H:%M:%S') 配置已更新"| tee -a "$LOG_FILE"
 }
@@ -208,6 +243,7 @@ show_current_config() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') 限速: ${LIMIT_SPEED:-20} kbit/s"| tee -a "$LOG_FILE"
     echo "$(date '+%Y-%m-%d %H:%M:%S') 主要网络接口: $MAIN_INTERFACE"| tee -a "$LOG_FILE"
     echo "$(date '+%Y-%m-%d %H:%M:%S') 限制模式: $LIMIT_MODE"| tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 流量换算进制: ${CONVERSION_BASE:-1000} (1GB = ${CONVERSION_BASE:-1000}^3 字节)"| tee -a "$LOG_FILE"
 }
 
 # 检测主要网络接口
@@ -299,6 +335,20 @@ initial_config() {
         else
             echo "无效输入，请输入一个有效的数字。"
         fi
+    done
+
+    # 流量换算进制选择
+    # 阿里云文档口径不一致（详见脚本顶部注释），此处让用户按自己账单的实际口径选。
+    while true; do
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 请选择流量换算进制（用于把 vnstat 的字节数换算成 GB）："| tee -a "$LOG_FILE"
+        echo "$(date '+%Y-%m-%d %H:%M:%S')   1. 1000 进制（1GB = 1,000,000,000 字节）—— 默认，与阿里云账单/控制台直观一致"| tee -a "$LOG_FILE"
+        echo "$(date '+%Y-%m-%d %H:%M:%S')   2. 1024 进制（1GB = 1,073,741,824 字节）—— 部分 CDT 计费文档采用"| tee -a "$LOG_FILE"
+        read -p "请输入选择 (1-2，默认为1): " base_choice
+        case $base_choice in
+            2) CONVERSION_BASE=1024; break ;;
+            1|"") CONVERSION_BASE=1000; break ;;
+            *) echo "无效输入，请重新选择。" ;;
+        esac
     done
 
     while true; do
@@ -500,10 +550,11 @@ get_traffic_usage() {
     fi
 
     if [ -n "$usage_bytes" ] && [ "$usage_bytes" != "null" ] && [ "$usage_bytes" != "0" ]; then
-        # 将字节转换为 GiB（1024 进制），与阿里云 CDT 的折算口径一致
-        local usage_gib=$(echo "scale=3; $usage_bytes/1024/1024/1024" | bc 2>/dev/null || echo "0.000")
+        # 字节 -> GB。进制由 CONVERSION_BASE 决定（默认 1000，见文件顶部说明）。
+        local divisor=$(get_byte_divisor)
+        local usage_gb=$(echo "scale=3; $usage_bytes/$divisor" | bc 2>/dev/null || echo "0.000")
         # 确保小数点前至少有一个0
-        printf "%.3f\n" "$usage_gib" 2>/dev/null || echo "0.000"
+        printf "%.3f\n" "$usage_gb" 2>/dev/null || echo "0.000"
     else
         echo "0.000"
     fi
@@ -515,6 +566,9 @@ check_and_limit_traffic() {
     local current_usage=$(get_traffic_usage)
     local limit_threshold=$(echo "$TRAFFIC_LIMIT - $TRAFFIC_TOLERANCE" | bc 2>/dev/null || echo "0")
     
+    # --run（cron）模式不会走 show_current_config，此处显式记录当前进制，
+    # 便于事后排查「脚本数字与账单对不上」这类问题。
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 流量换算进制: ${CONVERSION_BASE:-1000} (1GB = ${CONVERSION_BASE:-1000}^3 字节)" | tee -a "$LOG_FILE"
     echo "$(date '+%Y-%m-%d %H:%M:%S') 当前使用流量: $current_usage GB，限制流量: $limit_threshold GB" | tee -a "$LOG_FILE"
     
     if (( $(echo "$current_usage > $limit_threshold" | bc -l 2>/dev/null || echo "0") )); then
