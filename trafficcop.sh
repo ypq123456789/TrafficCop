@@ -99,7 +99,7 @@ echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
 echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.89"| tee -a "$LOG_FILE"
 
 # 供上报模块使用的版本号
-SCRIPT_VERSION="1.0.90"
+SCRIPT_VERSION="1.0.91"
 
 # 载入日志上报模块（可选功能，文件缺失不影响主流程）
 if [ -f "$WORK_DIR/report_lib.sh" ]; then
@@ -342,21 +342,40 @@ apply_config_defaults() {
 
 # 检查配置和定时任务
 check_existing_setup() {
-     if [ -s "$CONFIG_FILE" ]; then  
+     if [ -s "$CONFIG_FILE" ]; then
         source "$CONFIG_FILE"
         # 与 read_config 保持一致：补老配置文件缺失字段的默认值
         apply_config_defaults
         echo "$(date '+%Y-%m-%d %H:%M:%S') 配置已存在"| tee -a "$LOG_FILE"
-        if crontab -l 2>/dev/null | grep -q "$SCRIPT_PATH --run"; then
-            echo "$(date '+%Y-%m-%d %H:%M:%S') 每分钟一次的定时任务已在执行。"| tee -a "$LOG_FILE"
-        else
+
+        # 情况一：crontab 里没有本脚本的任务
+        if ! crontab -l 2>/dev/null | grep -q "$SCRIPT_PATH --run"; then
             echo "$(date '+%Y-%m-%d %H:%M:%S') 警告：定时任务未找到，可能需要重新设置。"| tee -a "$LOG_FILE"
             # 这是「客户流量倒退」的根因之一：cron 丢了但没人知道。
             # 开启上报时顺手报一条，便于我们侧主动发现。
             if [ "${ENABLE_REPORT:-no}" = "yes" ] && declare -f report_event >/dev/null 2>&1; then
                 report_event "error" "" "" "" "定时任务未找到，cron 可能已丢失" &
             fi
+            return 0
         fi
+
+        # 情况二：任务在，但 cron 服务没跑 —— 客户机上真实发生过。
+        # 症状同样是「日志不再更新」，但 crontab -l 看起来完全正常，
+        # 只检查任务是否存在会漏判。
+        if ! pgrep -x cron >/dev/null 2>&1 && ! pgrep -x crond >/dev/null 2>&1; then
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 警告：定时任务存在，但 cron 服务未运行（任务不会被执行）。"| tee -a "$LOG_FILE"
+            if ensure_cron_service; then
+                echo "$(date '+%Y-%m-%d %H:%M:%S') cron 服务已自动拉起。"| tee -a "$LOG_FILE"
+            else
+                echo "$(date '+%Y-%m-%d %H:%M:%S') 错误：无法启动 cron 服务，请手动检查。"| tee -a "$LOG_FILE"
+                if [ "${ENABLE_REPORT:-no}" = "yes" ] && declare -f report_event >/dev/null 2>&1; then
+                    report_event "error" "" "" "" "cron 服务未运行且自动启动失败" &
+                fi
+            fi
+            return 0
+        fi
+
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 每分钟一次的定时任务已在执行。"| tee -a "$LOG_FILE"
         return 0
     else
         return 1
@@ -798,7 +817,7 @@ write_state_snapshot() {
   "limit_gb": ${limit:-0},
   "conversion_base": ${CONVERSION_BASE:-1024},
   "period_start": "$period_start",
-  "script_version": "${SCRIPT_VERSION:-1.0.90}",
+  "script_version": "${SCRIPT_VERSION:-1.0.91}",
   "hostname": "$(hostname 2>/dev/null || echo unknown)"
 }
 EOF
@@ -877,14 +896,103 @@ check_reset_limit() {
     fi
 }
 
+# 设置/修复 crontab 任务。
+#
+# ⚠️ 这里曾经是一个真实的丢任务事故点（客户机实测 cron 消失）。
+#    原写法是「先删后加」两步：
+#        crontab -l | grep -v "$SCRIPT_PATH" | crontab -
+#        (crontab -l; echo "...") | crontab -
+#    两步之间任何环节失败（磁盘满、crontab 锁、脚本被中断），
+#    cron 就已经进入「被删除且没加回」的状态。
+#    更糟的是第 2 步失败时 `crontab -` 收到空输入会**把整个 crontab 清空**，
+#    连客户自己的其他定时任务一起丢失。
+#
+# 现在的做法：
+#   1. 全程在内存里组装，只调用一次 `crontab -`（原子）；
+#   2. 先备份原 crontab 到文件，失败可回滚；
+#   3. 写完立即回读校验，确认任务真的在，才算成功；
+#   4. 附带自愈：cron 服务没装/没启动时尝试拉起。
 setup_crontab() {
-    # 删除旧的脚本任务（如果存在）
-    crontab -l 2>/dev/null | grep -v "$SCRIPT_PATH" | crontab -
+    local cron_line="* * * * * $SCRIPT_PATH --run"
+    local backup_file="$WORK_DIR/crontab.backup.$$"
+    # ⚠️ tmp_file 必须在这里赋值。写成 `local tmp_file new_content`（只声明不赋值）
+    #    会让后面的 `> "$tmp_file"` 重定向到空文件名，报
+    #    "No such file or directory"，随后 `crontab ""` 写空 —— 整个 crontab 被清空。
+    #    这正是本次要修的那类事故，只是换了个入口。
+    local tmp_file="$WORK_DIR/crontab.tmp.$$"
+    local new_content
 
-    # 添加新的脚本任务
-    (crontab -l 2>/dev/null; echo "* * * * * $SCRIPT_PATH --run") | crontab -
+    # crontab 为空时 `crontab -l` 退出码是 1，不能当成错误处理
+    local current
+    current=$(crontab -l 2>/dev/null)
 
-    echo "$(date '+%Y-%m-%d %H:%M:%S') Crontab 已设置，每分钟运行一次"| tee -a "$LOG_FILE"
+    # ---- 组装新内容（纯内存，不碰 crontab）----
+    # 去掉：TrafficCop 自己的旧任务行 + 本脚本可能追加过的空行
+    new_content=$(printf '%s\n' "$current" \
+        | grep -v -e "$SCRIPT_PATH" -e 'traffic_monitor\.sh' \
+        | grep -v '^[[:space:]]*$')
+
+    {
+        [ -n "$new_content" ] && printf '%s\n' "$new_content"
+        printf '%s\n' "$cron_line"
+    } > "$tmp_file"
+
+    # ---- 备份原 crontab（供失败回滚）----
+    printf '%s\n' "$current" > "$backup_file" 2>/dev/null
+
+    # ---- 原子写入：整个 crontab 只写这一次 ----
+    if ! crontab "$tmp_file" 2>/dev/null; then
+        # 写入失败：立刻回滚，绝不留下「被删掉」的中间态
+        if [ -s "$backup_file" ]; then
+            crontab "$backup_file" 2>/dev/null && \
+                echo "$(date '+%Y-%m-%d %H:%M:%S') 错误：写入 crontab 失败，已回滚原设置。"| tee -a "$LOG_FILE"
+        fi
+        rm -f "$tmp_file" "$backup_file" 2>/dev/null
+        return 1
+    fi
+
+    # ---- 回读校验：写进去不等于生效，必须确认 ----
+    if crontab -l 2>/dev/null | grep -q "$SCRIPT_PATH --run"; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') Crontab 已设置，每分钟运行一次"| tee -a "$LOG_FILE"
+        rm -f "$tmp_file" "$backup_file" 2>/dev/null
+        return 0
+    fi
+
+    # 校验不过：回滚
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 错误：crontab 写入后校验未通过，正在回滚。"| tee -a "$LOG_FILE"
+    [ -s "$backup_file" ] && crontab "$backup_file" 2>/dev/null
+    rm -f "$tmp_file" "$backup_file" 2>/dev/null
+    return 1
+}
+
+# 自愈：cron 服务装了但没运行 / 压根没装时，任务写了也不会执行。
+# 这是「crontab 里有任务但日志不更新」这类现象的常见原因。
+ensure_cron_service() {
+    # 已经能读到自己的任务且 cron 在跑 -> 什么都不用做
+    if crontab -l 2>/dev/null | grep -q "$SCRIPT_PATH --run"; then
+        # 任务在，但还要确认 cron 守护进程是否活着
+        if pgrep -x cron >/dev/null 2>&1 || pgrep -x crond >/dev/null 2>&1; then
+            return 0
+        fi
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 警告：crontab 中有本脚本任务，但 cron 服务未运行，正在尝试启动。"| tee -a "$LOG_FILE"
+    fi
+
+    local started=no
+    # Debian/Ubuntu 系
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl start cron 2>/dev/null && started=yes
+        systemctl is-active cron >/dev/null 2>&1 && started=yes
+    fi
+    # CentOS/RHEL 系
+    [ "$started" = no ] && { service crond start 2>/dev/null && started=yes; }
+    # 精简系统可能只有 cron 命令
+    [ "$started" = no ] && { cron 2>/dev/null; pgrep -x cron >/dev/null 2>&1 && started=yes; }
+
+    if [ "$started" = yes ]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') cron 服务已启动。"| tee -a "$LOG_FILE"
+        return 0
+    fi
+    return 1
 }
 
 

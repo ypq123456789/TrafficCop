@@ -390,7 +390,7 @@ update_all_scripts() {
     
     local scripts=("trafficcop.sh" "tg_notifier.sh" "pushplus_notifier.sh" "serverchan_notifier.sh" 
                   "port_traffic_limit.sh" "view_port_traffic.sh" "port_traffic_helper.sh" 
-                  "log_helper.sh"
+                  "log_helper.sh" "fix_crontab.sh"
                   "remove_traffic_limit.sh" "machine_limit_manager.sh")
     
     for script in "${scripts[@]}"; do
