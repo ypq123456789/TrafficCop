@@ -129,6 +129,8 @@ install_port_traffic_limit() {
     echo -e "${YELLOW}正在下载辅助函数库...${NC}"
     install_script "port_traffic_helper.sh"
     install_script "log_helper.sh"
+    install_script "crontab_safe.sh"
+    install_script "fix_crontab.sh"
     
     # 运行配置向导
     run_script "$WORK_DIR/port_traffic_limit.sh"
@@ -366,8 +368,23 @@ stop_all_services() {
     echo "✓ 流量监控进程已停止"
     
     # 移除cron任务
-    crontab -l 2>/dev/null | grep -v "trafficcop.sh\|traffic_monitor.sh" | crontab - 2>/dev/null
-    echo "✓ 定时任务已清理"
+    # ⚠️ 旧写法 `crontab -l | grep -v ... | crontab -` 是「读-改-写」管道：
+    #    中途失败（磁盘满/锁/中断）会把整个 crontab 写成空的，
+    #    客户的其他定时任务一起丢。改用 crontab_safe.sh 的原子删除；
+    #    共享库缺失时不删，改为提示手动操作。
+    if [ -f "$WORK_DIR/crontab_safe.sh" ]; then
+        source "$WORK_DIR/crontab_safe.sh"
+    fi
+    if declare -f cron_remove_tasks >/dev/null 2>&1; then
+        if cron_remove_tasks "trafficcop\.sh|traffic_monitor\.sh"; then
+            echo "✓ 定时任务已清理"
+        else
+            echo "! 定时任务清理失败，原设置保持不变"
+        fi
+    else
+        echo "! crontab_safe.sh 缺失，已跳过定时任务清理（避免损坏 crontab）"
+        echo "  请手动执行 crontab -e 删除含 trafficcop.sh 的行"
+    fi
     
     # 清除TC规则
     local interface=$(ip route | grep default | awk '{print $5}' | head -n1)
@@ -390,7 +407,7 @@ update_all_scripts() {
     
     local scripts=("trafficcop.sh" "tg_notifier.sh" "pushplus_notifier.sh" "serverchan_notifier.sh" 
                   "port_traffic_limit.sh" "view_port_traffic.sh" "port_traffic_helper.sh" 
-                  "log_helper.sh" "fix_crontab.sh"
+                  "log_helper.sh" "crontab_safe.sh" "fix_crontab.sh"
                   "remove_traffic_limit.sh" "machine_limit_manager.sh")
     
     for script in "${scripts[@]}"; do
