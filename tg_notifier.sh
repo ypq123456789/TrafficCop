@@ -9,6 +9,11 @@ if [ -f "$WORK_DIR/port_traffic_helper.sh" ]; then
     source "$WORK_DIR/port_traffic_helper.sh"
 fi
 
+# 导入日志读取辅助函数（log_recent_match：轮转后仍能取到「最近一条」记录）
+if [ -f "$WORK_DIR/log_helper.sh" ]; then
+    source "$WORK_DIR/log_helper.sh"
+fi
+
 # 更新文件路径
 CONFIG_FILE="$WORK_DIR/tg_notifier_config.txt"
 LOG_FILE="$WORK_DIR/traffic_monitor.log"
@@ -439,8 +444,10 @@ check_and_notify() {
     local current_time=$(date '+%Y-%m-%d %H:%M:%S')
     local relevant_log=""
     
-    # 从后往前读取日志文件，找到第一个包含相关信息的行
-    relevant_log=$(tac "$LOG_FILE" | grep -m 1 -E "流量超出限制|使用 TC 模式限速|新的流量周期开始|流量正常，清除所有限制")
+    # 从后往前读取日志文件，找到第一个包含相关信息的行。
+    # 用 log_recent_match 而非裸 tac：日志轮转后目标行可能在归档文件里，
+    # 且只在尾部窗口内扫描，避免在 100MB+ 的日志上每分钟全扫一遍。
+    relevant_log=$(log_recent_match "流量超出限制|使用 TC 模式限速|新的流量周期开始|流量正常，清除所有限制")
     
     # 记录相关的日志内容
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 相关的日志内容: $relevant_log"| tee -a "$CRON_LOG"
@@ -602,8 +609,9 @@ daily_report() {
 
     # 回退路径：从日志解析（老安装兼容）。同时校验该行的时间戳新鲜度。
     if [ -z "$current_usage" ] || [ -z "$limit" ]; then
-        # 反向读取日志文件，查找第一个同时包含"当前使用流量"和"限制流量"的行
-        usage_line=$(tac "$LOG_FILE" 2>/dev/null | grep -m 1 -E "当前使用流量:.*限制流量:")
+        # 反向读取日志文件，查找第一个同时包含"当前使用流量"和"限制流量"的行。
+        # 同样走 log_recent_match，理由见该函数注释（轮转可见性 + 限定扫描窗口）。
+        usage_line=$(log_recent_match "当前使用流量:.*限制流量:")
 
         if [[ -z "$usage_line" ]]; then
             echo "$(date '+%Y-%m-%d %H:%M:%S') : 无法在日志中找到同时包含当前使用流量和限制流量的行"| tee -a "$CRON_LOG"

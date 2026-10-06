@@ -128,6 +128,7 @@ install_port_traffic_limit() {
     # 安装辅助函数库
     echo -e "${YELLOW}正在下载辅助函数库...${NC}"
     install_script "port_traffic_helper.sh"
+    install_script "log_helper.sh"
     
     # 运行配置向导
     run_script "$WORK_DIR/port_traffic_limit.sh"
@@ -389,6 +390,7 @@ update_all_scripts() {
     
     local scripts=("trafficcop.sh" "tg_notifier.sh" "pushplus_notifier.sh" "serverchan_notifier.sh" 
                   "port_traffic_limit.sh" "view_port_traffic.sh" "port_traffic_helper.sh" 
+                  "log_helper.sh"
                   "remove_traffic_limit.sh" "machine_limit_manager.sh")
     
     for script in "${scripts[@]}"; do

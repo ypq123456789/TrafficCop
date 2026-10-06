@@ -9,6 +9,31 @@ LOG_FILE="$WORK_DIR/traffic_monitor.log"
 SCRIPT_PATH="$WORK_DIR/trafficcop.sh"
 LOCK_FILE="$WORK_DIR/traffic_monitor.lock"
 
+# ============================================================
+# 日志轮转
+# ------------------------------------------------------------
+# 背景：脚本由 cron 每分钟执行一次，内部有近百处 `tee -a "$LOG_FILE"`。
+# 长期运行后日志会无限增长（生产机已出现过 150MB），带来两个后果：
+#   1. 磁盘占用不受控；
+#   2. 下游 tg/serverchan/pushplus 通知脚本用 `tac "$LOG_FILE" | grep -m 1`
+#      取「最近一条」记录，tac 会把整个文件倒读进内存 —— 文件越大越慢，
+#      而且是每分钟都读一次。
+#
+# 策略：保留式轮转（不是截断丢弃）
+#   - 超过 LOG_MAX_BYTES 时，把当前文件改名为 .1，新建空文件继续写；
+#   - 依次滚动 .1 -> .2 -> ... 最多保留 LOG_KEEP 份；
+#   - 归档文件【仍然参与】下游的 tac 查询（见 log_tac_recent），
+#     所以「最近一条」记录不会因为轮转而丢失。
+#   - 理论上限占用约 (LOG_KEEP + 1) * LOG_MAX_BYTES。
+#
+# 触发时机必须足够早：在 --run 的第一次日志写入【之前】。
+# 否则「正在以自动化模式运行」这类新记录会被写进刚归档的旧文件里，
+# 导致归档文件混入新记录、破坏时序语义。
+# ============================================================
+LOG_MAX_BYTES=$((10 * 1024 * 1024))   # 单文件上限 10MB
+LOG_KEEP=3                            # 保留 3 份归档 -> 约 40MB 封顶
+LOG_WINDOW_BYTES=$((2 * 1024 * 1024)) # 读侧扫描窗口 2MB（见 log_recent_match）
+
 # 设置时区为上海（东八区）
 # 注意：部分精简系统（如未安装 tzdata 的 Debian 容器）缺少 /usr/share/zoneinfo，
 # 此时 TZ='Asia/Shanghai' 会静默失效、退回 UTC，导致周期起点比北京时间晚 8 小时。
@@ -74,7 +99,7 @@ echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
 echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.89"| tee -a "$LOG_FILE"
 
 # 供上报模块使用的版本号
-SCRIPT_VERSION="1.0.89"
+SCRIPT_VERSION="1.0.90"
 
 # 载入日志上报模块（可选功能，文件缺失不影响主流程）
 if [ -f "$WORK_DIR/report_lib.sh" ]; then
@@ -212,6 +237,93 @@ check_and_install_packages() {
     fi
 }
 
+
+# ============================================================
+# 日志轮转与读取
+# ============================================================
+
+# 轮转日志：超过 LOG_MAX_BYTES 就把当前文件归档并新建。
+# 幂等，可安全重复调用。失败绝不影响主流程。
+rotate_log_if_needed() {
+    [ -f "$LOG_FILE" ] || return 0
+
+    local size
+    # 用 stat 取字节数；兼容 GNU 与 BusyBox 两种参数风格
+    size=$(stat -c %s "$LOG_FILE" 2>/dev/null || stat -f %z "$LOG_FILE" 2>/dev/null || echo 0)
+    case "$size" in ''|*[!0-9]*) size=0 ;; esac
+    [ "$size" -ge "$LOG_MAX_BYTES" ] || return 0
+
+    # 从最老的一份开始滚动，避免覆盖
+    local i
+    for (( i = LOG_KEEP - 1; i >= 1; i-- )); do
+        if [ -f "${LOG_FILE}.${i}" ]; then
+            mv -f "${LOG_FILE}.${i}" "${LOG_FILE}.$((i + 1))" 2>/dev/null
+        fi
+    done
+    mv -f "$LOG_FILE" "${LOG_FILE}.1" 2>/dev/null || return 0
+
+    # 新建空文件并继承权限
+    : > "$LOG_FILE" 2>/dev/null || true
+    chmod --reference="${LOG_FILE}.1" "$LOG_FILE" 2>/dev/null || chmod 600 "$LOG_FILE" 2>/dev/null || true
+
+    # 清掉超出保留份数的尾巴
+    local n=$(( LOG_KEEP + 1 ))
+    while [ -f "${LOG_FILE}.${n}" ]; do
+        rm -f "${LOG_FILE}.${n}" 2>/dev/null || break
+        n=$(( n + 1 ))
+    done
+
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 日志已轮转：${size} 字节 -> ${LOG_FILE}.1（保留 ${LOG_KEEP} 份归档）" >> "$LOG_FILE" 2>/dev/null
+    return 0
+}
+
+# 「取最近一条匹配行」的统一入口，替代散落各处的 `tac "$LOG_FILE" | grep -m 1`。
+#
+# 与裸 tac 的区别：
+#   1. 按「当前文件 -> .1 -> .2 ...」的顺序查，所以轮转后仍能找到近期记录；
+#   2. 每次只在文件尾部的一段窗口内查找（默认 2MB），避免 tac 把整个
+#      150MB 文件倒读进内存 —— 「最近一条」几乎总在尾部，扫全量纯属浪费。
+#
+# ⚠️ 与 log_helper.sh 里的同名函数必须保持一致（三个通知脚本加载的是那份）。
+#    两边都改，别只改一处。
+#
+# 策略要点（这里出过一个真 bug，见 log_helper.sh 的详细注释）：
+#   - 当前文件会继续增长、「最近一条」几乎总在尾部 -> 只扫尾部窗口；
+#   - 归档文件已冻结、「最近一条」可能在任意位置 -> 必须全量反向扫描。
+#   初版对归档也套用窗口，导致位于归档开头的限速记录永远查不到。
+#
+# 找不到时输出空串并返回 1。
+log_recent_match() {
+    local pattern="$1"
+    local f hit size
+
+    for f in "$LOG_FILE" "${LOG_FILE}.1" "${LOG_FILE}.2" "${LOG_FILE}.3" "${LOG_FILE}.4" "${LOG_FILE}.5"; do
+        [ -f "$f" ] || continue
+
+        if [ "$f" = "$LOG_FILE" ]; then
+            # 取文件字节数，兼容 GNU 与 BusyBox 两种 stat 参数风格
+            size=$(stat -c %s "$f" 2>/dev/null || stat -f %z "$f" 2>/dev/null || echo 0)
+            case "$size" in ''|*[!0-9]*) size=0 ;; esac
+
+            if [ "$size" -gt "$LOG_WINDOW_BYTES" ]; then
+                # 发生了截断：首行可能是半行，丢掉
+                hit=$(tail -c "$LOG_WINDOW_BYTES" "$f" 2>/dev/null | tail -n +2 2>/dev/null | tac 2>/dev/null | grep -m 1 -E "$pattern")
+            else
+                # 完整文件：一行都不丢
+                hit=$(tac "$f" 2>/dev/null | grep -m 1 -E "$pattern")
+            fi
+        else
+            # 已冻结的归档：必须全量反向扫描，不能用窗口
+            hit=$(tac "$f" 2>/dev/null | grep -m 1 -E "$pattern")
+        fi
+
+        if [ -n "$hit" ]; then
+            printf '%s\n' "$hit"
+            return 0
+        fi
+    done
+    return 1
+}
 
 # 补齐配置文件里可能缺失的字段（老版本升级场景）
 # 注意：read_config 和 check_existing_setup 是两条独立的 source 路径，
@@ -686,7 +798,7 @@ write_state_snapshot() {
   "limit_gb": ${limit:-0},
   "conversion_base": ${CONVERSION_BASE:-1024},
   "period_start": "$period_start",
-  "script_version": "${SCRIPT_VERSION:-1.0.89}",
+  "script_version": "${SCRIPT_VERSION:-1.0.90}",
   "hostname": "$(hostname 2>/dev/null || echo unknown)"
 }
 EOF
@@ -801,6 +913,11 @@ fi
 
     # 检查是否以 --run 模式运行
     if [ "$1" = "--run" ]; then
+        # ⚠️ 轮转必须在本分支的【第一次日志写入之前】执行。
+        # 否则「正在以自动化模式运行」那行会先写进即将被归档的旧文件，
+        # 导致归档里混入新记录、破坏下游 tac 查询的时序语义。
+        rotate_log_if_needed
+
         echo "$(date '+%Y-%m-%d %H:%M:%S') 正在以自动化模式运行" | tee -a "$LOG_FILE"
         if read_config; then
             check_reset_limit
