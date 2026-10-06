@@ -16,6 +16,12 @@ MACHINE_CONFIG_FILE="$WORK_DIR/traffic_monitor_config.txt"
 PORT_LOG_FILE="$WORK_DIR/port_traffic_monitor.log"
 PORT_SCRIPT_PATH="$WORK_DIR/port_traffic_limit.sh"
 
+# 载入 crontab 安全读写库（原子替换，避免误清空客户整个 crontab）。
+# 缺失时调用处会降级为「提示手动操作」而不是做危险的管道改写。
+if [ -f "$WORK_DIR/crontab_safe.sh" ]; then
+    source "$WORK_DIR/crontab_safe.sh"
+fi
+
 # 设置时区为上海（东八区）
 # 注意：部分精简系统缺少 /usr/share/zoneinfo，TZ='Asia/Shanghai' 会静默失效退回 UTC，
 # 导致统计周期与阿里云 CDT 的北京时间自然月不一致。必须显式用 TZ= 探测。
@@ -911,8 +917,7 @@ view_crontab_status() {
         read -p "是否要禁用定时任务？[y/N]: " disable
         [ -z "$disable" ] && disable="n"
         if [[ "$disable" = "y" || "$disable" = "Y" ]]; then
-            crontab -l 2>/dev/null | grep -v "$wrapper_script" | crontab -
-            rm -f "$wrapper_script"
+            _cron_drop "$(printf '%s' "$wrapper_script" | sed 's/[][\.*^$(){}?+|]/\\&/g')" && rm -f "$wrapper_script"
             echo -e "${GREEN}定时任务已禁用${NC}"
         fi
     elif echo "$current_cron" | grep -Fq "$PORT_SCRIPT_PATH"; then
@@ -927,8 +932,8 @@ view_crontab_status() {
         read -p "是否要升级到 GitHub 最新版本模式？[Y/n]: " upgrade
         [ -z "$upgrade" ] && upgrade="y"
         if [[ "$upgrade" = "y" || "$upgrade" = "Y" ]]; then
-            # 移除旧的定时任务
-            crontab -l 2>/dev/null | grep -v "$PORT_SCRIPT_PATH" | crontab -
+            # 移除旧的定时任务（原子删除，避免中途失败清空整个 crontab）
+            _cron_drop "$(printf '%s' "$PORT_SCRIPT_PATH" | sed 's/[][\.*^$(){}?+|]/\\&/g')"
             echo -e "${GREEN}已移除旧的定时任务${NC}"
             # 设置新的定时任务
             setup_crontab
@@ -936,7 +941,7 @@ view_crontab_status() {
             read -p "是否要禁用定时任务？[y/N]: " disable
             [ -z "$disable" ] && disable="n"
             if [[ "$disable" = "y" || "$disable" = "Y" ]]; then
-                crontab -l 2>/dev/null | grep -v "$PORT_SCRIPT_PATH" | crontab -
+                _cron_drop "$(printf '%s' "$PORT_SCRIPT_PATH" | sed 's/[][\.*^$(){}?+|]/\\&/g')"
                 echo -e "${GREEN}定时任务已禁用${NC}"
             fi
         fi
@@ -1079,30 +1084,74 @@ interactive_menu() {
     done
 }
 
+# 安全删除 crontab 中匹配指定模式的行。
+#
+# ⚠️ 为什么不直接用 `crontab -l | grep -v X | crontab -`：
+#    那是「读-改-写」管道，中途失败（磁盘满 / crontab 锁 / 脚本被中断）
+#    会让 crontab 停在被改坏的中间态；上游失败时 `crontab -` 收到空输入，
+#    会把**整个 crontab 写成 0 字节**，客户的其他定时任务一起丢。
+#
+# 本包装函数走 crontab_safe.sh 的原子删除（一次写入 + 写完回读校验）。
+# 共享库缺失时**不执行任何删除**，只提示手动操作 —— 宁可不做，也不能改坏。
+_cron_drop() { # <grep -E 的匹配模式>
+    local pattern="$1"
+    if declare -f cron_remove_tasks >/dev/null 2>&1; then
+        if cron_remove_tasks "$pattern"; then
+            return 0
+        fi
+        echo -e "${RED}定时任务移除失败，原设置保持不变${NC}" >&2
+        return 1
+    fi
+    echo -e "${RED}crontab_safe.sh 缺失，已跳过移除操作（避免损坏 crontab）${NC}" >&2
+    echo -e "${YELLOW}  请手动执行 crontab -e 删除相关行${NC}" >&2
+    return 1
+}
+
 # 设置定时任务
 setup_crontab() {
     # 定时任务直接执行本地文件
     local cron_entry="* * * * * bash $PORT_SCRIPT_PATH --cron"
     local current_cron=$(crontab -l 2>/dev/null)
-    
+    local wrapper_script="$WORK_DIR/port_traffic_cron_wrapper.sh"
+
     # 检查是否已存在定时任务
     if echo "$current_cron" | grep -Fq "$PORT_SCRIPT_PATH --cron"; then
         echo -e "${YELLOW}定时任务已存在${NC}"
         echo -e "${CYAN}定时任务: $cron_entry${NC}"
+        return 0
+    fi
+
+    # ⚠️ 旧写法：先 `grep -v wrapper | crontab -` 删旧的，
+    #    再 `(crontab -l; echo ...) | crontab -` 加新的。
+    #    这两步之间任何失败都会让 crontab 停在中间态；
+    #    第 2 步失败时 `crontab -` 收到空输入会**清空整个 crontab**，
+    #    客户其他定时任务一起丢。
+    #    现在改为一次性原子替换：把「旧包装脚本行」和「本脚本旧行」一起删掉，
+    #    再补上新行，全程只调用一次 crontab <file>。
+    if ! declare -f cron_replace_tasks >/dev/null 2>&1; then
+        echo -e "${RED}crontab_safe.sh 缺失，为避免损坏 crontab 已跳过设置${NC}"
+        echo -e "${YELLOW}  请手动执行 crontab -e 添加：$cron_entry${NC}"
+        return 1
+    fi
+
+    # 移除模式同时覆盖「旧包装脚本」和「本脚本旧行」，避免残留重复任务
+    local remove_pattern
+    if [ -n "$wrapper_script" ]; then
+        remove_pattern=$(printf '%s|%s' \
+            "$(printf '%s' "$wrapper_script" | sed 's/[][\.*^$(){}?+|]/\\&/g')" \
+            "$(printf '%s' "$PORT_SCRIPT_PATH" | sed 's/[][\.*^$(){}?+|]/\\&/g')")
     else
-        # 先移除旧的包装脚本定时任务（如果存在）
-        local wrapper_script="$WORK_DIR/port_traffic_cron_wrapper.sh"
-        if echo "$current_cron" | grep -Fq "$wrapper_script"; then
-            crontab -l 2>/dev/null | grep -v "$wrapper_script" | crontab -
-            echo -e "${YELLOW}已移除旧的包装脚本定时任务${NC}"
-        fi
-        
-        # 添加新的定时任务
-        (crontab -l 2>/dev/null; echo "$cron_entry") | crontab -
+        remove_pattern=$(printf '%s' "$PORT_SCRIPT_PATH" | sed 's/[][\.*^$(){}?+|]/\\&/g')
+    fi
+
+    if cron_replace_tasks "$remove_pattern" "$cron_entry"; then
         echo -e "${GREEN}定时任务已添加（每分钟检查端口流量）${NC}"
         echo -e "${CYAN}定时任务: $cron_entry${NC}"
         echo -e "${YELLOW}提示: 请通过主菜单选项5更新脚本到最新版本${NC}"
+        return 0
     fi
+    echo -e "${RED}定时任务添加失败，原设置保持不变${NC}"
+    return 1
 }
 
 # 移除所有端口限制
@@ -1124,13 +1173,13 @@ remove_all_limits() {
     
     # 移除包装脚本的定时任务（旧版本）
     if crontab -l 2>/dev/null | grep -q "$wrapper_script"; then
-        crontab -l 2>/dev/null | grep -v "$wrapper_script" | crontab -
+        _cron_drop "$(printf '%s' "$wrapper_script" | sed 's/[][\.*^$(){}?+|]/\\&/g')"
         echo -e "${GREEN}已移除旧的包装脚本定时任务${NC}"
     fi
     
     # 移除旧的直接调用定时任务
     if crontab -l 2>/dev/null | grep -q "$PORT_SCRIPT_PATH"; then
-        crontab -l 2>/dev/null | grep -v "$PORT_SCRIPT_PATH" | crontab -
+        _cron_drop "$(printf '%s' "$PORT_SCRIPT_PATH" | sed 's/[][\.*^$(){}?+|]/\\&/g')"
         echo -e "${GREEN}已移除旧的定时任务${NC}"
     fi
     

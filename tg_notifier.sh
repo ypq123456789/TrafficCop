@@ -14,6 +14,12 @@ if [ -f "$WORK_DIR/log_helper.sh" ]; then
     source "$WORK_DIR/log_helper.sh"
 fi
 
+# 导入 crontab 安全读写库（原子替换，避免误清空客户整个 crontab）。
+# 缺失时 setup_cron 会降级为「提示手动操作」，不做危险的管道改写。
+if [ -f "$WORK_DIR/crontab_safe.sh" ]; then
+    source "$WORK_DIR/crontab_safe.sh"
+fi
+
 # 更新文件路径
 CONFIG_FILE="$WORK_DIR/tg_notifier_config.txt"
 LOG_FILE="$WORK_DIR/traffic_monitor.log"
@@ -48,9 +54,36 @@ migrate_files() {
         mv "/root/tg_notifier_cron.log" "$CRON_LOG"
     fi
 
-    # 更新 crontab 中的脚本路径
-    if crontab -l | grep -q "/root/tg_notifier.sh"; then
-        crontab -l | sed "s|/root/tg_notifier.sh|$SCRIPT_PATH|g" | crontab -
+    # 更新 crontab 中的脚本路径：/root/tg_notifier.sh -> $SCRIPT_PATH
+    # ⚠️ 旧写法 `crontab -l | sed ... | crontab -` 是「读-改-写」管道：
+    #    中途失败会把整个 crontab 写成空的，客户其他任务一起丢。
+    #    这里改为内存重组 + 一次性原子写入 + 写完回读校验。
+    if crontab -l 2>/dev/null | grep -q "/root/tg_notifier.sh"; then
+        local cron_tmp="$WORK_DIR/.tg_cron_migrate.$$"
+        local cron_keep cron_mine
+        # 其他任务（不含本脚本任何路径的行）
+        cron_keep=$(crontab -l 2>/dev/null \
+            | grep -v -e '/root/tg_notifier\.sh' -e "$SCRIPT_PATH" \
+            | grep -v '^[[:space:]]*$')
+        # 本脚本的任务行：旧路径就地换成新路径，保留原有计划表达式
+        cron_mine=$(crontab -l 2>/dev/null \
+            | grep -e '/root/tg_notifier\.sh' -e "$SCRIPT_PATH" \
+            | sed "s|/root/tg_notifier\.sh|$SCRIPT_PATH|g" \
+            | grep -v '^[[:space:]]*$')
+        {
+            [ -n "$cron_keep" ] && printf '%s\n' "$cron_keep"
+            [ -n "$cron_mine" ] && printf '%s\n' "$cron_mine"
+        } > "$cron_tmp" 2>/dev/null
+
+        if [ -s "$cron_tmp" ] && crontab "$cron_tmp" 2>/dev/null \
+           && crontab -l 2>/dev/null | grep -qF "$SCRIPT_PATH"; then
+            echo "$(date '+%Y-%m-%d %H:%M:%S') Crontab 已更新为新的脚本路径" | tee -a "$CRON_LOG"
+        else
+            # 写入或校验失败：保持原样，不做破坏性操作
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 警告：Crontab 路径更新失败，原设置保持不变" | tee -a "$CRON_LOG"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 请手动执行 crontab -e 把 /root/tg_notifier.sh 改成 $SCRIPT_PATH" | tee -a "$CRON_LOG"
+        fi
+        rm -f "$cron_tmp" 2>/dev/null
     fi
 
     echo "$(date '+%Y-%m-%d %H:%M:%S') 文件已迁移到新的工作目录: $WORK_DIR" | tee -a "$CRON_LOG"
@@ -505,30 +538,37 @@ check_and_notify() {
 setup_cron() {
     local correct_entry="* * * * * $SCRIPT_PATH -cron"
     local current_crontab=$(crontab -l 2>/dev/null)
-    local tg_notifier_entries=$(echo "$current_crontab" | grep "tg_notifier.sh")
-    local correct_entries_count=$(echo "$tg_notifier_entries" | grep -F "$correct_entry" | wc -l)
+    local tg_notifier_entries=$(echo "$current_crontab" | grep "tg_notifier\.sh")
+    local correct_entries_count=$(echo "$tg_notifier_entries" | grep -F -c "$correct_entry")
+    local total_entries_count=$(echo "$tg_notifier_entries" | grep -c .)
 
-    if [ "$correct_entries_count" -eq 1 ]; then
+    # ⚠️ 必须同时校验【总数】，不能只看【正确条目数】。
+    #    若 crontab 里同时有 1 条正确任务和 1 条旧任务（如换过路径的
+    #    /root/tg_notifier.sh），正确条目数仍是 1 —— 只看它会跳过替换，
+    #    旧任务继续执行，导致**每分钟重复通知**。（CodeRabbit 指出）
+    if [ "$correct_entries_count" -eq 1 ] && [ "$total_entries_count" -eq 1 ]; then
         echo "正确的 crontab 项已存在且只有一个，无需修改。"
     else
-        # 删除所有包含 tg_notifier.sh 的条目
-        new_crontab=$(echo "$current_crontab" | grep -v "tg_notifier.sh")
-        
-        # 添加一个正确的条目
-        new_crontab="${new_crontab}
-$correct_entry"
-
-        # 更新 crontab
-        echo "$new_crontab" | crontab -
-
-        echo "已更新 crontab。删除了所有旧的 tg_notifier.sh 条目，并添加了一个每分钟执行的条目。"
+        # ⚠️ 旧写法是先 `grep -v` 拼字符串、再 `echo ... | crontab -` 写回。
+        #    `crontab -` 从 stdin 读：一旦上游拼装失败或此处被中断，
+        #    收到的是空输入，真 cron 会把**整个 crontab 写成 0 字节** ——
+        #    客户的其他定时任务（备份、清理等）会一起消失。
+        #    现在改为 crontab_safe.sh 的原子替换：内存组装 -> 一次写入
+        #    -> 写完回读校验，失败自动回滚。
+        if ! declare -f cron_replace_tasks >/dev/null 2>&1; then
+            echo "crontab_safe.sh 缺失，为避免损坏 crontab 已跳过设置。"
+            echo "  请手动执行 crontab -e 添加：$correct_entry"
+        elif cron_replace_tasks "tg_notifier\.sh" "$correct_entry"; then
+            echo "已更新 crontab。删除了所有旧的 tg_notifier.sh 条目，并添加了一个每分钟执行的条目。"
+        else
+            echo "更新 crontab 失败，原设置保持不变。"
+        fi
     fi
 
     # 显示当前的 crontab 内容
     echo "当前的 crontab 内容："
     crontab -l
 }
-
 # 更新cron任务中的时间（当修改每日报告时间时调用）
 update_cron_time() {
     local new_time="$1"

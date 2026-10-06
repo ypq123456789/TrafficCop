@@ -95,15 +95,22 @@ get_byte_divisor() {
     esac
 }
 
-echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
-echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：1.0.89"| tee -a "$LOG_FILE"
+# 脚本版本号。上报模块与日志里都用它，请与下面 echo 的版本保持单一来源。
+SCRIPT_VERSION="1.0.92"
 
-# 供上报模块使用的版本号
-SCRIPT_VERSION="1.0.91"
+echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：$SCRIPT_VERSION"| tee -a "$LOG_FILE"
 
 # 载入日志上报模块（可选功能，文件缺失不影响主流程）
 if [ -f "$WORK_DIR/report_lib.sh" ]; then
     source "$WORK_DIR/report_lib.sh"
+fi
+
+# 载入 crontab 安全读写库（提供 cron_replace_tasks / cron_ensure_service 等）。
+# 可选加载：文件缺失时相关函数不可用，但主流程不会因此崩。
+# 详见 crontab_safe.sh 顶部注释 —— 那里记录了旧写法为何会清空客户整个 crontab。
+if [ -f "$WORK_DIR/crontab_safe.sh" ]; then
+    source "$WORK_DIR/crontab_safe.sh"
 fi
 
 
@@ -161,10 +168,56 @@ migrate_files() {
         fi
     done
 
-    # 更新 crontab 中的脚本路径
-    if crontab -l | grep -q "/root/traffic_monitor.sh"; then
-        crontab -l | sed "s|/root/traffic_monitor.sh|$SCRIPT_PATH|g" | crontab -
-        echo "$(date '+%Y-%m-%d %H:%M:%S') Crontab 已更新为新的脚本路径" | tee -a "$LOG_FILE"
+    # 更新 crontab 中的脚本路径：把旧的 /root/traffic_monitor.sh
+    # 替换成当前 SCRIPT_PATH。
+    # ⚠️ 旧写法是 `crontab -l | sed ... | crontab -`，属于「读-改-写」管道：
+    #    一旦中途失败（磁盘满/锁/中断），整个 crontab 会被写成空的，
+    #    客户的其他定时任务一起丢。这里改为按行重组 + 一次性原子写入。
+    if crontab -l 2>/dev/null | grep -q "/root/traffic_monitor.sh"; then
+        local cron_tmp="$WORK_DIR/.cron_migrate.$$"
+        local cron_keep cron_mine cron_final
+        # 1) 其他任务（不含本脚本任何路径的行）
+        cron_keep=$(crontab -l 2>/dev/null \
+            | grep -v -e '/root/traffic_monitor\.sh' -e "$SCRIPT_PATH" \
+            | grep -v '^[[:space:]]*$')
+        # 2) 本脚本的任务行：把旧路径就地换成新路径，保留原有计划表达式（如频率）
+        #
+        # ⚠️ 这里【只能有一条 sed】。早前一版还串了一条
+        #    sed "s|[[:space:]]*$SCRIPT_PATH|[[:space:]]*$SCRIPT_PATH|g"
+        #    想「规范化路径前的空格」，但 [[:space:]] 出现在**替换串右侧**
+        #    时不是字符类，而是**字面文本** —— 会把 cron 行改成
+        #        * * * * *[[:space:]]*/root/TrafficCop/trafficcop.sh --run
+        #    星期字段变成非法值，crontab 直接拒绝安装，迁移失败；
+        #    而旧任务又指向已被 mv 走的 /root/traffic_monitor.sh，
+        #    结果是监控整个停掉。这属于自己引入的回归（CodeRabbit 抓出），已移除。
+        cron_mine=$(crontab -l 2>/dev/null \
+            | grep -e '/root/traffic_monitor\.sh' -e "$SCRIPT_PATH" \
+            | sed "s|/root/traffic_monitor\.sh|$SCRIPT_PATH|g" \
+            | grep -v '^[[:space:]]*$')
+        # 3) 组装后一次性写入（先备份，失败不写）
+        {
+            [ -n "$cron_keep" ] && printf '%s\n' "$cron_keep"
+            [ -n "$cron_mine" ] && printf '%s\n' "$cron_mine"
+        } > "$cron_tmp" 2>/dev/null
+
+        if [ -s "$cron_tmp" ] && crontab "$cron_tmp" 2>/dev/null; then
+            # 回读校验：必须同时满足两点，否则视为迁移失败
+            #   1) 新路径的任务行在（说明替换生效）
+            #   2) 旧路径已经完全消失（否则旧任务仍指向已删除的旧文件）
+            # 只查 (1) 是不够的 —— CodeRabbit 指出过这个漏洞。
+            if crontab -l 2>/dev/null | grep -q "$SCRIPT_PATH" \
+               && ! crontab -l 2>/dev/null | grep -q '/root/traffic_monitor\.sh'; then
+                echo "$(date '+%Y-%m-%d %H:%M:%S') Crontab 已更新为新的脚本路径" | tee -a "$LOG_FILE"
+            else
+                echo "$(date '+%Y-%m-%d %H:%M:%S') 警告：Crontab 路径迁移未完全生效，原设置可能仍指向旧路径" | tee -a "$LOG_FILE"
+                echo "$(date '+%Y-%m-%d %H:%M:%S') 请手动执行 crontab -e 把 /root/traffic_monitor.sh 改成 $SCRIPT_PATH" | tee -a "$LOG_FILE"
+            fi
+        else
+            # 写入失败：保持原样，不做任何破坏性操作
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 警告：Crontab 路径更新失败，原设置保持不变" | tee -a "$LOG_FILE"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 请手动执行 crontab -e 把 /root/traffic_monitor.sh 改成 $SCRIPT_PATH" | tee -a "$LOG_FILE"
+        fi
+        rm -f "$cron_tmp" 2>/dev/null
     fi
 
     echo "$(date '+%Y-%m-%d %H:%M:%S') 文件已迁移到新的工作目录: $WORK_DIR" | tee -a "$LOG_FILE"
@@ -817,7 +870,7 @@ write_state_snapshot() {
   "limit_gb": ${limit:-0},
   "conversion_base": ${CONVERSION_BASE:-1024},
   "period_start": "$period_start",
-  "script_version": "${SCRIPT_VERSION:-1.0.91}",
+  "script_version": "${SCRIPT_VERSION:-1.0.92}",
   "hostname": "$(hostname 2>/dev/null || echo unknown)"
 }
 EOF
@@ -967,25 +1020,38 @@ setup_crontab() {
 
 # 自愈：cron 服务装了但没运行 / 压根没装时，任务写了也不会执行。
 # 这是「crontab 里有任务但日志不更新」这类现象的常见原因。
+#
+# 实现委托给 crontab_safe.sh 的 cron_ensure_service，
+# 这样主脚本与共享库只有一份逻辑，不会各自漂移。
+# 共享库缺失时降级为本脚本内置的等价实现，保证不因可选依赖缺失而失效。
 ensure_cron_service() {
-    # 已经能读到自己的任务且 cron 在跑 -> 什么都不用做
-    if crontab -l 2>/dev/null | grep -q "$SCRIPT_PATH --run"; then
-        # 任务在，但还要确认 cron 守护进程是否活着
-        if pgrep -x cron >/dev/null 2>&1 || pgrep -x crond >/dev/null 2>&1; then
+    # ⚠️ 必须先判断函数是否存在，再调用它。
+    #    若先写 `if cron_service_alive; then`，而共享库恰好缺失，
+    #    bash 会报 "command not found" 并返回非 0 —— 于是错误地跳过了
+    #    「共享库可用」的分支，反而落进下面的降级实现。
+    if declare -f cron_service_alive >/dev/null 2>&1; then
+        if cron_service_alive; then
             return 0
         fi
-        echo "$(date '+%Y-%m-%d %H:%M:%S') 警告：crontab 中有本脚本任务，但 cron 服务未运行，正在尝试启动。"| tee -a "$LOG_FILE"
+        if declare -f cron_ensure_service >/dev/null 2>&1; then
+            if cron_ensure_service; then
+                echo "$(date '+%Y-%m-%d %H:%M:%S') cron 服务已启动。"| tee -a "$LOG_FILE"
+                return 0
+            fi
+            return 1
+        fi
     fi
 
+    # ---- 降级实现（crontab_safe.sh 不可用时）----
+    pgrep -x cron >/dev/null 2>&1 && return 0
+    pgrep -x crond >/dev/null 2>&1 && return 0
+
     local started=no
-    # Debian/Ubuntu 系
     if command -v systemctl >/dev/null 2>&1; then
         systemctl start cron 2>/dev/null && started=yes
         systemctl is-active cron >/dev/null 2>&1 && started=yes
     fi
-    # CentOS/RHEL 系
     [ "$started" = no ] && { service crond start 2>/dev/null && started=yes; }
-    # 精简系统可能只有 cron 命令
     [ "$started" = no ] && { cron 2>/dev/null; pgrep -x cron >/dev/null 2>&1 && started=yes; }
 
     if [ "$started" = yes ]; then

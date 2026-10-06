@@ -9,6 +9,12 @@ BACKUP_CONFIG_FILE="$CONFIG_FILE.disabled.backup"
 SCRIPT_PATH="$WORK_DIR/trafficcop.sh"
 CRON_COMMENT="# TrafficCop Monitor"
 
+# 载入 crontab 安全读写库（原子替换，避免误清空客户整个 crontab）。
+# 缺失时相关函数不可用，调用处会降级为「提示手动操作」而不是危险改写。
+if [ -f "$WORK_DIR/crontab_safe.sh" ]; then
+    source "$WORK_DIR/crontab_safe.sh"
+fi
+
 # 颜色定义
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -46,30 +52,47 @@ stop_monitor_process() {
 # 移除定时任务
 remove_cron_job() {
     echo "移除定时任务..."
-    
-    # 备份当前crontab
-    crontab -l > /tmp/crontab_backup.txt 2>/dev/null || true
-    
-    # 移除TrafficCop相关的定时任务
-    crontab -l 2>/dev/null | grep -v "trafficcop.sh\|traffic_monitor.sh" | crontab - 2>/dev/null || true
-    
-    echo "✓ 定时任务已移除"
+
+    # ⚠️ 旧写法 `crontab -l | grep -v ... | crontab -` 是「读-改-写」管道：
+    #    中途失败（磁盘满/锁/中断）会把整个 crontab 写成空的，
+    #    客户的其他定时任务一起丢。改用 crontab_safe.sh 的原子删除
+    #    （一次写入 + 写完回读校验），共享库缺失时不执行任何删除。
+    if declare -f cron_remove_tasks >/dev/null 2>&1; then
+        if cron_remove_tasks "trafficcop\.sh|traffic_monitor\.sh"; then
+            echo "✓ 定时任务已移除"
+        else
+            echo "✗ 定时任务移除失败，原设置保持不变"
+        fi
+    else
+        echo "✗ crontab_safe.sh 缺失，为避免损坏 crontab 已跳过移除操作"
+        echo "  请手动执行：crontab -e  删除含 trafficcop.sh 的行"
+    fi
 }
 
 # 添加定时任务
 add_cron_job() {
     echo "添加定时任务..."
-    
+
+    local cron_line="*/5 * * * * cd $WORK_DIR && bash trafficcop.sh --cron $CRON_COMMENT"
+
     # 检查是否已存在
     if crontab -l 2>/dev/null | grep -q "trafficcop.sh"; then
         echo "! 定时任务已存在"
         return
     fi
-    
-    # 添加新的定时任务
-    (crontab -l 2>/dev/null; echo "*/5 * * * * cd $WORK_DIR && bash trafficcop.sh --cron $CRON_COMMENT") | crontab -
-    
-    echo "✓ 定时任务已添加"
+
+    # ⚠️ 旧写法同样是「先读后写」管道，失败会清空 crontab。
+    #    改为原子替换：删掉本项目旧行 + 补上新行，一次写入。
+    if declare -f cron_replace_tasks >/dev/null 2>&1; then
+        if cron_replace_tasks "trafficcop\.sh|traffic_monitor\.sh" "$cron_line"; then
+            echo "✓ 定时任务已添加"
+        else
+            echo "✗ 定时任务添加失败，原设置保持不变"
+        fi
+    else
+        echo "✗ crontab_safe.sh 缺失，为避免损坏 crontab 已跳过添加操作"
+        echo "  请手动执行：crontab -e  添加 $cron_line"
+    fi
 }
 
 # 完全禁用机器限速
