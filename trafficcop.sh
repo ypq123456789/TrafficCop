@@ -181,10 +181,18 @@ migrate_files() {
             | grep -v -e '/root/traffic_monitor\.sh' -e "$SCRIPT_PATH" \
             | grep -v '^[[:space:]]*$')
         # 2) 本脚本的任务行：把旧路径就地换成新路径，保留原有计划表达式（如频率）
+        #
+        # ⚠️ 这里【只能有一条 sed】。早前一版还串了一条
+        #    sed "s|[[:space:]]*$SCRIPT_PATH|[[:space:]]*$SCRIPT_PATH|g"
+        #    想「规范化路径前的空格」，但 [[:space:]] 出现在**替换串右侧**
+        #    时不是字符类，而是**字面文本** —— 会把 cron 行改成
+        #        * * * * *[[:space:]]*/root/TrafficCop/trafficcop.sh --run
+        #    星期字段变成非法值，crontab 直接拒绝安装，迁移失败；
+        #    而旧任务又指向已被 mv 走的 /root/traffic_monitor.sh，
+        #    结果是监控整个停掉。这属于自己引入的回归（CodeRabbit 抓出），已移除。
         cron_mine=$(crontab -l 2>/dev/null \
             | grep -e '/root/traffic_monitor\.sh' -e "$SCRIPT_PATH" \
             | sed "s|/root/traffic_monitor\.sh|$SCRIPT_PATH|g" \
-            | sed "s|[[:space:]]*$SCRIPT_PATH|[[:space:]]*$SCRIPT_PATH|g" \
             | grep -v '^[[:space:]]*$')
         # 3) 组装后一次性写入（先备份，失败不写）
         {
@@ -192,11 +200,20 @@ migrate_files() {
             [ -n "$cron_mine" ] && printf '%s\n' "$cron_mine"
         } > "$cron_tmp" 2>/dev/null
 
-        if [ -s "$cron_tmp" ] && crontab "$cron_tmp" 2>/dev/null \
-           && crontab -l 2>/dev/null | grep -q "$SCRIPT_PATH"; then
-            echo "$(date '+%Y-%m-%d %H:%M:%S') Crontab 已更新为新的脚本路径" | tee -a "$LOG_FILE"
+        if [ -s "$cron_tmp" ] && crontab "$cron_tmp" 2>/dev/null; then
+            # 回读校验：必须同时满足两点，否则视为迁移失败
+            #   1) 新路径的任务行在（说明替换生效）
+            #   2) 旧路径已经完全消失（否则旧任务仍指向已删除的旧文件）
+            # 只查 (1) 是不够的 —— CodeRabbit 指出过这个漏洞。
+            if crontab -l 2>/dev/null | grep -q "$SCRIPT_PATH" \
+               && ! crontab -l 2>/dev/null | grep -q '/root/traffic_monitor\.sh'; then
+                echo "$(date '+%Y-%m-%d %H:%M:%S') Crontab 已更新为新的脚本路径" | tee -a "$LOG_FILE"
+            else
+                echo "$(date '+%Y-%m-%d %H:%M:%S') 警告：Crontab 路径迁移未完全生效，原设置可能仍指向旧路径" | tee -a "$LOG_FILE"
+                echo "$(date '+%Y-%m-%d %H:%M:%S') 请手动执行 crontab -e 把 /root/traffic_monitor.sh 改成 $SCRIPT_PATH" | tee -a "$LOG_FILE"
+            fi
         else
-            # 写入或校验失败：保持原样，不做任何破坏性操作
+            # 写入失败：保持原样，不做任何破坏性操作
             echo "$(date '+%Y-%m-%d %H:%M:%S') 警告：Crontab 路径更新失败，原设置保持不变" | tee -a "$LOG_FILE"
             echo "$(date '+%Y-%m-%d %H:%M:%S') 请手动执行 crontab -e 把 /root/traffic_monitor.sh 改成 $SCRIPT_PATH" | tee -a "$LOG_FILE"
         fi

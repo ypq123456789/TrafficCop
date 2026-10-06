@@ -917,7 +917,7 @@ view_crontab_status() {
         read -p "是否要禁用定时任务？[y/N]: " disable
         [ -z "$disable" ] && disable="n"
         if [[ "$disable" = "y" || "$disable" = "Y" ]]; then
-            _cron_drop "$(printf '%s' "$wrapper_script" | sed 's/[][\.*^$(){}?+|/]/\\&/g')" && rm -f "$wrapper_script"
+            _cron_drop "$(printf '%s' "$wrapper_script" | sed 's/[][\.*^$(){}?+|]/\\&/g')" && rm -f "$wrapper_script"
             echo -e "${GREEN}定时任务已禁用${NC}"
         fi
     elif echo "$current_cron" | grep -Fq "$PORT_SCRIPT_PATH"; then
@@ -933,7 +933,7 @@ view_crontab_status() {
         [ -z "$upgrade" ] && upgrade="y"
         if [[ "$upgrade" = "y" || "$upgrade" = "Y" ]]; then
             # 移除旧的定时任务（原子删除，避免中途失败清空整个 crontab）
-            _cron_drop "$(printf '%s' "$PORT_SCRIPT_PATH" | sed 's/[][\.*^$(){}?+|/]/\\&/g')"
+            _cron_drop "$(printf '%s' "$PORT_SCRIPT_PATH" | sed 's/[][\.*^$(){}?+|]/\\&/g')"
             echo -e "${GREEN}已移除旧的定时任务${NC}"
             # 设置新的定时任务
             setup_crontab
@@ -941,7 +941,7 @@ view_crontab_status() {
             read -p "是否要禁用定时任务？[y/N]: " disable
             [ -z "$disable" ] && disable="n"
             if [[ "$disable" = "y" || "$disable" = "Y" ]]; then
-                _cron_drop "$(printf '%s' "$PORT_SCRIPT_PATH" | sed 's/[][\.*^$(){}?+|/]/\\&/g')"
+                _cron_drop "$(printf '%s' "$PORT_SCRIPT_PATH" | sed 's/[][\.*^$(){}?+|]/\\&/g')"
                 echo -e "${GREEN}定时任务已禁用${NC}"
             fi
         fi
@@ -1138,10 +1138,10 @@ setup_crontab() {
     local remove_pattern
     if [ -n "$wrapper_script" ]; then
         remove_pattern=$(printf '%s|%s' \
-            "$(printf '%s' "$wrapper_script" | sed 's/[][\.*^$(){}?+|/]/\\&/g')" \
-            "$(printf '%s' "$PORT_SCRIPT_PATH" | sed 's/[][\.*^$(){}?+|/]/\\&/g')")
+            "$(printf '%s' "$wrapper_script" | sed 's/[][\.*^$(){}?+|]/\\&/g')" \
+            "$(printf '%s' "$PORT_SCRIPT_PATH" | sed 's/[][\.*^$(){}?+|]/\\&/g')")
     else
-        remove_pattern=$(printf '%s' "$PORT_SCRIPT_PATH" | sed 's/[][\.*^$(){}?+|/]/\\&/g')
+        remove_pattern=$(printf '%s' "$PORT_SCRIPT_PATH" | sed 's/[][\.*^$(){}?+|]/\\&/g')
     fi
 
     if cron_replace_tasks "$remove_pattern" "$cron_entry"; then
@@ -1173,13 +1173,13 @@ remove_all_limits() {
     
     # 移除包装脚本的定时任务（旧版本）
     if crontab -l 2>/dev/null | grep -q "$wrapper_script"; then
-        _cron_drop "$(printf '%s' "$wrapper_script" | sed 's/[][\.*^$(){}?+|/]/\\&/g')"
+        _cron_drop "$(printf '%s' "$wrapper_script" | sed 's/[][\.*^$(){}?+|]/\\&/g')"
         echo -e "${GREEN}已移除旧的包装脚本定时任务${NC}"
     fi
     
     # 移除旧的直接调用定时任务
     if crontab -l 2>/dev/null | grep -q "$PORT_SCRIPT_PATH"; then
-        _cron_drop "$(printf '%s' "$PORT_SCRIPT_PATH" | sed 's/[][\.*^$(){}?+|/]/\\&/g')"
+        _cron_drop "$(printf '%s' "$PORT_SCRIPT_PATH" | sed 's/[][\.*^$(){}?+|]/\\&/g')"
         echo -e "${GREEN}已移除旧的定时任务${NC}"
     fi
     

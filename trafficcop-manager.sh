@@ -37,6 +37,21 @@ create_work_dir() {
 # 下载脚本
 install_script() {
     local script_name="$1"
+
+    # ⚠️ crontab_safe.sh 是**共享依赖**：trafficcop.sh、三个通知器、
+    #    machine_limit_manager、port_traffic_limit 都 source 它。
+    #    缺了它，这些脚本里的 cron_replace_tasks 未定义，
+    #    通知器的 setup_cron 只会打印「crontab_safe.sh 缺失」，
+    #    **任务永远不会被添加，通知器装了也从不运行**。
+    #    所以任何脚本下载前先确保这个库到位。
+    #    （CodeRabbit 指出：原先只有「安装端口限流」这条路径会下载它。）
+    if [ "$script_name" != "crontab_safe.sh" ] && [ ! -f "$WORK_DIR/crontab_safe.sh" ]; then
+        echo -e "${YELLOW}正在下载依赖库 crontab_safe.sh...${NC}"
+        curl -fsSL "$REPO_URL/crontab_safe.sh" -o "$WORK_DIR/crontab_safe.sh" 2>/dev/null \
+            && chmod +x "$WORK_DIR/crontab_safe.sh" \
+            || echo -e "${YELLOW}! crontab_safe.sh 下载失败，相关脚本的定时任务功能将不可用${NC}"
+    fi
+
     echo -e "${YELLOW}正在下载 $script_name...${NC}"
     curl -fsSL "$REPO_URL/$script_name" -o "$WORK_DIR/$script_name"
     chmod +x "$WORK_DIR/$script_name"
