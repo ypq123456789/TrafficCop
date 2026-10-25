@@ -108,11 +108,12 @@ gen_hour > f_hour.json
 gen_month 2025 3 1 > f_month.json          # 数据库早就存在
 gen_month 2026 10 20 > f_month_newdb.json  # 数据库 10-20 才建（周期中途）
 gen_day 2026-10-01 25 > f_day_startday.json  # created = 10-01（起点当天）
+gen_day 2026-09-01 30 > f_day_prev.json      # 只有上个周期的记录（vnstat 停更）
 printf '{"interfaces":[{"id":"eth0","created":{"date":{"year":2026,"month":10,"day":1}},"traffic":{"hour":[{"date":{"year":2026,"month":10,"day":1},"time":{"hour":14},"rx":1000000000,"tx":2000000000}]}}]}\n' > f_hour_noon.json
 printf '{"interfaces":[{"id":"eth0","traffic":{}}]}\n' > f_empty.json
 printf '{"interfaces":[{"id":"eth0","created":{"date":{"year":2026,"month":10,"day":20}},"traffic":{"hour":[],"day":[],"month":[]}}]}\n' > f_emptyarr.json
 : > f_none.json   # vnstat 完全无输出
-for f in f_day_full.json f_day_short.json f_day_startday.json f_hour.json f_hour_noon.json f_month.json f_month_newdb.json f_empty.json f_emptyarr.json; do
+for f in f_day_full.json f_day_short.json f_day_startday.json f_day_prev.json f_hour.json f_hour_noon.json f_month.json f_month_newdb.json f_empty.json f_emptyarr.json; do
     jq -e . "$f" >/dev/null 2>&1 || { echo "fixture 非法 JSON: $f"; exit 1; }
 done
 
@@ -284,6 +285,19 @@ check_nodata() { # $1=说明  $2..=fixture
 check_nodata "vnstat 无输出" F_HOUR=f_none.json F_DAY=f_none.json F_MONTH=f_none.json
 check_nodata "traffic 对象为空" F_HOUR=f_empty.json F_DAY=f_empty.json F_MONTH=f_empty.json
 check_nodata "数组为空 []" F_HOUR=f_emptyarr.json F_DAY=f_emptyarr.json F_MONTH=f_emptyarr.json
+
+echo "=== 5b. vnstat 停更、只剩上个周期记录 → 不能按 0 用量处理 ==="
+rm -f stderr.log
+env F_HOUR=f_none.json F_DAY=f_day_prev.json F_MONTH=f_month.json PERIOD_START_DAY=1 \
+    bash ./driver.sh > out.txt 2>&1
+USAGE=$(grep '^USAGE=' out.txt | head -n1 | cut -d= -f2-)
+RC=$(grep '^RC=' out.txt | head -n1 | cut -d= -f2-)
+FLAG=$(grep '^FLAG=' out.txt | head -n1 | cut -d= -f2-)
+[ "$USAGE" = "0.000" ] && ok "回显 0.000" || no "应回显 0.000，实得 ${USAGE:-空}"
+[ "$RC" != "0" ] && ok "返回非 0（rc=$RC）" || no "应返回非 0"
+[ "$FLAG" = "0" ] && ok "取数标记 = 0（调用方不会据此解除限速）" || no "标记应为 0，实得 ${FLAG:-空}"
+grep -q "内没有任何 vnstat 记录" stderr.log 2>/dev/null \
+    && ok "日志点明周期内无记录" || no "缺少「周期内无记录」告警"
 
 echo "=== 6. 四种统计模式（in / out / total / max） ==="
 case_mode() { # $1=mode $2=期望字节

@@ -825,6 +825,7 @@ vnstat_sum_filter() {
     case "$val" in
         rx)    pick=".rx" ;;
         tx)    pick=".tx" ;;
+        count) pick="1" ;;          # 每条命中记 1，add 回来就是「周期内的记录条数」
         *)     pick="(.rx + .tx)" ;;
     esac
     printf '[%s[] | %s as $dn | select($dn >= $s and $dn <= $e) | %s] | add // 0' \
@@ -979,6 +980,21 @@ get_traffic_usage() {
     esac
 
     echo "$(date '+%Y-%m-%d %H:%M:%S') 累加粒度: ${coverage}（vnstat ${granularity} 数据，周期 $start_date ~ $end_date）" >&2
+
+    # 「求和 = 0」有两种可能：本周期确实没用流量，或 vnstat 已停止更新、只剩
+    # 上个周期的旧记录（粒度选择接受它，但按本周期日期筛选一条都匹配不到）。
+    # 后者若标记为取数成功，下游会按 0 用量解除限速，所以必须先确认周期内有记录。
+    if [ -z "$usage_bytes" ] || [ "$usage_bytes" = "null" ] || [ "$usage_bytes" = "0" ]; then
+        local matched
+        matched=$(printf '%s' "$json" | jq --argjson s "$s_arg" --argjson e "$e_arg" \
+            "$(vnstat_sum_filter "$arr" count "$key_expr")" 2>/dev/null)
+        if [ "$matched" = "0" ]; then
+            printf '0\n' > "$flag_file" 2>/dev/null
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 警告: 本周期 $start_date ~ $end_date 内没有任何 vnstat 记录（vnstat 可能已停止更新），不按 0 用量处理" >&2
+            echo "0.000"
+            return 1
+        fi
+    fi
 
     if [ -n "$usage_bytes" ] && [ "$usage_bytes" != "null" ] && [ "$usage_bytes" != "0" ]; then
         # 字节 -> GB。进制由 CONVERSION_BASE 决定（默认 1024，见文件顶部说明）。
