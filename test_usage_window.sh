@@ -107,8 +107,9 @@ gen_hour > f_hour.json
 gen_month 2025 3 1 > f_month.json          # 数据库早就存在
 gen_month 2026 10 20 > f_month_newdb.json  # 数据库 10-20 才建（周期中途）
 printf '{"interfaces":[{"id":"eth0","traffic":{}}]}\n' > f_empty.json
+printf '{"interfaces":[{"id":"eth0","created":{"date":{"year":2026,"month":10,"day":20}},"traffic":{"hour":[],"day":[],"month":[]}}]}\n' > f_emptyarr.json
 : > f_none.json   # vnstat 完全无输出
-for f in f_day_full.json f_day_short.json f_hour.json f_month.json f_month_newdb.json f_empty.json; do
+for f in f_day_full.json f_day_short.json f_hour.json f_month.json f_month_newdb.json f_empty.json f_emptyarr.json; do
     jq -e . "$f" >/dev/null 2>&1 || { echo "fixture 非法 JSON: $f"; exit 1; }
 done
 
@@ -269,6 +270,7 @@ check_nodata() { # $1=说明  $2..=fixture
 }
 check_nodata "vnstat 无输出" F_HOUR=f_none.json F_DAY=f_none.json F_MONTH=f_none.json
 check_nodata "traffic 对象为空" F_HOUR=f_empty.json F_DAY=f_empty.json F_MONTH=f_empty.json
+check_nodata "数组为空 []" F_HOUR=f_emptyarr.json F_DAY=f_emptyarr.json F_MONTH=f_emptyarr.json
 
 echo "=== 6. 四种统计模式（in / out / total / max） ==="
 case_mode() { # $1=mode $2=期望字节
@@ -317,6 +319,9 @@ grep -q '"traffic_mode"' "$SRC" && ok "快照记录了统计模式（口径变�
 grep -q '"main_interface"' "$SRC" && ok "快照记录了监控网卡" || no "快照未记录 main_interface"
 grep -q 'vnstat_db_created' "$SRC" && ok "已用建库日期兜底月级完整性" || no "缺少 vnstat_db_created"
 grep -q 'USAGE_FLAG_FILE' "$SRC" && ok "取数失败有标记文件" || no "缺少取数标记"
+grep -q 'bc 2>/dev/null || echo "0.000"' "$SRC" && no "换算失败仍被 \|\| echo 0.000 掩盖" \
+    || ok "换算失败不再静默退化为 0"
+grep -q 'traffic.day | length > 0' "$SRC" && ok "空数组按无记录处理" || no "未判断数组长度"
 grep -q 'current_usage=$(apply_usage_high_water' "$SRC" && ok "check_and_limit_traffic 已调用兜底" \
     || no "check_and_limit_traffic 未调用兜底"
 grep -q '^SCRIPT_VERSION="1.0.93"' "$SRC" && ok "版本号 1.0.93" || no "版本号未更新"

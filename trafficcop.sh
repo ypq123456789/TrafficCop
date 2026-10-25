@@ -878,7 +878,9 @@ get_traffic_usage() {
         [ -n "$json" ] || json=$(vnstat -i "$MAIN_INTERFACE" --json d 2>/dev/null)
         # 连日级数组都不存在（vnstat 完全没数据）时置空，走下面的取数失败分支，
         # 不能静默返回 0.000 —— 那会被下游当成「这个周期确实没用量」。
-        if ! printf '%s' "$json" | jq -e '.interfaces[0].traffic.day' >/dev/null 2>&1; then
+        # 注意：jq -e 对空数组 `[]` 仍返回 0（只有 false/null 才算失败），
+        # 所以必须显式判断「至少有一条记录」，否则"[] + 求和为 0"会被当成取数成功。
+        if ! printf '%s' "$json" | jq -e '.interfaces[0].traffic.day | length > 0' >/dev/null 2>&1; then
             json=""
         fi
         if [ -n "$json" ]; then
@@ -949,18 +951,35 @@ get_traffic_usage() {
             ;;
     esac
 
-    printf '1\n' > "$flag_file" 2>/dev/null
     echo "$(date '+%Y-%m-%d %H:%M:%S') 累加粒度: ${coverage}（vnstat ${granularity} 数据，周期 $start_date ~ $end_date）" >&2
 
     if [ -n "$usage_bytes" ] && [ "$usage_bytes" != "null" ] && [ "$usage_bytes" != "0" ]; then
         # 字节 -> GB。进制由 CONVERSION_BASE 决定（默认 1024，见文件顶部说明）。
-        local divisor
+        local divisor usage_gb out_gb
         divisor=$(get_byte_divisor)
-        local usage_gb
-        usage_gb=$(echo "scale=3; $usage_bytes/$divisor" | bc 2>/dev/null || echo "0.000")
+        # 这里不能写 `|| echo 0.000`：bc 不可用时会静默返回 0，
+        # 下游会把「换算失败」当成「本周期没用量」并解除限速。
+        usage_gb=$(echo "scale=3; $usage_bytes/$divisor" | bc 2>/dev/null)
+        case "$usage_gb" in
+            ""|*[!0-9.]*)
+                printf '0\n' > "$flag_file" 2>/dev/null
+                echo "$(date '+%Y-%m-%d %H:%M:%S') 错误: 流量换算失败（字节数 $usage_bytes，除数 $divisor），请检查 bc 是否可用" >&2
+                echo "0.000"
+                return 1
+                ;;
+        esac
         # 确保小数点前至少有一个0
-        printf "%.3f\n" "$usage_gb" 2>/dev/null || echo "0.000"
+        if ! out_gb=$(printf "%.3f" "$usage_gb" 2>/dev/null); then
+            printf '0\n' > "$flag_file" 2>/dev/null
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 错误: 流量格式化失败 ($usage_gb)" >&2
+            echo "0.000"
+            return 1
+        fi
+        printf '1\n' > "$flag_file" 2>/dev/null
+        echo "$out_gb"
     else
+        # 用量为 0 是合法情况（周期刚开始 / 确实没用流量），仍算取数成功
+        printf '1\n' > "$flag_file" 2>/dev/null
         echo "0.000"
     fi
 }
