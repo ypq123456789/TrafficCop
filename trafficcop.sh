@@ -997,6 +997,8 @@ write_state_snapshot() {
   "limit_gb": ${limit:-0},
   "conversion_base": ${CONVERSION_BASE:-1024},
   "period_start": "$period_start",
+  "traffic_mode": "${TRAFFIC_MODE:-total}",
+  "main_interface": "${MAIN_INTERFACE:-}",
   "script_version": "${SCRIPT_VERSION:-1.0.93}",
   "hostname": "$(hostname 2>/dev/null || echo unknown)"
 }
@@ -1040,19 +1042,32 @@ state_field() {
 # 以下情况不沿用（否则会把错误值永久钉住）：
 #   · 计费周期变了 —— 新周期本就该从 0 重新累计
 #   · 换算进制变了 —— 1000 <-> 1024 会让读数合法地变化 ~2.4%
+#   · 统计模式或网卡变了 —— total/out/in/max 的口径不同，读数本就不可比
 #   · 骤降超过一半 —— 更像 vnstat 数据库被重建，应接受新值
+#   · 读到 0（而上次不是 0）—— 更像取数失败，绝不能用 0 覆盖
 apply_usage_high_water() {
     local new_usage="$1"
-    local prev_usage prev_period prev_base cur_period
+    local prev_usage prev_period prev_base prev_mode prev_iface cur_period
 
     prev_usage=$(state_field usage_gb) || { echo "$new_usage"; return; }
     prev_period=$(state_field period_start) || { echo "$new_usage"; return; }
     prev_base=$(state_field conversion_base 2>/dev/null || true)
     [ -n "$prev_base" ] || prev_base="${CONVERSION_BASE:-1024}"
+    prev_mode=$(state_field traffic_mode 2>/dev/null || true)
+    prev_iface=$(state_field main_interface 2>/dev/null || true)
     cur_period=$(get_period_start_date 2>/dev/null || echo "")
 
     [ "$cur_period" = "$prev_period" ] || { echo "$new_usage"; return; }
     [ "$prev_base" = "${CONVERSION_BASE:-1024}" ] || { echo "$new_usage"; return; }
+    # 老快照没有这两个字段：缺失时不做判定，保证向后兼容
+    if [ -n "$prev_mode" ] && [ "$prev_mode" != "${TRAFFIC_MODE:-total}" ]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 提示: 统计模式由 $prev_mode 改为 ${TRAFFIC_MODE:-total}，口径已变，不做高水位沿用" >&2
+        echo "$new_usage"; return
+    fi
+    if [ -n "$prev_iface" ] && [ "$prev_iface" != "${MAIN_INTERFACE:-}" ]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 提示: 监控网卡由 $prev_iface 改为 ${MAIN_INTERFACE:-}，口径已变，不做高水位沿用" >&2
+        echo "$new_usage"; return
+    fi
 
     # bc 不接受空串或非数字，先做合法性校验
     case "$prev_usage" in
@@ -1065,6 +1080,14 @@ apply_usage_high_water() {
     # 只留 0.001 GB 余量（读数是 3 位小数），避免浮点误差造成的假下降
     [ "$(echo "$new_usage < $prev_usage - 0.001" | bc -l 2>/dev/null || echo 0)" = "1" ] \
         || { echo "$new_usage"; return; }
+
+    # 读到 0（上次不是 0）更像取数失败，绝不能用 0 覆盖快照 —— 否则限速会被解除
+    if [ "$(echo "$prev_usage > 0.001" | bc -l 2>/dev/null || echo 0)" = "1" ] \
+       && [ "$(echo "$new_usage < 0.001" | bc -l 2>/dev/null || echo 0)" = "1" ]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 警告: 本次读出 ${new_usage} GB，但同周期上次为 ${prev_usage} GB；更像取数失败而非真实归零，沿用上一次的值" >&2
+        echo "$prev_usage"
+        return
+    fi
 
     local half
     half=$(echo "scale=3; $prev_usage / 2" | bc -l 2>/dev/null || echo 0)

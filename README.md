@@ -143,9 +143,10 @@ vnstat -i eth0 -m          # 或: vnstat -i eth0 --json m | jq '.interfaces[0].t
 
 ```bash
 # 1) 把小时级保留期改成 100 天（覆盖季度周期）。
-#    该行可能不存在或被注释掉，直接 sed 会「什么都不做」，所以先判断再改。
-if grep -qE '^[[:space:]]*#?[[:space:]]*HourlyDays' /etc/vnstat.conf; then
-    sed -i -E 's|^[[:space:]]*#?[[:space:]]*HourlyDays.*|HourlyDays      100|' /etc/vnstat.conf
+#    该行可能不存在，也可能被 `#` 或 `;` 注释掉（vnstat 自带的样例配置用 `;`）。
+#    直接 sed 在「不存在/被注释」时会静默什么都不做，所以先判断再改。
+if grep -qE '^[[:space:]]*[#;]?[[:space:]]*HourlyDays' /etc/vnstat.conf; then
+    sed -i -E 's|^[[:space:]]*[#;]?[[:space:]]*HourlyDays.*|HourlyDays      100|' /etc/vnstat.conf
 else
     echo 'HourlyDays      100' >> /etc/vnstat.conf
 fi

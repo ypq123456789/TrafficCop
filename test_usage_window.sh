@@ -182,6 +182,8 @@ date() {
 TRAFFIC_PERIOD="monthly"
 PERIOD_START_DAY=1
 CONVERSION_BASE="${CONVERSION_BASE:-1024}"
+TRAFFIC_MODE="${TRAFFIC_MODE:-total}"
+MAIN_INTERFACE="${MAIN_INTERFACE:-eth0}"
 WORK_DIR="."
 STATE_FILE="./_st.json"
 apply_usage_high_water "$1" 2>/dev/null
@@ -282,13 +284,13 @@ case_mode max 50000000000      # max(rx, tx)
 
 echo "=== 7. 累计量兜底：同一周期内不取下降值 ==="
 CUR_PERIOD="2026-10-01"
-mk_state() { # $1=usage $2=base $3=period
+mk_state() { # $1=usage $2=base $3=period $4=mode $5=iface
     cat > _st.json <<EOF
-{"usage_gb":$1,"conversion_base":$2,"period_start":"$3"}
+{"usage_gb":$1,"conversion_base":$2,"period_start":"$3","traffic_mode":"$4","main_interface":"$5"}
 EOF
 }
-guard_case() { # $1=prev $2=new $3=期望 $4=说明 [$5=base] [$6=period]
-    mk_state "$1" "${5:-1024}" "${6:-$CUR_PERIOD}"
+guard_case() { # $1=prev $2=new $3=期望 $4=说明 [$5=base] [$6=period] [$7=mode] [$8=iface]
+    mk_state "$1" "${5:-1024}" "${6:-$CUR_PERIOD}" "${7:-total}" "${8:-eth0}"
     local got
     got=$(bash ./guard.sh "$2")
     rm -f _st.json
@@ -298,8 +300,11 @@ guard_case 30.000 20.000 30.000 "读数下降 → 沿用旧值"
 guard_case 30.000 35.000 35.000 "读数上升 → 采用新值"
 guard_case 30.000 5.000 5.000 "骤降过半（疑似库重建）→ 采用新值"
 guard_case 15.000 14.995 15.000 "舍入级微降 → 视为未下降"
+guard_case 30.000 0.000 30.000 "读到 0（疑似取数失败）→ 沿用旧值"
 guard_case 30.000 20.000 20.000 "计费周期变化 → 采用新值" 1024 "1999-01-01"
 guard_case 30.000 20.000 20.000 "换算进制变化 → 采用新值" 1000
+guard_case 30.000 20.000 20.000 "统计模式变化（total→out）→ 采用新值" 1024 "$CUR_PERIOD" "out"
+guard_case 30.000 20.000 20.000 "监控网卡变化 → 采用新值" 1024 "$CUR_PERIOD" "total" "eth1"
 rm -f _st.json
 got=$(bash ./guard.sh 20.000)
 [ "$got" = "20.000" ] && ok "无快照 → 采用新值" || no "无快照应为 20.000，实得 ${got:-空}"
@@ -308,6 +313,10 @@ echo "=== 8. 静态检查 ==="
 grep -q 'vnstat_first_date' "$SRC" && ok "已按数据覆盖情况选粒度" || no "未找到 vnstat_first_date"
 grep -q 'use_hourly' "$SRC" && no "仍存在无条件优先小时级的旧逻辑" || ok "旧的小时级硬编码逻辑已移除"
 grep -q 'apply_usage_high_water' "$SRC" && ok "已实现累计量兜底" || no "未实现累计量兜底"
+grep -q '"traffic_mode"' "$SRC" && ok "快照记录了统计模式（口径变化时不再沿用）" || no "快照未记录 traffic_mode"
+grep -q '"main_interface"' "$SRC" && ok "快照记录了监控网卡" || no "快照未记录 main_interface"
+grep -q 'vnstat_db_created' "$SRC" && ok "已用建库日期兜底月级完整性" || no "缺少 vnstat_db_created"
+grep -q 'USAGE_FLAG_FILE' "$SRC" && ok "取数失败有标记文件" || no "缺少取数标记"
 grep -q 'current_usage=$(apply_usage_high_water' "$SRC" && ok "check_and_limit_traffic 已调用兜底" \
     || no "check_and_limit_traffic 未调用兜底"
 grep -q '^SCRIPT_VERSION="1.0.93"' "$SRC" && ok "版本号 1.0.93" || no "版本号未更新"
