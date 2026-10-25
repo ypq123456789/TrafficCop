@@ -96,7 +96,7 @@ get_byte_divisor() {
 }
 
 # 脚本版本号。上报模块与日志里都用它，请与下面 echo 的版本保持单一来源。
-SCRIPT_VERSION="1.0.92"
+SCRIPT_VERSION="1.0.93"
 
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
 echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：$SCRIPT_VERSION"| tee -a "$LOG_FILE"
@@ -740,100 +740,182 @@ get_period_end_date() {
     esac
 }
 
+# ============================================================
+# 按「数据覆盖能力」选择累加粒度（issue #23）
+# ------------------------------------------------------------
+# 背景：本周期用量原先固定用「小时级」数据（vnstat --json h）累加。
+# 但 vnstat 默认 HourlyDays=4 —— 小时级记录只保留 4 天，更早的会被
+# vnstat 每天轮转删除。于是「本周期累计」实际只等于「最近 4 天」：
+#   · 老日期被删掉 → 数字逐日变小（客户看到的「当前使用逐渐减少」）；
+#   · 4 天的量远小于整月额度 → 限速永远触发不了（这个后果更严重）。
+#
+# vnstat 三种粒度的默认保留期：
+#   hour   →  4 天   （可对齐到小时，最精确）
+#   day    →  62 天  （覆盖月度周期足够）
+#   month  →  25 个月（季度 / 年度周期用）
+#
+# 现在的策略：从细到粗，取第一个「最早记录 <= 周期起点」的粒度。
+# 三种都不覆盖（vnstat 建库晚于周期起点，新装机器常见）时退到日级，
+# 并在日志里明确告警「数据不完整」，绝不做猜测性补数。
+# ============================================================
+
+# 取某种粒度下最早一条记录的日期数值（日/小时级 YYYYMMDD，月级 YYYYMM）。
+# 无数据或字段缺失时回显极大值，等价于「未覆盖」。
+# 用法: vnstat_first_date <json> <hour|day|month>
+vnstat_first_date() {
+    local json="$1" gran="$2" num=""
+    case "$gran" in
+        month)
+            num=$(printf '%s' "$json" | jq -r '.interfaces[0].traffic.month[0].date | .year * 100 + .month' 2>/dev/null)
+            ;;
+        *)
+            num=$(printf '%s' "$json" | jq -r ".interfaces[0].traffic.${gran}[0].date | .year * 10000 + .month * 100 + .day" 2>/dev/null)
+            ;;
+    esac
+    case "$num" in
+        ""|null) echo "99999999" ;;
+        *)       echo "$num" ;;
+    esac
+}
+
+# 生成「周期区间内求和」的 jq 过滤表达式。
+# $1 = 数组路径  $2 = rx|tx|total  $3 = 日期键表达式
+vnstat_sum_filter() {
+    local arr="$1" val="$2" key="$3" pick
+    case "$val" in
+        rx)    pick=".rx" ;;
+        tx)    pick=".tx" ;;
+        *)     pick="(.rx + .tx)" ;;
+    esac
+    printf '[%s[] | %s as $dn | select($dn >= $s and $dn <= $e) | %s] | add // 0' \
+        "$arr" "$key" "$pick"
+}
+
 # 获取流量使用情况
 get_traffic_usage() {
-    local start_date=$(get_period_start_date)
-    local end_date=$(get_period_end_date)
+    local start_date end_date
+    start_date=$(get_period_start_date)
+    end_date=$(get_period_end_date)
 
     echo "$(date '+%Y-%m-%d %H:%M:%S') 周期开始日期: $start_date, 周期结束日期: $end_date" >&2
 
-    # 优先使用小时级数据（--json h）按北京时间累加。
-    # 原因：vnstat 的「日」是按宿主机时区切分的，若宿主机为 UTC，
-    # 其日界比北京时间晚 8 小时，直接累加 day 数据会在月初产生偏差。
-    # 小时级数据可以自行判断每个小时属于北京时间的哪一天，从而精确对齐
-    # 阿里云 CDT 的北京时间自然月。
-    local vnstat_json=$(vnstat -i "$MAIN_INTERFACE" --json h 2>/dev/null)
+    # 转成 YYYYMMDD 整数用于比较（兼容 vnstat 2.x 的 date 对象格式）
+    local start_num end_num
+    start_num=$(echo "$start_date" | tr -d '-')
+    end_num=$(echo "$end_date" | tr -d '-')
 
-    # 回退：小时数据不可用时退回日数据（vnstat 2.x 老版本可能不支持 h）
-    local use_hourly=true
-    if [ -z "$vnstat_json" ] || ! echo "$vnstat_json" | jq -e '.interfaces[0].traffic.hour' >/dev/null 2>&1; then
-        use_hourly=false
-        vnstat_json=$(vnstat -i "$MAIN_INTERFACE" --json 2>/dev/null)
+    # 宿主机不是 UTC+8 时，vnstat 的日/月切分与北京时间的自然月会有偏差。
+    # 脚本内的 TZ 只影响 date 命令，改不了 vnstat 已落库的切分，因此只能提示。
+    if [ "${HOST_TZ_WARNED:-0}" != "1" ] && [ "$(date +%z)" != "+0800" ]; then
+        HOST_TZ_WARNED=1
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 警告: 宿主机时区为 $(date +%z)，非北京时间(+0800)。vnstat 按宿主机时区切分流量，可能与服务商的北京时间周期存在偏差。建议执行: timedatectl set-timezone Asia/Shanghai" >&2
     fi
 
-    if [ -z "$vnstat_json" ]; then
+    local json="" json_d="" granularity="" coverage=""
+    local json_h
+    json_h=$(vnstat -i "$MAIN_INTERFACE" --json h 2>/dev/null)
+
+    # ① 小时级：仅当最早一条小时记录已经覆盖到周期起点（按日期粗判即可）
+    if printf '%s' "$json_h" | jq -e '.interfaces[0].traffic.hour' >/dev/null 2>&1; then
+        if [ "$(vnstat_first_date "$json_h" hour)" -le "$start_num" ]; then
+            granularity="hour"
+            json="$json_h"
+            coverage="小时级"
+        fi
+    fi
+
+    # ② 日级：默认保留 62 天，月度周期足够
+    if [ -z "$granularity" ]; then
+        json_d=$(vnstat -i "$MAIN_INTERFACE" --json d 2>/dev/null)
+        if printf '%s' "$json_d" | jq -e '.interfaces[0].traffic.day' >/dev/null 2>&1; then
+            if [ "$(vnstat_first_date "$json_d" day)" -le "$start_num" ]; then
+                granularity="day"
+                json="$json_d"
+                coverage="日级"
+            fi
+        fi
+    fi
+
+    # ③ 月级：默认保留 25 个月，季度/年度周期只能走这里
+    if [ -z "$granularity" ]; then
+        local json_m
+        json_m=$(vnstat -i "$MAIN_INTERFACE" --json m 2>/dev/null)
+        if printf '%s' "$json_m" | jq -e '.interfaces[0].traffic.month' >/dev/null 2>&1; then
+            if [ "$(vnstat_first_date "$json_m" month)" -le "$((start_num / 100))" ]; then
+                granularity="month"
+                json="$json_m"
+                coverage="月级"
+                # 起始日不是 1 号时，起始月的「月累计」会把该月 1 号~起始日前一天
+                # 也加进来 —— 这段数据在日级里已滚出，属不可得，只能近似。
+                if [ "$((start_num % 100))" -ne 1 ]; then
+                    echo "$(date '+%Y-%m-%d %H:%M:%S') 提示: 周期起始日不是 1 号且日级数据已滚出，本周期用量按整月近似计算（结果略偏大）" >&2
+                fi
+            fi
+        fi
+    fi
+
+    # ④ 三种粒度都没覆盖周期起点：vnstat 建库晚于周期起点（新装机器常见）。
+    #    只能统计「有记录的那一段」，明确告警，不做猜测性补数。
+    if [ -z "$granularity" ]; then
+        granularity="day"
+        json="$json_d"
+        [ -n "$json" ] || json=$(vnstat -i "$MAIN_INTERFACE" --json d 2>/dev/null)
+        coverage="日级(不完整)"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 警告: vnstat 缺少 $start_date 以来的完整数据（数据库可能较新），本次只累加有记录的时段，实际用量会更大" >&2
+    fi
+
+    if [ -z "$json" ]; then
         echo "$(date '+%Y-%m-%d %H:%M:%S') 错误: 无法获取 vnstat JSON 数据" >&2
         echo "0.000"
         return 1
     fi
 
-    # 将日期转换为 YYYYMMDD 整数用于比较（兼容 vnstat 2.x 的 date 对象格式）
-    local start_num=$(echo "$start_date" | tr -d '-')
-    local end_num=$(echo "$end_date" | tr -d '-')
+    # 小时级/日级按「天」筛选，月级按「月」筛选
+    local arr=".interfaces[0].traffic.${granularity}"
+    local key_expr="(.date.year * 10000 + .date.month * 100 + .date.day)"
+    local s_arg="$start_num"
+    local e_arg="$end_num"
+    if [ "$granularity" = "month" ]; then
+        key_expr="(.date.year * 100 + .date.month)"
+        s_arg=$((start_num / 100))
+        e_arg=$((end_num / 100))
+    fi
 
     # 根据 TRAFFIC_MODE 累加对应的流量
-    local usage_bytes
-    if [ "$use_hourly" = true ]; then
-        # 小时级数据（推荐路径）。
-        # 说明：vnstat 记录的日期/小时使用的是【宿主机系统时区】的切分结果，
-        # 脚本内的 TZ 只影响 date 命令，无法改变 vnstat 已落库的切分。
-        # 因此这里额外校验宿主机偏移：若宿主机不是 UTC+8，会在日志中告警，
-        # 提示把系统时区改为 Asia/Shanghai（timedatectl set-timezone Asia/Shanghai）
-        # 才能与阿里云 CDT 的北京时间自然月完全对齐。
-        if [ "$HOST_TZ_WARNED" != "1" ] && [ "$(date +%z)" != "+0800" ]; then
-            HOST_TZ_WARNED=1
-            echo "$(date '+%Y-%m-%d %H:%M:%S') 警告: 宿主机时区为 $(date +%z)，非北京时间(+0800)。vnstat 按宿主机时区切分流量，可能与阿里云 CDT 的北京时间周期存在偏差。建议执行: timedatectl set-timezone Asia/Shanghai" >&2
-        fi
-        case $TRAFFIC_MODE in
-            out)
-                usage_bytes=$(echo "$vnstat_json" | jq --argjson start_num "$start_num" --argjson end_num "$end_num" \
-                    '[.interfaces[0].traffic.hour[] | (.date.year * 10000 + .date.month * 100 + .date.day) as $date_num | select($date_num >= $start_num and $date_num <= $end_num) | .tx] | add // 0')
-                ;;
-            in)
-                usage_bytes=$(echo "$vnstat_json" | jq --argjson start_num "$start_num" --argjson end_num "$end_num" \
-                    '[.interfaces[0].traffic.hour[] | (.date.year * 10000 + .date.month * 100 + .date.day) as $date_num | select($date_num >= $start_num and $date_num <= $end_num) | .rx] | add // 0')
-                ;;
-            total)
-                usage_bytes=$(echo "$vnstat_json" | jq --argjson start_num "$start_num" --argjson end_num "$end_num" \
-                    '[.interfaces[0].traffic.hour[] | (.date.year * 10000 + .date.month * 100 + .date.day) as $date_num | select($date_num >= $start_num and $date_num <= $end_num) | (.rx + .tx)] | add // 0')
-                ;;
-            max)
-                local rx_bytes=$(echo "$vnstat_json" | jq --argjson start_num "$start_num" --argjson end_num "$end_num" \
-                    '[.interfaces[0].traffic.hour[] | (.date.year * 10000 + .date.month * 100 + .date.day) as $date_num | select($date_num >= $start_num and $date_num <= $end_num) | .rx] | add // 0')
-                local tx_bytes=$(echo "$vnstat_json" | jq --argjson start_num "$start_num" --argjson end_num "$end_num" \
-                    '[.interfaces[0].traffic.hour[] | (.date.year * 10000 + .date.month * 100 + .date.day) as $date_num | select($date_num >= $start_num and $date_num <= $end_num) | .tx] | add // 0')
-                usage_bytes=$(printf '%s\n%s' "$rx_bytes" "$tx_bytes" | sort -rn | head -n1)
-                ;;
-        esac
-    else
-        # 日级数据回退路径（vnstat 老版本）
-        case $TRAFFIC_MODE in
-            out)
-                usage_bytes=$(echo "$vnstat_json" | jq --argjson start_num "$start_num" --argjson end_num "$end_num" \
-                    '[.interfaces[0].traffic.day[] | (.date.year * 10000 + .date.month * 100 + .date.day) as $date_num | select($date_num >= $start_num and $date_num <= $end_num) | .tx] | add // 0')
-                ;;
-            in)
-                usage_bytes=$(echo "$vnstat_json" | jq --argjson start_num "$start_num" --argjson end_num "$end_num" \
-                    '[.interfaces[0].traffic.day[] | (.date.year * 10000 + .date.month * 100 + .date.day) as $date_num | select($date_num >= $start_num and $date_num <= $end_num) | .rx] | add // 0')
-                ;;
-            total)
-                usage_bytes=$(echo "$vnstat_json" | jq --argjson start_num "$start_num" --argjson end_num "$end_num" \
-                    '[.interfaces[0].traffic.day[] | (.date.year * 10000 + .date.month * 100 + .date.day) as $date_num | select($date_num >= $start_num and $date_num <= $end_num) | (.rx + .tx)] | add // 0')
-                ;;
-            max)
-                local rx_bytes=$(echo "$vnstat_json" | jq --argjson start_num "$start_num" --argjson end_num "$end_num" \
-                    '[.interfaces[0].traffic.day[] | (.date.year * 10000 + .date.month * 100 + .date.day) as $date_num | select($date_num >= $start_num and $date_num <= $end_num) | .rx] | add // 0')
-                local tx_bytes=$(echo "$vnstat_json" | jq --argjson start_num "$start_num" --argjson end_num "$end_num" \
-                    '[.interfaces[0].traffic.day[] | (.date.year * 10000 + .date.month * 100 + .date.day) as $date_num | select($date_num >= $start_num and $date_num <= $end_num) | .tx] | add // 0')
-                usage_bytes=$(printf '%s\n%s' "$rx_bytes" "$tx_bytes" | sort -rn | head -n1)
-                ;;
-        esac
-    fi
+    local usage_bytes=""
+    case $TRAFFIC_MODE in
+        out)
+            usage_bytes=$(printf '%s' "$json" | jq --argjson s "$s_arg" --argjson e "$e_arg" \
+                "$(vnstat_sum_filter "$arr" tx "$key_expr")" 2>/dev/null)
+            ;;
+        in)
+            usage_bytes=$(printf '%s' "$json" | jq --argjson s "$s_arg" --argjson e "$e_arg" \
+                "$(vnstat_sum_filter "$arr" rx "$key_expr")" 2>/dev/null)
+            ;;
+        max)
+            local rx_bytes tx_bytes
+            rx_bytes=$(printf '%s' "$json" | jq --argjson s "$s_arg" --argjson e "$e_arg" \
+                "$(vnstat_sum_filter "$arr" rx "$key_expr")" 2>/dev/null)
+            tx_bytes=$(printf '%s' "$json" | jq --argjson s "$s_arg" --argjson e "$e_arg" \
+                "$(vnstat_sum_filter "$arr" tx "$key_expr")" 2>/dev/null)
+            [ -n "$rx_bytes" ] || rx_bytes=0
+            [ -n "$tx_bytes" ] || tx_bytes=0
+            usage_bytes=$(printf '%s\n%s' "$rx_bytes" "$tx_bytes" | sort -rn | head -n1)
+            ;;
+        *)
+            usage_bytes=$(printf '%s' "$json" | jq --argjson s "$s_arg" --argjson e "$e_arg" \
+                "$(vnstat_sum_filter "$arr" total "$key_expr")" 2>/dev/null)
+            ;;
+    esac
+
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 累加粒度: ${coverage}（vnstat ${granularity} 数据，周期 $start_date ~ $end_date）" >&2
 
     if [ -n "$usage_bytes" ] && [ "$usage_bytes" != "null" ] && [ "$usage_bytes" != "0" ]; then
         # 字节 -> GB。进制由 CONVERSION_BASE 决定（默认 1024，见文件顶部说明）。
-        local divisor=$(get_byte_divisor)
-        local usage_gb=$(echo "scale=3; $usage_bytes/$divisor" | bc 2>/dev/null || echo "0.000")
+        local divisor
+        divisor=$(get_byte_divisor)
+        local usage_gb
+        usage_gb=$(echo "scale=3; $usage_bytes/$divisor" | bc 2>/dev/null || echo "0.000")
         # 确保小数点前至少有一个0
         printf "%.3f\n" "$usage_gb" 2>/dev/null || echo "0.000"
     else
@@ -870,7 +952,7 @@ write_state_snapshot() {
   "limit_gb": ${limit:-0},
   "conversion_base": ${CONVERSION_BASE:-1024},
   "period_start": "$period_start",
-  "script_version": "${SCRIPT_VERSION:-1.0.92}",
+  "script_version": "${SCRIPT_VERSION:-1.0.93}",
   "hostname": "$(hostname 2>/dev/null || echo unknown)"
 }
 EOF
@@ -890,10 +972,74 @@ state_age_seconds() {
     echo $((now - epoch))
 }
 
+# 读取状态快照里的单个字段（数字与字符串都支持），读不到返回 1。
+# 用法: state_field <字段名> [文件路径]
+state_field() {
+    local key="$1"
+    local f="${2:-${STATE_FILE:-$WORK_DIR/traffic_state.json}}"
+    [ -f "$f" ] || return 1
+    local v
+    v=$(grep -o "\"${key}\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" "$f" 2>/dev/null | head -n1 | sed 's/.*:[[:space:]]*"//; s/"$//')
+    if [ -z "$v" ]; then
+        v=$(grep -o "\"${key}\"[[:space:]]*:[[:space:]]*[0-9][0-9.]*" "$f" 2>/dev/null | head -n1 | sed 's/.*:[[:space:]]*//')
+    fi
+    [ -n "$v" ] || return 1
+    printf '%s\n' "$v"
+}
+
+# 同一周期内的「累计用量」只应单调递增，绝不该变小。
+# 若本次算出的值反而低于快照里的上一次读数，说明数据源退化（vnstat 轮转、
+# 建库较晚、统计口径切换），沿用更高的旧值 —— 避免每日报告里出现
+# 「当前使用一天比一天少」这种自相矛盾的数字（issue #23）。
+#
+# 以下情况不沿用（否则会把错误值永久钉住）：
+#   · 计费周期变了 —— 新周期本就该从 0 重新累计
+#   · 换算进制变了 —— 1000 <-> 1024 会让读数合法地变化 ~2.4%
+#   · 骤降超过一半 —— 更像 vnstat 数据库被重建，应接受新值
+apply_usage_high_water() {
+    local new_usage="$1"
+    local prev_usage prev_period prev_base cur_period
+
+    prev_usage=$(state_field usage_gb) || { echo "$new_usage"; return; }
+    prev_period=$(state_field period_start) || { echo "$new_usage"; return; }
+    prev_base=$(state_field conversion_base 2>/dev/null || true)
+    [ -n "$prev_base" ] || prev_base="${CONVERSION_BASE:-1024}"
+    cur_period=$(get_period_start_date 2>/dev/null || echo "")
+
+    [ "$cur_period" = "$prev_period" ] || { echo "$new_usage"; return; }
+    [ "$prev_base" = "${CONVERSION_BASE:-1024}" ] || { echo "$new_usage"; return; }
+
+    # bc 不接受空串或非数字，先做合法性校验
+    case "$prev_usage" in
+        ""|*[!0-9.]*) echo "$new_usage"; return ;;
+    esac
+    case "$new_usage" in
+        ""|*[!0-9.]*) echo "$new_usage"; return ;;
+    esac
+
+    # 只留 0.001 GB 余量（读数是 3 位小数），避免浮点误差造成的假下降
+    [ "$(echo "$new_usage < $prev_usage - 0.001" | bc -l 2>/dev/null || echo 0)" = "1" ] \
+        || { echo "$new_usage"; return; }
+
+    local half
+    half=$(echo "scale=3; $prev_usage / 2" | bc -l 2>/dev/null || echo 0)
+    if [ "$(echo "$new_usage < $half" | bc -l 2>/dev/null || echo 0)" = "1" ]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 警告: 本周期用量由 $prev_usage GB 骤降到 $new_usage GB（降幅过半），判定为 vnstat 数据库被重建，采用新值" >&2
+        echo "$new_usage"
+        return
+    fi
+
+    echo "$(date '+%Y-%m-%d %H:%M:%S') 警告: 本次算出 $new_usage GB，低于上次记录的 $prev_usage GB；累计量不应下降，沿用上一次的更高值（请检查 vnstat 数据窗口是否覆盖不足）" >&2
+    echo "$prev_usage"
+}
+
 
 # 修改 check_and_limit_traffic 函数
 check_and_limit_traffic() {
-    local current_usage=$(get_traffic_usage)
+    local current_usage
+    current_usage=$(get_traffic_usage)
+    # 兜底：同一周期内的累计用量不应下降（详见 apply_usage_high_water 注释）
+    current_usage=$(apply_usage_high_water "$current_usage")
     local limit_threshold=$(echo "$TRAFFIC_LIMIT - $TRAFFIC_TOLERANCE" | bc 2>/dev/null || echo "0")
     
     # --run（cron）模式不会走 show_current_config，此处显式记录当前进制，
@@ -1147,6 +1293,8 @@ fi
     if read_config; then
         echo "$(date '+%Y-%m-%d %H:%M:%S') 当前流量使用情况：" | tee -a "$LOG_FILE"
         local current_usage=$(get_traffic_usage)
+        # 与 --run 路径保持一致：同一周期内的累计用量不取下降值
+        current_usage=$(apply_usage_high_water "$current_usage")
         #echo "Debug: Current usage from get_traffic_usage: $current_usage" | tee -a "$LOG_FILE"
         if [ "$current_usage" != "0" ]; then
             local start_date=$(get_period_start_date)
