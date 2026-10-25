@@ -759,6 +759,21 @@ get_period_end_date() {
 # 并在日志里明确告警「数据不完整」，绝不做猜测性补数。
 # ============================================================
 
+# 取 vnstat 数据库的创建日期（YYYYMMDD）；取不到回显 0，表示「未知」。
+# 为什么要它：月级聚合只带「年-月」，看不出该月的数据是从哪天开始记的。
+# 若数据库建于周期中途（例如本月 20 号才装），光看「有没有 10 月这条」
+# 会误判成「整个 10 月都被覆盖」，从而悄悄低估本周期用量。
+# 用法: vnstat_db_created <json>
+vnstat_db_created() {
+    local json="$1" num=""
+    [ -n "$json" ] || { echo "0"; return; }
+    num=$(printf '%s' "$json" | jq -r '.interfaces[0].created.date | .year * 10000 + .month * 100 + .day' 2>/dev/null)
+    case "$num" in
+        ""|null) echo "0" ;;
+        *)       echo "$num" ;;
+    esac
+}
+
 # 取某种粒度下最早一条记录的日期数值（日/小时级 YYYYMMDD，月级 YYYYMM）。
 # 无数据或字段缺失时回显极大值，等价于「未覆盖」。
 # 用法: vnstat_first_date <json> <hour|day|month>
@@ -811,7 +826,7 @@ get_traffic_usage() {
         echo "$(date '+%Y-%m-%d %H:%M:%S') 警告: 宿主机时区为 $(date +%z)，非北京时间(+0800)。vnstat 按宿主机时区切分流量，可能与服务商的北京时间周期存在偏差。建议执行: timedatectl set-timezone Asia/Shanghai" >&2
     fi
 
-    local json="" json_d="" granularity="" coverage=""
+    local json="" json_d="" granularity="" coverage="" incomplete=""
     local json_h
     json_h=$(vnstat -i "$MAIN_INTERFACE" --json h 2>/dev/null)
 
@@ -859,12 +874,38 @@ get_traffic_usage() {
     if [ -z "$granularity" ]; then
         granularity="day"
         json="$json_d"
+        coverage="日级"
         [ -n "$json" ] || json=$(vnstat -i "$MAIN_INTERFACE" --json d 2>/dev/null)
-        coverage="日级(不完整)"
-        echo "$(date '+%Y-%m-%d %H:%M:%S') 警告: vnstat 缺少 $start_date 以来的完整数据（数据库可能较新），本次只累加有记录的时段，实际用量会更大" >&2
+        # 连日级数组都不存在（vnstat 完全没数据）时置空，走下面的取数失败分支，
+        # 不能静默返回 0.000 —— 那会被下游当成「这个周期确实没用量」。
+        if ! printf '%s' "$json" | jq -e '.interfaces[0].traffic.day' >/dev/null 2>&1; then
+            json=""
+        fi
+        if [ -n "$json" ]; then
+            incomplete="1"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 警告: vnstat 缺少 $start_date 以来的完整数据（数据库可能较新），本次只累加有记录的时段，实际用量会更大" >&2
+        fi
     fi
 
+    # 补一层 created 判定：月级聚合只带「年-月」，看不出该月的数据是从哪天开始的。
+    # 若数据库建于周期中途（如本月 20 号才装），上面的覆盖判定会认为「10 月已被
+    # 覆盖」，实际只统计到 20 号之后 —— 必须靠 created 才能发现这种低估。
+    if [ -z "$incomplete" ] && [ -n "$json" ]; then
+        local created_num
+        created_num=$(vnstat_db_created "$json")
+        if [ "$created_num" != "0" ] && [ "$created_num" -gt "$start_num" ]; then
+            incomplete="1"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 警告: vnstat 数据库创建于 ${created_num}，晚于本周期起点 $start_date，本周期前段没有记录，读数会偏小" >&2
+        fi
+    fi
+    [ -n "$incomplete" ] && coverage="${coverage}(不完整)"
+
+    # 取数失败时落一个标记文件：调用点都在命令替换里（子 shell），
+    # 变量传不出去，只能靠文件把「本次数据是否可信」告诉调用方。
+    local flag_file="${USAGE_FLAG_FILE:-$WORK_DIR/.traffic_usage_ok}"
+
     if [ -z "$json" ]; then
+        printf '0\n' > "$flag_file" 2>/dev/null
         echo "$(date '+%Y-%m-%d %H:%M:%S') 错误: 无法获取 vnstat JSON 数据" >&2
         echo "0.000"
         return 1
@@ -908,6 +949,7 @@ get_traffic_usage() {
             ;;
     esac
 
+    printf '1\n' > "$flag_file" 2>/dev/null
     echo "$(date '+%Y-%m-%d %H:%M:%S') 累加粒度: ${coverage}（vnstat ${granularity} 数据，周期 $start_date ~ $end_date）" >&2
 
     if [ -n "$usage_bytes" ] && [ "$usage_bytes" != "null" ] && [ "$usage_bytes" != "0" ]; then
@@ -932,6 +974,9 @@ get_traffic_usage() {
 # 报告就会读到几天前的旧值，表现为「流量倒退」。
 # 现在改为写一份带时间戳的 JSON 快照，下游按新鲜度判断是否可信。
 STATE_FILE="$WORK_DIR/traffic_state.json"
+# 取数是否成功（1=成功 0=失败）。用文件而非变量：取数函数都在 $( ) 子 shell 里调用，
+# 变量改不回来。调用方据此决定要不要动作（失败时绝不能用 0.000 去解除限速）。
+USAGE_FLAG_FILE="$WORK_DIR/.traffic_usage_ok"
 
 write_state_snapshot() {
     local usage="$1"
@@ -1038,6 +1083,18 @@ apply_usage_high_water() {
 check_and_limit_traffic() {
     local current_usage
     current_usage=$(get_traffic_usage)
+
+    # 取数失败时**绝不动作**：0.000 会被当成「本周期没用量」，
+    # 进而解除已有速率限制、并把状态快照写成 0 —— 一次瞬时的 vnstat 读失败
+    # 就足以让超量用户全速跑满带宽。这里保留上一次的快照不动
+    # （下游会按新鲜度提示「数据未更新」），只在日志里说明本次跳过。
+    local usage_ok=1
+    [ -f "$USAGE_FLAG_FILE" ] && usage_ok=$(cat "$USAGE_FLAG_FILE" 2>/dev/null || echo 1)
+    if [ "$usage_ok" != "1" ]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 警告: 本次未能获取流量数据，跳过限速/解限判断并保留上一次状态，请检查 vnstat 是否正常" | tee -a "$LOG_FILE"
+        return 0
+    fi
+
     # 兜底：同一周期内的累计用量不应下降（详见 apply_usage_high_water 注释）
     current_usage=$(apply_usage_high_water "$current_usage")
     local limit_threshold=$(echo "$TRAFFIC_LIMIT - $TRAFFIC_TOLERANCE" | bc 2>/dev/null || echo "0")
@@ -1292,11 +1349,13 @@ fi
     # 显示当前流量使用情况和限制状态
     if read_config; then
         echo "$(date '+%Y-%m-%d %H:%M:%S') 当前流量使用情况：" | tee -a "$LOG_FILE"
-        local current_usage=$(get_traffic_usage)
+        local current_usage usage_ok=1
+        current_usage=$(get_traffic_usage)
+        [ -f "$USAGE_FLAG_FILE" ] && usage_ok=$(cat "$USAGE_FLAG_FILE" 2>/dev/null || echo 1)
         # 与 --run 路径保持一致：同一周期内的累计用量不取下降值
-        current_usage=$(apply_usage_high_water "$current_usage")
+        [ "$usage_ok" = "1" ] && current_usage=$(apply_usage_high_water "$current_usage")
         #echo "Debug: Current usage from get_traffic_usage: $current_usage" | tee -a "$LOG_FILE"
-        if [ "$current_usage" != "0" ]; then
+        if [ "$usage_ok" = "1" ] && [ "$current_usage" != "0" ]; then
             local start_date=$(get_period_start_date)
             echo "$(date '+%Y-%m-%d %H:%M:%S') 当前统计周期: $TRAFFIC_PERIOD (从 $start_date 开始)" | tee -a "$LOG_FILE"
             echo "$(date '+%Y-%m-%d %H:%M:%S') 统计模式: $TRAFFIC_MODE" | tee -a "$LOG_FILE"

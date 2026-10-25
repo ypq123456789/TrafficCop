@@ -54,7 +54,7 @@ extract_func() {
 }
 
 : > funcs.sh
-for fn in vnstat_first_date vnstat_sum_filter get_period_start_date \
+for fn in vnstat_db_created vnstat_first_date vnstat_sum_filter get_period_start_date \
           get_period_end_date get_traffic_usage bj_date state_field \
           apply_usage_high_water; do
     extract_func "$fn" >> funcs.sh
@@ -67,9 +67,11 @@ done
 #   小时级: 每天一条 rx=1e10 tx=2e10（10-22 ~ 10-25，模拟 vnstat 4 天窗口）
 #   月级: 2026-10 的数值取自真机 159.138.7.126
 # ------------------------------------------------------------
-gen_day() { # $1=起始日 $2=天数
-    local d="$1" n="$2" i=0 first=1 y mo da
-    printf '{"interfaces":[{"id":"eth0","traffic":{"day":['
+gen_day() { # $1=起始日 $2=天数（created 取起始日）
+    local d="$1" n="$2" i=0 first=1 y mo da cy cm cd
+    read -r cy cm cd <<<"$(date -d "$d" +"%Y %-m %-d" 2>/dev/null)"
+    printf '{"interfaces":[{"id":"eth0","created":{"date":{"year":%d,"month":%d,"day":%d}},"traffic":{"day":[' \
+        "$cy" "$cm" "$cd"
     while [ "$i" -lt "$n" ]; do
         read -r y mo da <<<"$(date -d "$d +$i day" +"%Y %-m %-d" 2>/dev/null)" || return 1
         [ "$first" = "1" ] || printf ','
@@ -82,7 +84,7 @@ gen_day() { # $1=起始日 $2=天数
 }
 
 gen_hour() {
-    printf '{"interfaces":[{"id":"eth0","traffic":{"hour":['
+    printf '{"interfaces":[{"id":"eth0","created":{"date":{"year":2026,"month":8,"day":24}},"traffic":{"hour":['
     printf '{"date":{"year":2026,"month":10,"day":22},"rx":10000000000,"tx":20000000000},'
     printf '{"date":{"year":2026,"month":10,"day":23},"rx":10000000000,"tx":20000000000},'
     printf '{"date":{"year":2026,"month":10,"day":24},"rx":10000000000,"tx":20000000000},'
@@ -90,8 +92,9 @@ gen_hour() {
     printf ']}}]}\n'
 }
 
-gen_month() {
-    printf '{"interfaces":[{"id":"eth0","traffic":{"month":['
+gen_month() { # $1..$3 = created 年月日（默认 2025-03-01）
+    printf '{"interfaces":[{"id":"eth0","created":{"date":{"year":%d,"month":%d,"day":%d}},"traffic":{"month":[' \
+        "${1:-2025}" "${2:-3}" "${3:-1}"
     printf '{"date":{"year":2025,"month":3},"rx":20440929290,"tx":15097694903},'
     printf '{"date":{"year":2026,"month":9},"rx":97436751130,"tx":45650022134},'
     printf '{"date":{"year":2026,"month":10},"rx":87396501773,"tx":32056375723}'
@@ -101,10 +104,11 @@ gen_month() {
 gen_day 2026-08-24 63 > f_day_full.json    # 08-24 ~ 10-25，与真机保留范围一致
 gen_day 2026-10-10 16 > f_day_short.json   # 只到 10-10，模拟日级也已滚出
 gen_hour > f_hour.json
-gen_month > f_month.json
+gen_month 2025 3 1 > f_month.json          # 数据库早就存在
+gen_month 2026 10 20 > f_month_newdb.json  # 数据库 10-20 才建（周期中途）
 printf '{"interfaces":[{"id":"eth0","traffic":{}}]}\n' > f_empty.json
 : > f_none.json   # vnstat 完全无输出
-for f in f_day_full.json f_day_short.json f_hour.json f_month.json f_empty.json; do
+for f in f_day_full.json f_day_short.json f_hour.json f_month.json f_month_newdb.json f_empty.json; do
     jq -e . "$f" >/dev/null 2>&1 || { echo "fixture 非法 JSON: $f"; exit 1; }
 done
 
@@ -153,10 +157,12 @@ get_byte_divisor() {
     esac
 }
 
+rm -f .traffic_usage_ok
 out=$(get_traffic_usage 2>stderr.log)
 rc=$?
 echo "USAGE=$out"
 echo "RC=$rc"
+echo "FLAG=$(cat .traffic_usage_ok 2>/dev/null)"
 DRV
 
 cat > guard.sh <<'GRD'
@@ -190,6 +196,7 @@ run_case() { # $1=标题  其余为 VAR=VAL
     USAGE=$(grep '^USAGE=' out.txt | head -n1 | cut -d= -f2-)
     RC=$(grep '^RC=' out.txt | head -n1 | cut -d= -f2-)
     GRAN=$(grep -o '累加粒度: [^（]*' stderr.log 2>/dev/null | head -n1 | sed 's/累加粒度: //')
+    FLAG=$(grep '^FLAG=' out.txt | head -n1 | cut -d= -f2-)
     echo "  · $title → usage=${USAGE:-?} 粒度=${GRAN:-?} rc=${RC:-?}"
 }
 
@@ -211,6 +218,7 @@ run_case "period 起点=10-01" F_HOUR=f_hour.json F_DAY=f_day_full.json F_MONTH=
 # 小时级窗口值（4 天 = 1.2e11）绝不应出现
 [ "$USAGE" != "$(exp_gb 120000000000)" ] && ok "未误用小时级窗口值（$(exp_gb 120000000000) GB）" \
     || no "仍在用小时级窗口值，bug 未修好"
+[ "$FLAG" = "1" ] && ok "取数成功标记 = 1" || no "取数成功标记应为 1，实得 ${FLAG:-空}"
 
 echo "=== 3. 日级也不覆盖时退到月级（季度/年度周期） ==="
 run_case "日级只到 10-10" F_HOUR=f_hour.json F_DAY=f_day_short.json F_MONTH=f_month.json \
@@ -219,6 +227,14 @@ run_case "日级只到 10-10" F_HOUR=f_hour.json F_DAY=f_day_short.json F_MONTH=
 MONTH_TOTAL=$((87396501773 + 32056375723))
 [ "$USAGE" = "$(exp_gb $MONTH_TOTAL)" ] && ok "月级累计 = $(exp_gb $MONTH_TOTAL) GB（与真机 2026-10 一致）" \
     || no "应为 $(exp_gb $MONTH_TOTAL) GB，实得 ${USAGE:-空}"
+
+echo "=== 3b. 月级数据存在、但数据库建于周期中途 → 必须标不完整 ==="
+run_case "库建于 10-20" F_HOUR=f_hour.json F_DAY=f_day_short.json F_MONTH=f_month_newdb.json \
+    PERIOD_START_DAY=1 TRAFFIC_MODE=total
+echo "$GRAN" | grep -q "^月级" && ok "仍用月级（数据比日级多）" || no "应仍用月级，实得: ${GRAN:-空}"
+echo "$GRAN" | grep -q "不完整" && ok "标注为「月级(不完整)」" || no "库建于中途必须标注不完整，实得: ${GRAN:-空}"
+grep -q "数据库创建于 20261020" stderr.log 2>/dev/null \
+    && ok "日志点明数据库创建日期" || no "缺少数据库创建日期的告警"
 
 echo "=== 4. 三种粒度都不覆盖周期起点 → 日级 + 明确告警不完整 ==="
 run_case "月级也不覆盖" F_HOUR=f_hour.json F_DAY=f_day_short.json F_MONTH=f_empty.json \
@@ -230,16 +246,27 @@ grep -q "缺少 .* 以来的完整数据" stderr.log 2>/dev/null \
 [ "$USAGE" = "$(exp_gb 48000000000)" ] && ok "只累加有记录的时段 = $(exp_gb 48000000000) GB" \
     || no "应为 $(exp_gb 48000000000) GB，实得 ${USAGE:-空}"
 
-echo "=== 5. vnstat 完全取不到数据 → 0.000 且返回非 0 ==="
-rm -f stderr.log
-env F_HOUR=f_none.json F_DAY=f_none.json F_MONTH=f_none.json PERIOD_START_DAY=1 \
-    bash ./driver.sh > out.txt 2>&1
-USAGE=$(grep '^USAGE=' out.txt | head -n1 | cut -d= -f2-)
-RC=$(grep '^RC=' out.txt | head -n1 | cut -d= -f2-)
-[ "$USAGE" = "0.000" ] && ok "无数据回显 0.000" || no "应回显 0.000，实得 ${USAGE:-空}"
-[ "$RC" != "0" ] && ok "返回非 0（rc=$RC）" || no "应返回非 0"
-grep -q "无法获取 vnstat JSON 数据" stderr.log 2>/dev/null \
-    && ok "日志给出取数失败原因" || no "缺少取数失败日志"
+echo "=== 5. vnstat 取不到数据 → 0.000 且返回非 0 ==="
+check_nodata() { # $1=说明  $2..=fixture
+    local title="$1"
+    shift
+    rm -f stderr.log
+    env "$@" PERIOD_START_DAY=1 bash ./driver.sh > out.txt 2>&1
+    USAGE=$(grep '^USAGE=' out.txt | head -n1 | cut -d= -f2-)
+    RC=$(grep '^RC=' out.txt | head -n1 | cut -d= -f2-)
+    FLAG=$(grep '^FLAG=' out.txt | head -n1 | cut -d= -f2-)
+    [ "$USAGE" = "0.000" ] && ok "$title: 回显 0.000" || no "$title: 应回显 0.000，实得 ${USAGE:-空}"
+    [ "$RC" != "0" ] && ok "$title: 返回非 0（rc=$RC）" || no "$title: 应返回非 0"
+    grep -q "无法获取 vnstat JSON 数据" stderr.log 2>/dev/null \
+        && ok "$title: 日志给出取数失败原因" || no "$title: 缺少取数失败日志"
+    grep -q "缺少 .* 以来的完整数据" stderr.log 2>/dev/null \
+        && no "$title: 无数据时不应再报「数据不完整」（提示矛盾）" \
+        || ok "$title: 无数据时不报「不完整」，提示不矛盾"
+    [ "$FLAG" = "0" ] && ok "$title: 取数成功标记 = 0（调用方据此跳过限速判断）" \
+        || no "$title: 取数成功标记应为 0，实得 ${FLAG:-空}"
+}
+check_nodata "vnstat 无输出" F_HOUR=f_none.json F_DAY=f_none.json F_MONTH=f_none.json
+check_nodata "traffic 对象为空" F_HOUR=f_empty.json F_DAY=f_empty.json F_MONTH=f_empty.json
 
 echo "=== 6. 四种统计模式（in / out / total / max） ==="
 case_mode() { # $1=mode $2=期望字节

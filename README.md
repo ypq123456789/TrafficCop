@@ -142,8 +142,18 @@ vnstat -i eth0 -m          # 或: vnstat -i eth0 --json m | jq '.interfaces[0].t
 不改也能正常工作（会自动退到日级）。若你希望长周期也用小时级精度：
 
 ```bash
-# 把小时级保留期改成 100 天（覆盖季度周期），然后重启 vnstat 生效
-sed -i 's/^HourlyDays.*/HourlyDays      100/' /etc/vnstat.conf
+# 1) 把小时级保留期改成 100 天（覆盖季度周期）。
+#    该行可能不存在或被注释掉，直接 sed 会「什么都不做」，所以先判断再改。
+if grep -qE '^[[:space:]]*#?[[:space:]]*HourlyDays' /etc/vnstat.conf; then
+    sed -i -E 's|^[[:space:]]*#?[[:space:]]*HourlyDays.*|HourlyDays      100|' /etc/vnstat.conf
+else
+    echo 'HourlyDays      100' >> /etc/vnstat.conf
+fi
+
+# 2) 确认写进去了（应输出 HourlyDays      100）
+grep -n '^HourlyDays' /etc/vnstat.conf
+
+# 3) 重启 vnstat 生效（无 systemd 的机器用：service vnstat restart）
 systemctl restart vnstat
 ```
 
