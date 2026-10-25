@@ -774,23 +774,48 @@ vnstat_db_created() {
     esac
 }
 
-# 取某种粒度下最早一条记录的日期数值（日/小时级 YYYYMMDD，月级 YYYYMM）。
+# 取某种粒度下最早一条记录的时间戳，统一成 YYYYMMDDHH（10 位）：
+#   hour  → YYYYMMDDHH（带小时，能识别「起始日 14:00 才开始记录」）
+#   day   → YYYYMMDD00
+#   month → YYYYMM0000
 # 无数据或字段缺失时回显极大值，等价于「未覆盖」。
-# 用法: vnstat_first_date <json> <hour|day|month>
-vnstat_first_date() {
+# 用法: vnstat_first_stamp <json> <hour|day|month>
+vnstat_first_stamp() {
     local json="$1" gran="$2" num=""
     case "$gran" in
         month)
-            num=$(printf '%s' "$json" | jq -r '.interfaces[0].traffic.month[0].date | .year * 100 + .month' 2>/dev/null)
+            num=$(printf '%s' "$json" | jq -r '.interfaces[0].traffic.month[0].date | .year * 1000000 + .month * 10000' 2>/dev/null)
+            ;;
+        hour)
+            num=$(printf '%s' "$json" | jq -r '.interfaces[0].traffic.hour[0] | .date.year * 1000000 + .date.month * 10000 + .date.day * 100 + .time.hour' 2>/dev/null)
             ;;
         *)
-            num=$(printf '%s' "$json" | jq -r ".interfaces[0].traffic.${gran}[0].date | .year * 10000 + .month * 100 + .day" 2>/dev/null)
+            num=$(printf '%s' "$json" | jq -r '.interfaces[0].traffic.day[0].date | .year * 1000000 + .month * 10000 + .day * 100' 2>/dev/null)
             ;;
     esac
     case "$num" in
-        ""|null) echo "99999999" ;;
+        ""|null) echo "9999999999" ;;
         *)       echo "$num" ;;
     esac
+}
+
+# 数据「实际开始」的时间戳（YYYYMMDDHH）。取 vnstat 的 created 日期，
+# 再用小时级首条记录校正时（vnstat 2.6 的 created 只有 date，没有 time）。
+# 取不到回显 0 表示未知。
+# 用法: vnstat_data_start_stamp <小时级 json> <任意含 created 的 json>
+vnstat_data_start_stamp() {
+    local json_h="$1" json_any="$2" c="" stamp="" h=""
+    c=$(vnstat_db_created "$json_any")
+    [ "$c" = "0" ] && { echo "0"; return; }
+    stamp=$((c * 100))
+    if [ -n "$json_h" ]; then
+        h=$(printf '%s' "$json_h" | jq -r '.interfaces[0].traffic.hour[0] | .date.year * 1000000 + .date.month * 10000 + .date.day * 100 + .time.hour' 2>/dev/null)
+        case "$h" in
+            ""|null) ;;
+            *) if [ "$((h / 100))" -eq "$c" ] && [ "$h" -gt "$stamp" ]; then stamp="$h"; fi ;;
+        esac
+    fi
+    echo "$stamp"
 }
 
 # 生成「周期区间内求和」的 jq 过滤表达式。
@@ -832,7 +857,7 @@ get_traffic_usage() {
 
     # ① 小时级：仅当最早一条小时记录已经覆盖到周期起点（按日期粗判即可）
     if printf '%s' "$json_h" | jq -e '.interfaces[0].traffic.hour' >/dev/null 2>&1; then
-        if [ "$(vnstat_first_date "$json_h" hour)" -le "$start_num" ]; then
+        if [ "$(vnstat_first_stamp "$json_h" hour)" -le "$((start_num * 100))" ]; then
             granularity="hour"
             json="$json_h"
             coverage="小时级"
@@ -843,7 +868,7 @@ get_traffic_usage() {
     if [ -z "$granularity" ]; then
         json_d=$(vnstat -i "$MAIN_INTERFACE" --json d 2>/dev/null)
         if printf '%s' "$json_d" | jq -e '.interfaces[0].traffic.day' >/dev/null 2>&1; then
-            if [ "$(vnstat_first_date "$json_d" day)" -le "$start_num" ]; then
+            if [ "$(vnstat_first_stamp "$json_d" day)" -le "$((start_num * 100))" ]; then
                 granularity="day"
                 json="$json_d"
                 coverage="日级"
@@ -856,7 +881,7 @@ get_traffic_usage() {
         local json_m
         json_m=$(vnstat -i "$MAIN_INTERFACE" --json m 2>/dev/null)
         if printf '%s' "$json_m" | jq -e '.interfaces[0].traffic.month' >/dev/null 2>&1; then
-            if [ "$(vnstat_first_date "$json_m" month)" -le "$((start_num / 100))" ]; then
+            if [ "$(vnstat_first_stamp "$json_m" month)" -le "$(((start_num / 100) * 10000))" ]; then
                 granularity="month"
                 json="$json_m"
                 coverage="月级"
@@ -889,15 +914,17 @@ get_traffic_usage() {
         fi
     fi
 
-    # 补一层 created 判定：月级聚合只带「年-月」，看不出该月的数据是从哪天开始的。
-    # 若数据库建于周期中途（如本月 20 号才装），上面的覆盖判定会认为「10 月已被
-    # 覆盖」，实际只统计到 20 号之后 —— 必须靠 created 才能发现这种低估。
+    # 补一层「数据实际开始时刻」判定：月级聚合只带「年-月」，看不出该月的数据是
+    # 从哪天开始的；vnstat 2.6 的 created 又只有日期、没有时分。因此：
+    #   · 数据库建于周期中途（如本月 20 号才装）→ created 日期晚于起点；
+    #   · 数据库建立在起点当天、但不是 00:00（如 10-01 14:00）→ 用小时级首条记录校正。
+    # 两种情况都必须标注不完整，否则起始日/起始月会被当成「完整」而悄悄少算。
     if [ -z "$incomplete" ] && [ -n "$json" ]; then
-        local created_num
-        created_num=$(vnstat_db_created "$json")
-        if [ "$created_num" != "0" ] && [ "$created_num" -gt "$start_num" ]; then
+        local data_start
+        data_start=$(vnstat_data_start_stamp "$json_h" "$json")
+        if [ "$data_start" != "0" ] && [ "$data_start" -gt "$((start_num * 100))" ]; then
             incomplete="1"
-            echo "$(date '+%Y-%m-%d %H:%M:%S') 警告: vnstat 数据库创建于 ${created_num}，晚于本周期起点 $start_date，本周期前段没有记录，读数会偏小" >&2
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 警告: vnstat 数据实际从 ${data_start}（YYYYMMDDHH）才开始，晚于本周期起点 $start_date，本周期前段没有记录，读数会偏小" >&2
         fi
     fi
     [ -n "$incomplete" ] && coverage="${coverage}(不完整)"

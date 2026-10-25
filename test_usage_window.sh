@@ -54,7 +54,8 @@ extract_func() {
 }
 
 : > funcs.sh
-for fn in vnstat_db_created vnstat_first_date vnstat_sum_filter get_period_start_date \
+for fn in vnstat_db_created vnstat_first_stamp vnstat_data_start_stamp vnstat_sum_filter \
+          get_period_start_date \
           get_period_end_date get_traffic_usage bj_date state_field \
           apply_usage_high_water; do
     extract_func "$fn" >> funcs.sh
@@ -85,10 +86,10 @@ gen_day() { # $1=起始日 $2=天数（created 取起始日）
 
 gen_hour() {
     printf '{"interfaces":[{"id":"eth0","created":{"date":{"year":2026,"month":8,"day":24}},"traffic":{"hour":['
-    printf '{"date":{"year":2026,"month":10,"day":22},"rx":10000000000,"tx":20000000000},'
-    printf '{"date":{"year":2026,"month":10,"day":23},"rx":10000000000,"tx":20000000000},'
-    printf '{"date":{"year":2026,"month":10,"day":24},"rx":10000000000,"tx":20000000000},'
-    printf '{"date":{"year":2026,"month":10,"day":25},"rx":10000000000,"tx":20000000000}'
+    printf '{"date":{"year":2026,"month":10,"day":22},"time":{"hour":0},"rx":10000000000,"tx":20000000000},'
+    printf '{"date":{"year":2026,"month":10,"day":23},"time":{"hour":0},"rx":10000000000,"tx":20000000000},'
+    printf '{"date":{"year":2026,"month":10,"day":24},"time":{"hour":0},"rx":10000000000,"tx":20000000000},'
+    printf '{"date":{"year":2026,"month":10,"day":25},"time":{"hour":0},"rx":10000000000,"tx":20000000000}'
     printf ']}}]}\n'
 }
 
@@ -106,10 +107,12 @@ gen_day 2026-10-10 16 > f_day_short.json   # 只到 10-10，模拟日级也已�
 gen_hour > f_hour.json
 gen_month 2025 3 1 > f_month.json          # 数据库早就存在
 gen_month 2026 10 20 > f_month_newdb.json  # 数据库 10-20 才建（周期中途）
+gen_day 2026-10-01 25 > f_day_startday.json  # created = 10-01（起点当天）
+printf '{"interfaces":[{"id":"eth0","created":{"date":{"year":2026,"month":10,"day":1}},"traffic":{"hour":[{"date":{"year":2026,"month":10,"day":1},"time":{"hour":14},"rx":1000000000,"tx":2000000000}]}}]}\n' > f_hour_noon.json
 printf '{"interfaces":[{"id":"eth0","traffic":{}}]}\n' > f_empty.json
 printf '{"interfaces":[{"id":"eth0","created":{"date":{"year":2026,"month":10,"day":20}},"traffic":{"hour":[],"day":[],"month":[]}}]}\n' > f_emptyarr.json
 : > f_none.json   # vnstat 完全无输出
-for f in f_day_full.json f_day_short.json f_hour.json f_month.json f_month_newdb.json f_empty.json f_emptyarr.json; do
+for f in f_day_full.json f_day_short.json f_day_startday.json f_hour.json f_hour_noon.json f_month.json f_month_newdb.json f_empty.json f_emptyarr.json; do
     jq -e . "$f" >/dev/null 2>&1 || { echo "fixture 非法 JSON: $f"; exit 1; }
 done
 
@@ -236,8 +239,18 @@ run_case "库建于 10-20" F_HOUR=f_hour.json F_DAY=f_day_short.json F_MONTH=f_m
     PERIOD_START_DAY=1 TRAFFIC_MODE=total
 echo "$GRAN" | grep -q "^月级" && ok "仍用月级（数据比日级多）" || no "应仍用月级，实得: ${GRAN:-空}"
 echo "$GRAN" | grep -q "不完整" && ok "标注为「月级(不完整)」" || no "库建于中途必须标注不完整，实得: ${GRAN:-空}"
-grep -q "数据库创建于 20261020" stderr.log 2>/dev/null \
+grep -q "数据实际从 2026102000" stderr.log 2>/dev/null \
     && ok "日志点明数据库创建日期" || no "缺少数据库创建日期的告警"
+
+echo "=== 3c. 起点当天 14:00 才开始记录 → 小时级不覆盖，且必须标不完整 ==="
+run_case "起点当天 14:00 才开始" F_HOUR=f_hour_noon.json F_DAY=f_day_startday.json F_MONTH=f_month.json \
+    PERIOD_START_DAY=1 TRAFFIC_MODE=total
+[ "$GRAN" = "日级(不完整)" ] && ok "退到日级并标注不完整" || no "应为「日级(不完整)」，实得: ${GRAN:-空}"
+grep -q "数据实际从 2026100114" stderr.log 2>/dev/null \
+    && ok "日志点明数据实际开始时刻 2026100114" || no "缺少数据开始时刻告警"
+# 10-01~10-25 共 25 天 × 3e9
+[ "$USAGE" = "$(exp_gb 75000000000)" ] && ok "仍按日级累加 = $(exp_gb 75000000000) GB" \
+    || no "应为 $(exp_gb 75000000000) GB，实得 ${USAGE:-空}"
 
 echo "=== 4. 三种粒度都不覆盖周期起点 → 日级 + 明确告警不完整 ==="
 run_case "月级也不覆盖" F_HOUR=f_hour.json F_DAY=f_day_short.json F_MONTH=f_empty.json \
@@ -312,7 +325,7 @@ got=$(bash ./guard.sh 20.000)
 [ "$got" = "20.000" ] && ok "无快照 → 采用新值" || no "无快照应为 20.000，实得 ${got:-空}"
 
 echo "=== 8. 静态检查 ==="
-grep -q 'vnstat_first_date' "$SRC" && ok "已按数据覆盖情况选粒度" || no "未找到 vnstat_first_date"
+grep -q 'vnstat_first_stamp' "$SRC" && ok "已按数据覆盖情况选粒度" || no "未找到 vnstat_first_stamp"
 grep -q 'use_hourly' "$SRC" && no "仍存在无条件优先小时级的旧逻辑" || ok "旧的小时级硬编码逻辑已移除"
 grep -q 'apply_usage_high_water' "$SRC" && ok "已实现累计量兜底" || no "未实现累计量兜底"
 grep -q '"traffic_mode"' "$SRC" && ok "快照记录了统计模式（口径变化时不再沿用）" || no "快照未记录 traffic_mode"
@@ -322,6 +335,7 @@ grep -q 'USAGE_FLAG_FILE' "$SRC" && ok "取数失败有标记文件" || no "缺�
 grep -q 'bc 2>/dev/null || echo "0.000"' "$SRC" && no "换算失败仍被 \|\| echo 0.000 掩盖" \
     || ok "换算失败不再静默退化为 0"
 grep -q 'traffic.day | length > 0' "$SRC" && ok "空数组按无记录处理" || no "未判断数组长度"
+grep -q 'vnstat_data_start_stamp' "$SRC" && ok "按数据实际开始时刻判完整性" || no "缺少 vnstat_data_start_stamp"
 grep -q 'current_usage=$(apply_usage_high_water' "$SRC" && ok "check_and_limit_traffic 已调用兜底" \
     || no "check_and_limit_traffic 未调用兜底"
 grep -q '^SCRIPT_VERSION="1.0.93"' "$SRC" && ok "版本号 1.0.93" || no "版本号未更新"
