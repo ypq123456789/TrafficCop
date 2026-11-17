@@ -24,6 +24,9 @@ fi
 CONFIG_FILE="$WORK_DIR/tg_notifier_config.txt"
 LOG_FILE="$WORK_DIR/traffic_monitor.log"
 LAST_NOTIFICATION_FILE="$WORK_DIR/last_traffic_notification"
+# 每个通知渠道各自一份「已推送过的周期」标记：共用一份的话，
+# 先发成功的那一个会把周期记成已通知，另一个渠道就静默漏推了。
+NEW_CYCLE_MARK_FILE="$WORK_DIR/.last_new_cycle_notified_tg"
 SCRIPT_PATH="$WORK_DIR/tg_notifier.sh"
 CRON_LOG="$WORK_DIR/tg_notifier_cron.log"
 
@@ -438,10 +441,14 @@ send_throttle_lifted() {
 }
 
 # 发送新周期开始通知
+# 返回值必须真实反映发送结果：调用方只在成功后才记「本周期已通知」，
+# 失败就把标记留着不改，下一分钟自然重试（issue #25 / CodeRabbit 意见）。
 send_new_cycle_notification() {
     local url="https://api.telegram.org/bot${BOT_TOKEN}/sendMessage"
     local message="🔄 [${MACHINE_NAME}]新周期开始：新的流量统计周期已开始，之前的限速（如果有）已自动解除。"
-    curl -s -X POST "$url" -d "chat_id=$CHAT_ID" -d "text=$message"
+    local response
+    response=$(curl -s -X POST "$url" -d "chat_id=$CHAT_ID" -d "text=$message")
+    echo "$response" | grep -q '"ok":true'
 }
 
 # 发送关机警告
@@ -505,16 +512,32 @@ check_and_notify() {
     
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 上次记录的状态: $last_status"| tee -a "$CRON_LOG"
     
+    # ------------------------------------------------------------
+    # 新周期按「事件」处理（issue #25），不走下面的状态分支
+    # ------------------------------------------------------------
+    # 主脚本重置时会连着写「新周期开始」和「流量正常」两行，而本脚本每分钟
+    # 才轮询一次，靠「最新一条日志」判断几乎总是读到后者（详见 log_helper.sh）。
+    # 这里直接比对主脚本落盘的周期标识，与日志时序无关。
+    local new_cycle_sent=0 pending_period
+    if pending_period=$(new_cycle_notify_pending); then
+        if send_new_cycle_notification; then
+            new_cycle_notify_mark "$pending_period"
+            new_cycle_sent=1
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : 已调用 send_new_cycle_notification"| tee -a "$CRON_LOG"
+        else
+            # 不记标记 → 下一分钟继续重试，避免一次临时失败把通知永久丢掉
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : 新周期通知发送失败，下次运行重试"| tee -a "$CRON_LOG"
+        fi
+    fi
+
     # 根据状态调用相应的通知函数
     if [ "$current_status" = "限速" ] && [ "$last_status" != "限速" ]; then
         send_throttle_warning
         echo "$(date '+%Y-%m-%d %H:%M:%S') : 已调用 send_throttle_warning"| tee -a "$CRON_LOG"
-    elif [ "$current_status" = "正常" ] && [ "$last_status" = "限速" ]; then
+    elif [ "$current_status" = "正常" ] && [ "$last_status" = "限速" ] && [ "$new_cycle_sent" != "1" ]; then
+        # 刚推过「新周期」，这条消息本身已说明限速已自动解除，不再重复推解限
         send_throttle_lifted
         echo "$(date '+%Y-%m-%d %H:%M:%S') : 已调用 send_throttle_lifted"| tee -a "$CRON_LOG"
-    elif [ "$current_status" = "新周期" ]; then
-        send_new_cycle_notification
-        echo "$(date '+%Y-%m-%d %H:%M:%S') : 已调用 send_new_cycle_notification"| tee -a "$CRON_LOG"
     elif [ "$current_status" = "关机" ]; then
         send_shutdown_warning
         echo "$(date '+%Y-%m-%d %H:%M:%S') : 已调用 send_shutdown_warning"| tee -a "$CRON_LOG"

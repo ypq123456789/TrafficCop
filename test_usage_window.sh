@@ -55,6 +55,7 @@ extract_func() {
 
 : > funcs.sh
 for fn in vnstat_db_created vnstat_first_stamp vnstat_data_start_stamp vnstat_sum_filter \
+          period_length_months period_anchor_month month_shift period_anchor_at period_start_ymd \
           get_period_start_date \
           get_period_end_date get_traffic_usage bj_date state_field \
           apply_usage_high_water; do
@@ -352,7 +353,7 @@ grep -q 'traffic.day | length > 0' "$SRC" && ok "空数组按无记录处理" ||
 grep -q 'vnstat_data_start_stamp' "$SRC" && ok "按数据实际开始时刻判完整性" || no "缺少 vnstat_data_start_stamp"
 grep -q 'current_usage=$(apply_usage_high_water' "$SRC" && ok "check_and_limit_traffic 已调用兜底" \
     || no "check_and_limit_traffic 未调用兜底"
-grep -q '^SCRIPT_VERSION="1.0.93"' "$SRC" && ok "版本号 1.0.93" || no "版本号未更新"
+grep -q '^SCRIPT_VERSION="1.0.94"' "$SRC" && ok "版本号 1.0.94" || no "版本号未更新"
 grep -q 'SCRIPT_VERSION:-1.0.92' "$SRC" && no "快照里的版本回退值仍是 1.0.92" || ok "快照版本回退值已同步"
 
 line="2026-10-25 20:00:00 当前使用流量: 69.849 GB，限制流量: 1004 GB"

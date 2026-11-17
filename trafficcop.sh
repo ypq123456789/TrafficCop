@@ -96,7 +96,7 @@ get_byte_divisor() {
 }
 
 # 脚本版本号。上报模块与日志里都用它，请与下面 echo 的版本保持单一来源。
-SCRIPT_VERSION="1.0.93"
+SCRIPT_VERSION="1.0.94"
 
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
 echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：$SCRIPT_VERSION"| tee -a "$LOG_FILE"
@@ -676,68 +676,122 @@ bj_date() {
     date "$@"
 }
 
-# 获取当前周期的起始日期
-get_period_start_date() {
-    local current_year=$(bj_date +%Y)
-    local current_month=$(bj_date +%m)
-    local current_day=$(bj_date +%d)
+# ============================================================
+# 周期日期计算
+# ------------------------------------------------------------
+# 两个不变量必须同时成立，否则「本周期用量」会算错一个周期：
+#     get_period_start_date() <= 今天 <= get_period_end_date()
+#     结束日 - 起始日 + 1 == 一个周期的长度（月 28~31 / 季 89~92 / 年 365~366）
+#
+# ⚠️ 这段代码在同一个坑上踩过三次，每次都是判据/边界写错，不是算式写错：
+#
+#   1) 原实现把「还没到本周期起始日」判成 `今天日号 < 起始日号`。这在
+#      quarterly / yearly 上是错的：2026-02-05、起始日 15，2 月 5 日 < 15
+#      会让整个 2 月都退回上一季度，但本季度其实 1 月 15 日就开始了。
+#      后果：窗口不含今天，用量少算，且周期起点漂移会误触发限速解除。
+#   2) 为绕开 1) 曾在判据里加过 `|| 当前月 == 季度首月`，结果首月整月无条件
+#      退回上一周期：季度窗口变 151 天、年度窗口变 730 天（两年）。
+#   3) 起始日号允许填 31，但短月没有 31 号：GNU date 对 `2026-04-31` 是
+#      直接报错（不是顺延），一旦候选起始日撞上短月，整段窗口都算不出来。
+#      月度在 2/4/6/9/11 月、季度在 4 月、年度不会中招。
+#
+# 所以：判据要拿「完整日期」比大小，起始日号要夹到目标月的月末，
+# 结束日要用「下一个起点 - 1 天」推出来（不能用 start + N month，
+# date 对「1 月 31 日 + 1 个月」会顺延到 3 月 3 日，周期之间就断层了）。
+# ============================================================
 
-    case $TRAFFIC_PERIOD in
-        monthly)
-            if [ "$current_day" -lt $PERIOD_START_DAY ]; then
-                bj_date -d "${current_year}-${current_month}-${PERIOD_START_DAY} -1 month" +'%Y-%m-%d'
-            else
-                bj_date -d "${current_year}-${current_month}-${PERIOD_START_DAY}" +%Y-%m-%d 2>/dev/null || bj_date -d "${current_year}-${current_month}-01" +%Y-%m-%d
-            fi
-            ;;
+# 一个周期的长度（月）
+period_length_months() {
+    case "${TRAFFIC_PERIOD:-monthly}" in
+        quarterly) echo 3 ;;
+        yearly)    echo 12 ;;
+        *)         echo 1 ;;
+    esac
+}
+
+# 本期「候选起始月」：季度 → 所在季度首月；年度 → 1 月；月度 → 本月。
+# 起始日是「季度首月/1 月的第 D 天」，而不是「今天所在月的第 D 天」。
+period_anchor_month() {
+    local y m qm
+    y=$(bj_date +%Y)
+    m=$((10#$(bj_date +%m)))
+
+    case "${TRAFFIC_PERIOD:-monthly}" in
         quarterly)
-            local quarter_month=$((((10#$current_month - 1) / 3) * 3 + 1))
-            if [ "$current_day" -lt $PERIOD_START_DAY ] || [ "$((10#$current_month))" -eq "$quarter_month" ]; then
-                bj_date -d "${current_year}-$(printf '%02d' $quarter_month)-${PERIOD_START_DAY} -3 month" +'%Y-%m-%d'
-            else
-                bj_date -d "${current_year}-$(printf '%02d' $quarter_month)-${PERIOD_START_DAY}" +'%Y-%m-%d' 2>/dev/null || bj_date -d "${current_year}-$(printf '%02d' $quarter_month)-01" +%Y-%m-%d
-            fi
+            qm=$(( ((m - 1) / 3) * 3 + 1 ))
+            printf '%04d %02d\n' "$y" "$qm"
             ;;
         yearly)
-            if [ "$current_day" -lt $PERIOD_START_DAY ] || [ "$((10#$current_month))" -eq 1 ]; then
-                bj_date -d "${current_year}-01-${PERIOD_START_DAY} -1 year" +'%Y-%m-%d'
-            else
-                bj_date -d "${current_year}-01-${PERIOD_START_DAY}" +'%Y-%m-%d' 2>/dev/null || bj_date -d "${current_year}-01-01" +%Y-%m-%d
-            fi
+            printf '%04d 01\n' "$y"
+            ;;
+        *)
+            printf '%04d %02d\n' "$y" "$m"
             ;;
     esac
 }
 
-# 获取周期结束日期
-get_period_end_date() {
-    local current_year=$(bj_date +%Y)
-    local current_month=$(bj_date +%m)
-    local current_day=$(bj_date +%d)
+# 年月偏移 n 个月（n 可为负），输出 "YYYY MM"
+month_shift() {
+    local total
+    total=$(( (10#$1 * 12) + (10#$2 - 1) + $3 ))
+    printf '%04d %02d\n' $((total / 12)) $((total % 12 + 1))
+}
 
-    case $TRAFFIC_PERIOD in
-        monthly)
-            if [ "$current_day" -lt $PERIOD_START_DAY ]; then
-                bj_date -d "${current_year}-${current_month}-${PERIOD_START_DAY} -1 day" +'%Y-%m-%d'
-            else
-                bj_date -d "${current_year}-${current_month}-${PERIOD_START_DAY} +1 month -1 day" +'%Y-%m-%d'
-            fi
-            ;;
-        quarterly)
-            local quarter_month=$((((10#$current_month - 1) / 3) * 3 + 1))
-            if [ "$current_day" -lt $PERIOD_START_DAY ] || [ "$((10#$current_month))" -eq "$quarter_month" ]; then
-                bj_date -d "${current_year}-$(printf '%02d' $quarter_month)-${PERIOD_START_DAY} +2 month -1 day" +'%Y-%m-%d'
-            else
-                bj_date -d "${current_year}-$(printf '%02d' $quarter_month)-${PERIOD_START_DAY} +5 month -1 day" +'%Y-%m-%d'
-            fi
-            ;;
-        yearly)
-            if [ "$current_day" -lt $PERIOD_START_DAY ] || [ "$((10#$current_month))" -eq 1 ]; then
-                bj_date -d "${current_year}-12-31" +'%Y-%m-%d'
-            else
-                bj_date -d "$((current_year + 1))-12-31" +'%Y-%m-%d'
-            fi
-            ;;
-    esac
+# 某年某月的周期起始日；日号超过该月天数时夹到月末（31 号→2 月 28/29 日）。
+#
+# ⚠️ 年月必须先转十进制再交给 printf：bash 的 printf %d 按 C 常量解析实参，
+#    "08" / "09" 会被当成八进制而报 invalid octal number，输出变成 00 ——
+#    默认的月度周期在 8 月、9 月会直接算成「2026-00-01」。
+period_anchor_at() {
+    local y=$1 m=$2 d=$3 last
+    y=$((10#${y:-2000}))
+    m=$((10#${m:-1}))
+    d=$((10#${d:-1}))
+    last=$(bj_date -d "$(printf '%04d-%02d-01' "$y" "$m") +1 month -1 day" +%d 2>/dev/null)
+    last=$((10#${last:-1}))
+    [ "$d" -gt "$last" ] && d=$last
+    printf '%04d-%02d-%02d\n' "$y" "$m" "$d"
+}
+
+# 今天所属周期的起始日（YYYY-MM-DD）。算不出来时返回 1，不输出。
+period_start_ymd() {
+    local ay am lm anchor today_num anchor_num
+    set -- $(period_anchor_month)
+    ay=$1; am=$2
+    lm=$(period_length_months)
+
+    anchor=$(period_anchor_at "$ay" "$am" "${PERIOD_START_DAY:-1}")
+    today_num=$(bj_date +%Y%m%d)
+    anchor_num=$(printf '%s' "$anchor" | tr -d '-')
+    [ -n "$anchor_num" ] || return 1
+
+    if [ "$today_num" -lt "$anchor_num" ]; then
+        # 还没到本周期起始日 → 回退一个周期长度
+        set -- $(month_shift "$ay" "$am" "-$lm")
+        period_anchor_at "$1" "$2" "${PERIOD_START_DAY:-1}"
+    else
+        printf '%s\n' "$anchor"
+    fi
+}
+
+# 获取当前周期的起始日期
+get_period_start_date() {
+    period_start_ymd
+}
+
+# 获取周期结束日期 = 下一个周期起始日 - 1 天（首尾相接，不留空档）
+get_period_end_date() {
+    local s sy sm lm next
+    s=$(period_start_ymd) || return 1
+    [ -n "$s" ] || return 1
+
+    sy=${s%%-*}
+    sm=${s#*-}; sm=${sm%%-*}
+    lm=$(period_length_months)
+
+    set -- $(month_shift "$sy" "$sm" "$lm")
+    next=$(period_anchor_at "$1" "$2" "${PERIOD_START_DAY:-1}")
+    bj_date -d "$next -1 day" +'%Y-%m-%d'
 }
 
 # ============================================================
@@ -758,6 +812,23 @@ get_period_end_date() {
 # 三种都不覆盖（vnstat 建库晚于周期起点，新装机器常见）时退到日级，
 # 并在日志里明确告警「数据不完整」，绝不做猜测性补数。
 # ============================================================
+
+# 取 vnstat JSON 里 interfaces[0].updated 的日期（YYYY-MM-DD），取不到回显空。
+# 用途：本周期一条记录都没有时，判断 vnstat 库是否还在更新。
+#   CodeRabbit 第四轮意见：vnstat 若在新周期开始前就停更，库里全是上周期的旧数据，
+#   此时「本周期无记录」不能再当成 0 用量 —— 否则会误解除限速、并把 0 写进状态快照。
+vnstat_last_updated_date() {
+    local json="$1" y m d
+    y=$(printf '%s' "$json" | jq -r '.interfaces[0].updated.date.year // 0' 2>/dev/null)
+    m=$(printf '%s' "$json" | jq -r '.interfaces[0].updated.date.month // 0' 2>/dev/null)
+    d=$(printf '%s' "$json" | jq -r '.interfaces[0].updated.date.day // 0' 2>/dev/null)
+    case "$y$m$d" in ''|*[!0-9]*) return 1 ;; esac
+    # bash printf %d 会把 "08" 当八进制，这里先统一转十进制
+    y=$((10#$y)); m=$((10#$m)); d=$((10#$d))
+    [ "$y" -ge 2000 ] && [ "$m" -ge 1 ] && [ "$m" -le 12 ] \
+        && [ "$d" -ge 1 ] && [ "$d" -le 31 ] || return 1
+    printf '%04d-%02d-%02d\n' "$y" "$m" "$d"
+}
 
 # 取 vnstat 数据库的创建日期（YYYYMMDD）；取不到回显 0，表示「未知」。
 # 为什么要它：月级聚合只带「年-月」，看不出该月的数据是从哪天开始记的。
@@ -984,15 +1055,40 @@ get_traffic_usage() {
     # 「求和 = 0」有两种可能：本周期确实没用流量，或 vnstat 已停止更新、只剩
     # 上个周期的旧记录（粒度选择接受它，但按本周期日期筛选一条都匹配不到）。
     # 后者若标记为取数成功，下游会按 0 用量解除限速，所以必须先确认周期内有记录。
+    #
+    # 「周期内一条记录都没有」同样有两种可能，必须再分一次：
+    #   a) 周期刚开始、机器还没产生流量 —— vnstat 不会为 0 字节的小时建条目，
+    #      所以周期起点当天「查不到记录」是正常现象，用量就是 0；
+    #   b) vnstat 已停止更新，库里只剩上个周期的旧记录。
+    # 旧实现一律按 (b) 处理（标记取数失败）。issue #25 里那台机器正好在重置日
+    # 空闲了一整夜（0 点到 8 点没有任何流量），于是每分钟都被判成取数失败，
+    # 「新周期开始」那行日志始终是最新一条，下游就每分钟推一次通知；
+    # 8 点机器开始有流量、条目才出现，重复推送随之停止。
+    #
+    # 判据分两层（都是为了防止把陈旧数据当成 0 用量）：
+    #   ① 周期起点必须是今天（北京时间）；
+    #   ② vnstat 的 updated 日期必须已经落在本周期内 —— 若它还停在上个周期，
+    #      说明 vnstat 是【在新周期开始前】就停更了，「本周期无记录」是假象，
+    #      按 0 处理会误解除限速、还会把 0 写进状态快照（CodeRabbit 第四轮意见）。
     if [ -z "$usage_bytes" ] || [ "$usage_bytes" = "null" ] || [ "$usage_bytes" = "0" ]; then
-        local matched
+        local matched last_updated
         matched=$(printf '%s' "$json" | jq --argjson s "$s_arg" --argjson e "$e_arg" \
             "$(vnstat_sum_filter "$arr" count "$key_expr")" 2>/dev/null)
         if [ "$matched" = "0" ]; then
-            printf '0\n' > "$flag_file" 2>/dev/null
-            echo "$(date '+%Y-%m-%d %H:%M:%S') 警告: 本周期 $start_date ~ $end_date 内没有任何 vnstat 记录（vnstat 可能已停止更新），不按 0 用量处理" >&2
-            echo "0.000"
-            return 1
+            if [ "$(bj_date +%Y-%m-%d)" != "$start_date" ]; then
+                printf '0\n' > "$flag_file" 2>/dev/null
+                echo "$(date '+%Y-%m-%d %H:%M:%S') 警告: 本周期 $start_date ~ $end_date 内没有任何 vnstat 记录（vnstat 可能已停止更新），不按 0 用量处理" >&2
+                echo "0.000"
+                return 1
+            fi
+            last_updated=$(vnstat_last_updated_date "$json" 2>/dev/null)
+            if [ -z "$last_updated" ] || [ "$last_updated" \< "$start_date" ]; then
+                printf '0\n' > "$flag_file" 2>/dev/null
+                echo "$(date '+%Y-%m-%d %H:%M:%S') 警告: vnstat 最后更新 ${last_updated:-未知} 早于本周期起点 $start_date（vnstat 在周期切换前就停更），不按 0 用量处理" >&2
+                echo "0.000"
+                return 1
+            fi
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 提示: 本周期 $start_date 刚开始且尚无流量记录（vnstat 不为 0 字节的小时建条目），但库最后更新于 $last_updated，按 0 用量处理" >&2
         fi
     fi
 
@@ -1061,7 +1157,7 @@ write_state_snapshot() {
   "period_start": "$period_start",
   "traffic_mode": "${TRAFFIC_MODE:-total}",
   "main_interface": "${MAIN_INTERFACE:-}",
-  "script_version": "${SCRIPT_VERSION:-1.0.93}",
+  "script_version": "${SCRIPT_VERSION:-1.0.94}",
   "hostname": "$(hostname 2>/dev/null || echo unknown)"
 }
 EOF
@@ -1225,15 +1321,63 @@ check_and_limit_traffic() {
 }
 
 
-# 检查是否需要重置限制
+# 检查是否需要重置限制（新周期开始时清除限速）
+# ------------------------------------------------------------
+# issue #25：客户收到 485 条一模一样的「新周期开始」推送，0 点到 8 点每分钟一条。
+#
+# 原实现的判据是「今天是不是本周期起点那一天」：
+#     [ "$current_date" == "$period_start" ] && { 写日志; tc del }
+# 这个条件在重置日【一整天】内都成立，而本脚本由 cron 每分钟执行一次，
+# 于是当天会写下 1440 条「新的流量周期开始，重置限制」。
+# 下游通知脚本把这个日志当成「当前状态」，只要最新一条是它就发一次推送，
+# 结果就是每分钟一条。
+#
+# 现在的判据是「本周期是否还没重置过」：把上次重置所属的周期起点记到文件里，
+# 只有周期标识真的变化时才动作一次。
+#   · 天然幂等：同一天跑 1440 次也只动作 1 次、只写 1 条日志；
+#   · 顺带修掉一个隐性缺陷：旧判据要求「当天正好是周期起点」，
+#     机器若在重置日关机、几天后才开机，条件永远不成立，
+#     上个周期加的 tc 限速会一直挂着解不掉。新判据只要发现
+#     「周期标识与上次重置时不同」就会清一次。
+#   · 周期起点由 get_period_start_date 按北京时间算，与 CDT 额度刷新对齐。
+# ------------------------------------------------------------
 check_reset_limit() {
-    # 使用北京时间判断是否进入新周期（与 CDT 免费额度刷新时间对齐）
-    local current_date=$(bj_date +%Y-%m-%d)
-    local period_start=$(get_period_start_date)
-    
-    if [[ "$current_date" == "$period_start" ]]; then
+    local period_start
+    period_start=$(get_period_start_date 2>/dev/null)
+    # 周期算不出来（配置非法 / date 失败）时不动手，避免误清限速
+    [ -n "$period_start" ] || return 0
+
+    local state_file="${PERIOD_RESET_FILE:-$WORK_DIR/.last_period_reset}"
+    local last_reset=""
+    if [ -f "$state_file" ]; then
+        last_reset=$(head -n 1 "$state_file" 2>/dev/null | tr -d '[:space:]')
+    fi
+
+    # 本周期已经重置过：直接返回。
+    # 这里绝不能顺手写日志 —— 那行日志就是下游的通知源，重复写=重复推送。
+    if [ "$last_reset" = "$period_start" ]; then
+        return 0
+    fi
+
+    # 首次运行（没有标记）不碰 tc：此时并不知道是否真的换了周期。
+    # 用户若是在周期中途升级、当前正处于限速状态，删掉之后一旦取数失败，
+    # check_and_limit_traffic 不会动作（取数失败绝不动作），限速就恢复不了。
+    # 只有「确认发生了周期切换」才需要清限速。
+    if [ -n "$last_reset" ]; then
+        tc qdisc del dev "$MAIN_INTERFACE" root 2>/dev/null
+    fi
+
+    # 顺序很关键：先落盘「已重置」标记，日志最后写。
+    #   · 标记先写 → 后面即使被打断，下一分钟也不会重复通知；
+    #   · 日志后写 → 通知只会在真正重置之后才发得出去。
+    printf '%s\n' "$period_start" > "$state_file" 2>/dev/null
+
+    if [ -z "$last_reset" ]; then
+        # 首次运行 / 升级后第一次跑：只初始化标记，不写「新周期开始」。
+        # 否则每台机器升级完都会凭空多推一条「新周期」。
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 已记录当前周期起点 $period_start，之后周期切换时只通知一次"| tee -a "$LOG_FILE"
+    else
         echo "$(date '+%Y-%m-%d %H:%M:%S') 新的流量周期开始，重置限制"| tee -a "$LOG_FILE"
-        tc qdisc del dev $MAIN_INTERFACE root 2>/dev/null
     fi
 }
 
