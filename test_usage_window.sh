@@ -55,6 +55,7 @@ extract_func() {
 
 : > funcs.sh
 for fn in vnstat_db_created vnstat_first_stamp vnstat_data_start_stamp vnstat_sum_filter \
+          period_length_expr period_anchor_date period_start_ymd \
           get_period_start_date \
           get_period_end_date get_traffic_usage bj_date state_field \
           apply_usage_high_water; do

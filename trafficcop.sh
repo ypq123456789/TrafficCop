@@ -676,88 +676,95 @@ bj_date() {
     date "$@"
 }
 
-# 获取当前周期的起始日期
-#
-# 这两个日期函数必须成对满足下面的不变量，否则「本周期用量」会被多算一个周期：
+# ============================================================
+# 周期日期计算
+# ------------------------------------------------------------
+# 两个不变量必须同时成立，否则「本周期用量」会算错一个周期：
 #     get_period_start_date() <= 今天 <= get_period_end_date()
-#     且 结束日 - 起始日 + 1 == 一个周期的长度（月 28~31 / 季 89~92 / 年 365~366）
+#     结束日 - 起始日 + 1 == 一个周期的长度（月 28~31 / 季 89~92 / 年 365~366）
 #
-# ⚠️ quarterly / yearly 原先在判据里多挂了一个月份子条件：
-#     if [ 今天 < 起始日 ] || [ 当前月 == 季度首月 ]
-#   效果是「只要落在季度/年度的首月，就无条件退到上一个周期」。实测：
-#     2026-01-20、D=15 → 返回 2025-10-15 ~ 2026-03-14（整整错了一个季度）
-#     2026-01-05、D=1  → 季度窗口 151 天；年度窗口 730 天（两年）
-#   后果有两个：① 季度/年度用户的本周期用量把上个周期的流量也算了进来；
-#   ② 周期起点一季/一年都不等于「今天」，新周期重置与推送实际上永不触发。
-#   「今天 < 起始日」这一半已经完整覆盖了「还没到本周期起始日」的情况，
-#   月份子条件是多余的，已去掉。
-get_period_start_date() {
-    local current_year=$(bj_date +%Y)
-    local current_month=$(bj_date +%m)
-    local current_day=$(bj_date +%d)
+# ⚠️ 这段代码在同一个坑上踩过两次，两次都是判据写错，不是算式写错：
+#
+#   1) 原实现把「还没到本周期起始日」判成 `今天日号 < 起始日号`。这在
+#      quarterly / yearly 上是错的：2026-02-05、起始日 15，2 月 5 日 < 15
+#      会让整个 2 月都退回上一季度，但本季度其实 1 月 15 日就开始了。
+#      后果：窗口不含今天，用量少算，且周期起点漂移会误触发限速解除。
+#   2) 为绕开 1) 曾在判据里加过 `|| 当前月 == 季度首月`，结果首月整月无条件
+#      退回上一周期：季度窗口变 151 天、年度窗口变 730 天（两年），
+#      用量把上一个周期也算进来，且「新周期」永不触发。
+#
+# 唯一正确的判据：先构造「本期起始日」这个完整日期 —— 季度/年度的起始日
+# 落在季度首月/1 月，而不是「今天所在月的第 D 天」—— 再拿今天和它比大小。
+# 判据只写在 period_start_ymd 一处，起始日与结束日共用，避免两处各写一遍。
+# ============================================================
 
-    case $TRAFFIC_PERIOD in
-        monthly)
-            if [ "$current_day" -lt $PERIOD_START_DAY ]; then
-                bj_date -d "${current_year}-${current_month}-${PERIOD_START_DAY} -1 month" +'%Y-%m-%d'
-            else
-                bj_date -d "${current_year}-${current_month}-${PERIOD_START_DAY}" +%Y-%m-%d 2>/dev/null || bj_date -d "${current_year}-${current_month}-01" +%Y-%m-%d
-            fi
-            ;;
+# 一个周期的长度（date 的相对表达式）
+period_length_expr() {
+    case "${TRAFFIC_PERIOD:-monthly}" in
+        quarterly) echo "3 month" ;;
+        yearly)    echo "12 month" ;;
+        *)         echo "1 month" ;;
+    esac
+}
+
+# 本期「候选起始日」：季度用所在季度的首月，年度用 1 月，月度用本月。
+# 注意 PERIOD_START_DAY 必须先转十进制，否则 "08" 会被 printf %d 当八进制。
+period_anchor_date() {
+    local y m day qm
+    y=$(bj_date +%Y)
+    m=$((10#$(bj_date +%m)))
+    day=$((10#${PERIOD_START_DAY:-1}))
+
+    case "${TRAFFIC_PERIOD:-monthly}" in
         quarterly)
-            local quarter_month=$((((10#$current_month - 1) / 3) * 3 + 1))
-            # 只认「有没有到本季度起始日」，不再看月份 ——
-            # 多挂一个「当前月 == 季度首月」会让首月整月都退到上一季度（见函数上方说明）
-            if [ "$current_day" -lt "$PERIOD_START_DAY" ]; then
-                bj_date -d "${current_year}-$(printf '%02d' $quarter_month)-${PERIOD_START_DAY} -3 month" +'%Y-%m-%d'
-            else
-                bj_date -d "${current_year}-$(printf '%02d' $quarter_month)-${PERIOD_START_DAY}" +'%Y-%m-%d' 2>/dev/null || bj_date -d "${current_year}-$(printf '%02d' $quarter_month)-01" +%Y-%m-%d
-            fi
+            qm=$(( ((m - 1) / 3) * 3 + 1 ))
+            printf '%04d-%02d-%02d\n' "$y" "$qm" "$day"
             ;;
         yearly)
-            if [ "$current_day" -lt "$PERIOD_START_DAY" ]; then
-                bj_date -d "${current_year}-01-${PERIOD_START_DAY} -1 year" +'%Y-%m-%d'
-            else
-                bj_date -d "${current_year}-01-${PERIOD_START_DAY}" +'%Y-%m-%d' 2>/dev/null || bj_date -d "${current_year}-01-01" +%Y-%m-%d
-            fi
+            printf '%04d-01-%02d\n' "$y" "$day"
+            ;;
+        *)
+            printf '%04d-%02d-%02d\n' "$y" "$m" "$day"
             ;;
     esac
 }
 
-# 获取周期结束日期
-get_period_end_date() {
-    local current_year=$(bj_date +%Y)
-    local current_month=$(bj_date +%m)
-    local current_day=$(bj_date +%d)
+# 今天所属周期的起始日（YYYY-MM-DD）。算不出来时返回 1，不输出。
+#
+# 「候选起始日」在今天之后 → 今天还属于上一个周期，回退一个周期长度；
+# 否则今天就在本周期内，直接用它。
+# 起始日号大于当月天数时（如 2 月配 31 日）date 会顺延到下月初，这里沿用
+# 顺延结果 —— 至少保证「起始日 <= 今天 <= 结束日」这条不变量不被破坏。
+period_start_ymd() {
+    local anchor len today_num anchor_num
+    anchor=$(period_anchor_date) || return 1
+    [ -n "$anchor" ] || return 1
 
-    case $TRAFFIC_PERIOD in
-        monthly)
-            if [ "$current_day" -lt $PERIOD_START_DAY ]; then
-                bj_date -d "${current_year}-${current_month}-${PERIOD_START_DAY} -1 day" +'%Y-%m-%d'
-            else
-                bj_date -d "${current_year}-${current_month}-${PERIOD_START_DAY} +1 month -1 day" +'%Y-%m-%d'
-            fi
-            ;;
-        quarterly)
-            local quarter_month=$((((10#$current_month - 1) / 3) * 3 + 1))
-            if [ "$current_day" -lt "$PERIOD_START_DAY" ]; then
-                # 周期在上一季度：结束日 = 本季度起始日 - 1 天
-                bj_date -d "${current_year}-$(printf '%02d' $quarter_month)-${PERIOD_START_DAY} -1 day" +'%Y-%m-%d'
-            else
-                # 周期从本季度起始日开始，长度正好一个季度
-                bj_date -d "${current_year}-$(printf '%02d' $quarter_month)-${PERIOD_START_DAY} +3 month -1 day" +'%Y-%m-%d'
-            fi
-            ;;
-        yearly)
-            if [ "$current_day" -lt "$PERIOD_START_DAY" ]; then
-                # 周期在上一年：结束日 = 今年起始日 - 1 天
-                bj_date -d "${current_year}-01-${PERIOD_START_DAY} -1 day" +'%Y-%m-%d'
-            else
-                # 周期从今年起始日开始，长度正好一年
-                bj_date -d "$((current_year + 1))-01-${PERIOD_START_DAY} -1 day" +'%Y-%m-%d'
-            fi
-            ;;
-    esac
+    today_num=$(bj_date +%Y%m%d)
+    anchor_num=$(bj_date -d "$anchor" +%Y%m%d 2>/dev/null)
+    [ -n "$anchor_num" ] || return 1
+
+    if [ "$today_num" -lt "$anchor_num" ]; then
+        len=$(period_length_expr)
+        bj_date -d "$anchor -$len" +'%Y-%m-%d'
+    else
+        printf '%s\n' "$anchor"
+    fi
+}
+
+# 获取当前周期的起始日期
+get_period_start_date() {
+    period_start_ymd
+}
+
+# 获取周期结束日期 = 起始日 + 一个周期 - 1 天。
+# 与起始日共用同一个判据，因此天然满足「起始日 <= 今天 <= 结束日」。
+get_period_end_date() {
+    local s len
+    s=$(period_start_ymd) || return 1
+    [ -n "$s" ] || return 1
+    len=$(period_length_expr)
+    bj_date -d "$s +$len -1 day" +'%Y-%m-%d'
 }
 
 # ============================================================
@@ -1297,7 +1304,13 @@ check_reset_limit() {
         return 0
     fi
 
-    tc qdisc del dev "$MAIN_INTERFACE" root 2>/dev/null
+    # 首次运行（没有标记）不碰 tc：此时并不知道是否真的换了周期。
+    # 用户若是在周期中途升级、当前正处于限速状态，删掉之后一旦取数失败，
+    # check_and_limit_traffic 不会动作（取数失败绝不动作），限速就恢复不了。
+    # 只有「确认发生了周期切换」才需要清限速。
+    if [ -n "$last_reset" ]; then
+        tc qdisc del dev "$MAIN_INTERFACE" root 2>/dev/null
+    fi
 
     # 顺序很关键：先落盘「已重置」标记，日志最后写。
     #   · 标记先写 → 后面即使被打断，下一分钟也不会重复通知；

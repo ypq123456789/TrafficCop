@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-# 验证：新周期提醒只发一次（issue #25）
+# 验证：新周期提醒只发一次，且必须发得出去（issue #25）
 # ------------------------------------------------------------
 # 复现的客户现象：重置日当天收到 485 条一模一样的
 #   「🔄 新周期开始：新的流量统计周期已开始，之前的限速（如果有）已自动解除。」
@@ -14,13 +14,14 @@
 #      （vnstat 不为 0 字节的小时建条目）。重置日恰好空闲一夜，
 #      于是 0-8 点里「流量正常」那行永远写不出来，「新周期」始终是最新一条。
 #      8 点机器开始有流量，条目出现，重复推送随之停止 —— 与客户描述完全吻合；
-#   ③ 三个通知脚本的「新周期」分支没有 last_status 判据，无条件发送。
+#   ③ 通知脚本的「新周期」分支没有 last_status 判据，无条件发送。
 #
-# 本脚本覆盖 ①③ 的回归。② 属取数逻辑，需要 vnstat 环境，见 test_usage_window.sh。
-#
-# 另外覆盖一个连带发现的缺陷（A2 段）：get_period_start_date / get_period_end_date
-# 的 quarterly / yearly 分支多挂了一个「当前月 == 季度首月」的判据，导致
-# 季度/年度窗口整体错位（实测 151 天 / 730 天），并且「新周期」永不触发。
+# 修复后又暴露出两个问题，本脚本一并覆盖：
+#   ④ 光靠日志判断「新周期」根本不可靠：主脚本在同一次运行里会连着写
+#      「新周期开始」和「流量正常」，通知脚本每分钟才轮询一次，几乎总是
+#      读到后者 → 通知永远发不出去。改为读主脚本落盘的周期标识（事件）。
+#   ⑤ 周期窗口的判据不能只看「日号」：2026-02-05、起始日 15 时，2 月 5 日
+#      小于 15 会让整个 2 月退回上一季度，窗口不含今天。
 #
 # 用法: bash test_period_reset.sh
 # 依赖: bash / awk / date(GNU)
@@ -66,14 +67,9 @@ extract_func() {
     ' "$file"
 }
 
-# ============================================================
-# A. check_reset_limit 必须按周期幂等（而不是按「日期命中」）
-# ============================================================
-echo ""
-echo "===== A. 周期重置幂等 ====="
-
 : > "$TMP/funcs.sh"
-for fn in bj_date get_period_start_date get_period_end_date check_reset_limit; do
+for fn in bj_date period_length_expr period_anchor_date period_start_ymd \
+          get_period_start_date get_period_end_date check_reset_limit; do
     extract_func "$SRC" "$fn" >> "$TMP/funcs.sh"
     grep -q "^${fn}() {" "$TMP/funcs.sh" || { echo "抽取失败: $fn"; exit 1; }
 done
@@ -81,8 +77,13 @@ done
 # shellcheck disable=SC1090
 source "$TMP/funcs.sh"
 
+# ============================================================
+# A. check_reset_limit 必须按周期幂等（而不是按「日期命中」）
+# ============================================================
+echo ""
+echo "===== A. 周期重置幂等 ====="
+
 # tc 用桩替代（本机没有 tc，也不该真去动网卡）
-TC_CALLS="$TMP/tc.calls"
 tc() { echo "tc $*" >> "$TC_CALLS"; }
 
 TRAFFIC_PERIOD="monthly"
@@ -92,7 +93,7 @@ TODAY="$(bj_date +%Y-%m-%d)"
 CUR_PERIOD="$(get_period_start_date)"
 echo "  今天=$TODAY  本周期起点=$CUR_PERIOD"
 
-# A1. 首次运行（没有标记文件）：只初始化，不发「新周期」
+# A1. 首次运行（没有标记文件）：只初始化，不发「新周期」，也不动 tc
 CASE="$TMP/a1"; mkdir -p "$CASE"
 WORK_DIR="$CASE"; LOG_FILE="$CASE/traffic_monitor.log"; MAIN_INTERFACE="eth0"
 PERIOD_RESET_FILE="$CASE/.last_period_reset"; TC_CALLS="$CASE/tc.calls"
@@ -102,8 +103,8 @@ n_new=$(grep -c "新的流量周期开始" "$LOG_FILE" 2>/dev/null || true)
 n_tc=$(grep -c "qdisc del" "$TC_CALLS" 2>/dev/null || true)
 [ "$n_new" = "0" ] && ok "A1 首次运行不伪造「新周期开始」日志" \
     || no "A1 首次运行就写了 $n_new 条新周期日志"
-[ "$n_tc" = "1" ] && ok "A1 首次运行仍会清一次限速（残留 tc 规则）" \
-    || no "A1 首次运行 tc del 次数异常: $n_tc"
+[ "$n_tc" = "0" ] && ok "A1 首次运行不动 tc（周期中途升级不该删掉现有限速）" \
+    || no "A1 首次运行删了 $n_tc 次 tc 规则"
 [ "$(cat "$PERIOD_RESET_FILE" 2>/dev/null)" = "$CUR_PERIOD" ] \
     && ok "A1 已落盘本周期起点标记" || no "A1 标记文件内容不对"
 
@@ -113,10 +114,10 @@ WORK_DIR="$CASE"; LOG_FILE="$CASE/traffic_monitor.log"; MAIN_INTERFACE="eth0"
 PERIOD_RESET_FILE="$CASE/.last_period_reset"; TC_CALLS="$CASE/tc.calls"
 : > "$LOG_FILE"; : > "$TC_CALLS"
 printf '%s\n' "$CUR_PERIOD" > "$PERIOD_RESET_FILE"
-for _ in $(seq 1 180); do check_reset_limit >/dev/null 2>&1; done
+for _ in $(seq 1 20); do check_reset_limit >/dev/null 2>&1; done
 n_new=$(grep -c "新的流量周期开始" "$LOG_FILE" 2>/dev/null || true)
 n_tc=$(grep -c "qdisc del" "$TC_CALLS" 2>/dev/null || true)
-[ "$n_new" = "0" ] && ok "A2 同周期内跑 180 次（一天是 1440 次）不写任何新周期日志" \
+[ "$n_new" = "0" ] && ok "A2 同周期内跑 20 次（一天是 1440 次）不写任何新周期日志" \
     || no "A2 同周期内写了 $n_new 条新周期日志"
 [ "$n_tc" = "0" ] && ok "A2 同周期内不重复执行 tc del" || no "A2 重复执行了 $n_tc 次 tc del"
 
@@ -126,10 +127,10 @@ WORK_DIR="$CASE"; LOG_FILE="$CASE/traffic_monitor.log"; MAIN_INTERFACE="eth0"
 PERIOD_RESET_FILE="$CASE/.last_period_reset"; TC_CALLS="$CASE/tc.calls"
 : > "$LOG_FILE"; : > "$TC_CALLS"
 printf '2000-01-01\n' > "$PERIOD_RESET_FILE"
-for _ in $(seq 1 180); do check_reset_limit >/dev/null 2>&1; done
+for _ in $(seq 1 20); do check_reset_limit >/dev/null 2>&1; done
 n_new=$(grep -c "新的流量周期开始" "$LOG_FILE" 2>/dev/null || true)
 n_tc=$(grep -c "qdisc del" "$TC_CALLS" 2>/dev/null || true)
-[ "$n_new" = "1" ] && ok "A3 周期切换后只写 1 条新周期日志（旧实现是 180 条）" \
+[ "$n_new" = "1" ] && ok "A3 周期切换后只写 1 条新周期日志（旧实现是 20 条）" \
     || no "A3 新周期日志条数异常: $n_new"
 [ "$n_tc" = "1" ] && ok "A3 周期切换后只清一次限速" || no "A3 tc del 次数异常: $n_tc"
 
@@ -143,42 +144,44 @@ check_reset_limit >/dev/null 2>&1
     && ok "A4 空标记文件被正常覆盖" || no "A4 空标记文件未被修复"
 
 # ============================================================
-# A2. 周期日期计算：窗口必须正好一个周期，且必须包含今天
-# ------------------------------------------------------------
-# quarterly / yearly 原先多挂了一个「当前月 == 季度首月」的判据，效果是
-# 首月整月都退到上一个周期。旧代码实测：
-#   2026-01-20 D=15 → 2025-10-15 ~ 2026-03-14（错一个季度）
-#   2026-01-05 D=1  → 季度 151 天、年度 730 天
-# 于是季度/年度用户的用量把上个周期算了进来，且「新周期」永不触发。
+# B. 周期窗口：必须正好一个周期，且必须包含今天
 # ============================================================
 echo ""
-echo "===== A2. 季度/年度周期窗口 ====="
+echo "===== B. 周期窗口（季 / 年 / 月） ====="
 
-# 用可控的「今天」驱动日期函数（非 +%Y/+%m/+%d 的调用仍交给真实 date）
+# 用可控的「今天」驱动日期函数（其余调用仍交给真实 date）
 FAKE_Y=2026; FAKE_M=01; FAKE_D=05
 bj_date() {
     case "$1" in
-        +%Y) echo "$FAKE_Y" ;;
-        +%m) echo "$FAKE_M" ;;
-        +%d) echo "$FAKE_D" ;;
-        *)   date "$@" ;;
+        +%Y)     echo "$FAKE_Y" ;;
+        +%m)     echo "$FAKE_M" ;;
+        +%d)     echo "$FAKE_D" ;;
+        +%Y%m%d) printf '%s%s%s\n' "$FAKE_Y" "$FAKE_M" "$FAKE_D" ;;
+        *)       date "$@" ;;
     esac
 }
 
-D_CASES="
+B_CASES="
 quarterly|1|2026|01|05|2026-01-01|2026-03-31
 quarterly|1|2026|02|10|2026-01-01|2026-03-31
 quarterly|1|2026|03|31|2026-01-01|2026-03-31
+quarterly|1|2026|04|01|2026-04-01|2026-06-30
 quarterly|15|2026|01|03|2025-10-15|2026-01-14
+quarterly|15|2026|01|15|2026-01-15|2026-04-14
 quarterly|15|2026|01|20|2026-01-15|2026-04-14
-quarterly|15|2026|04|10|2026-01-15|2026-04-14
+quarterly|15|2026|02|05|2026-01-15|2026-04-14
+quarterly|15|2026|02|20|2026-01-15|2026-04-14
+quarterly|15|2026|04|14|2026-01-15|2026-04-14
 quarterly|15|2026|04|15|2026-04-15|2026-07-14
+quarterly|15|2026|05|05|2026-04-15|2026-07-14
 yearly|1|2026|01|05|2026-01-01|2026-12-31
 yearly|1|2026|06|01|2026-01-01|2026-12-31
 yearly|15|2026|01|03|2025-01-15|2026-01-14
 yearly|15|2026|01|15|2026-01-15|2027-01-14
+yearly|15|2026|06|05|2026-01-15|2027-01-14
 monthly|15|2026|11|10|2026-10-15|2026-11-14
 monthly|1|2026|11|17|2026-11-01|2026-11-30
+monthly|8|2026|11|03|2026-10-08|2026-11-07
 "
 
 while IFS='|' read -r p day y m d exp_s exp_e; do
@@ -189,35 +192,34 @@ while IFS='|' read -r p day y m d exp_s exp_e; do
     got_e=$(get_period_end_date)
     today="$y-$m-$d"
     if [ "$got_s" = "$exp_s" ] && [ "$got_e" = "$exp_e" ]; then
-        ok "A2 $p 起始日=$day 今天=$today → $got_s ~ $got_e"
+        ok "B $p 起始日=$day 今天=$today → $got_s ~ $got_e"
     else
-        no "A2 $p 起始日=$day 今天=$today → $got_s ~ $got_e（期望 $exp_s ~ $exp_e）"
+        no "B $p 起始日=$day 今天=$today → $got_s ~ $got_e（期望 $exp_s ~ $exp_e）"
     fi
-    # 不变量：今天必须落在 [起始日, 结束日] 内
+    # 不变量①：今天必须落在 [起始日, 结束日] 内
     if [ ! "$today" \< "$got_s" ] && [ ! "$today" \> "$got_e" ]; then
         :
     else
-        no "A2 $p 起始日=$day 今天 $today 不在窗口 $got_s ~ $got_e 内"
+        no "B $p 起始日=$day 今天 $today 不在窗口 $got_s ~ $got_e 内"
     fi
-done <<< "$D_CASES"
+done <<< "$B_CASES"
 
-# 窗口长度必须是一个周期（月 28~31 / 季 89~92 / 年 365~366）
-TRAFFIC_PERIOD=quarterly; PERIOD_START_DAY=1
-FAKE_Y=2026; FAKE_M=01; FAKE_D=05
+# 不变量②：窗口长度等于一个周期（月 28~31 / 季 89~92 / 年 365~366）
+TRAFFIC_PERIOD=quarterly; PERIOD_START_DAY=1; FAKE_Y=2026; FAKE_M=01; FAKE_D=05
 len=$(( ( $(date -d "$(get_period_end_date)" +%s) - $(date -d "$(get_period_start_date)" +%s) ) / 86400 + 1 ))
-[ "$len" -ge 89 ] && [ "$len" -le 92 ] && ok "A2 季度窗口长度 $len 天（旧代码是 151 天）" \
-    || no "A2 季度窗口长度异常: $len 天"
+[ "$len" -ge 89 ] && [ "$len" -le 92 ] && ok "B 季度窗口长度 $len 天（旧代码是 151 天）" \
+    || no "B 季度窗口长度异常: $len 天"
 
 TRAFFIC_PERIOD=yearly
 len=$(( ( $(date -d "$(get_period_end_date)" +%s) - $(date -d "$(get_period_start_date)" +%s) ) / 86400 + 1 ))
-[ "$len" -ge 365 ] && [ "$len" -le 366 ] && ok "A2 年度窗口长度 $len 天（旧代码是 730 天）" \
-    || no "A2 年度窗口长度异常: $len 天"
+[ "$len" -ge 365 ] && [ "$len" -le 366 ] && ok "B 年度窗口长度 $len 天（旧代码是 730 天）" \
+    || no "B 年度窗口长度异常: $len 天"
 
 # ============================================================
-# B. 三个通知脚本：「新周期」状态变化才推送
+# C. 三个通知脚本：新周期按「事件」推送，且失败要能重试
 # ============================================================
 echo ""
-echo "===== B. 通知去重（tg / pushplus / serverchan） ====="
+echo "===== C. 新周期通知（事件驱动） ====="
 
 # shellcheck disable=SC1091
 . "$ROOT/log_helper.sh"
@@ -231,7 +233,7 @@ for notifier in tg_notifier.sh pushplus_notifier.sh serverchan_notifier.sh; do
         continue
     fi
 
-    CASE="$TMP/b_$label"; mkdir -p "$CASE"
+    CASE="$TMP/c_$label"; mkdir -p "$CASE"
     extract_func "$NSRC" check_and_notify > "$CASE/notify.sh"
     grep -q "^check_and_notify() {" "$CASE/notify.sh" \
         || { no "$label 抽取 check_and_notify 失败"; continue; }
@@ -242,63 +244,97 @@ for notifier in tg_notifier.sh pushplus_notifier.sh serverchan_notifier.sh; do
     LOG_FILE="$CASE/traffic_monitor.log"
     CRON_LOG="$CASE/cron.log"
     LAST_NOTIFICATION_FILE="$CASE/last_traffic_notification"
-    COUNT="$CASE/sent.count"
+    COUNT="$CASE/ok.count"
+    FAILCOUNT="$CASE/fail.count"
+    SEND_RC="$CASE/send.rc"
 
-    # 桩：只计数，不真的发推送
-    send_new_cycle_notification()  { echo "new_cycle"    >> "$COUNT"; }
-    send_throttle_warning()        { echo "throttle"     >> "$COUNT"; }
-    send_throttle_lifted()         { echo "lifted"       >> "$COUNT"; }
-    send_shutdown_warning()        { echo "shutdown"     >> "$COUNT"; }
+    # 桩：只计数，不真的发推送；SEND_RC 控制「发送成功/失败」
+    send_new_cycle_notification() {
+        if [ "$(cat "$SEND_RC" 2>/dev/null)" = "1" ]; then
+            echo "new_cycle" >> "$FAILCOUNT"; return 1
+        fi
+        echo "new_cycle" >> "$COUNT"; return 0
+    }
+    send_throttle_warning()  { echo "throttle"  >> "$COUNT"; return 0; }
+    send_throttle_lifted()   { echo "lifted"    >> "$COUNT"; return 0; }
+    send_shutdown_warning()  { echo "shutdown"  >> "$COUNT"; return 0; }
 
-    # ---- B1. 日志里堆满「新周期开始」（客户现场的样子），只许推一次 ----
-    : > "$COUNT"; : > "$CRON_LOG"
+    : > "$COUNT"; : > "$FAILCOUNT"; : > "$CRON_LOG"
+    echo 0 > "$SEND_RC"
+
+    # 真实的日志顺序：主脚本同一次运行里先写「新周期开始」，紧接着写「流量正常」
     {
-        i=0
-        while [ $i -lt 60 ]; do
-            printf '2026-11-15 00:%02d:00 新的流量周期开始，重置限制\n' $i
-            i=$((i + 1))
-        done
+        echo "2026-11-15 00:00:00 新的流量周期开始，重置限制"
+        echo "2026-11-15 00:00:01 流量正常，清除所有限制"
     } > "$LOG_FILE"
+    printf '2026-11-15\n' > "$CASE/.last_period_reset"
 
-    for _ in $(seq 1 60); do check_and_notify >/dev/null 2>&1; done
-    n=$(grep -c "new_cycle" "$COUNT" 2>/dev/null || true)
-    [ "$n" = "1" ] && ok "$label 日志堆了 60 条「新周期」也只推 1 条（旧实现推 60 条）" \
-        || no "$label 新周期推送了 $n 条"
+    # C1. 升级后第一次跑：静默登记当前周期，不补推历史周期
+    for _ in $(seq 1 3); do check_and_notify >/dev/null 2>&1; done
+    n=$(grep -c . "$COUNT" 2>/dev/null || true)
+    [ "$n" = "0" ] && ok "$label C1 首次运行不补推历史周期" || no "$label C1 首次运行多推了 $n 条"
 
-    # ---- B2. 之后日志变成「流量正常」：不许再推任何东西 ----
-    echo "2026-11-15 08:00:00 流量正常，清除所有限制" >> "$LOG_FILE"
-    for _ in $(seq 1 5); do check_and_notify >/dev/null 2>&1; done
-    n=$(grep -c "new_cycle" "$COUNT" 2>/dev/null || true)
-    n_all=$(grep -c . "$COUNT" 2>/dev/null || true)
-    [ "$n" = "1" ] && ok "$label 状态转为「正常」后不再推新周期" \
-        || no "$label 转为正常后新周期推了 $n 条"
-    [ "$n_all" = "1" ] && ok "$label 全程没有多余推送" || no "$label 总共推了 $n_all 条"
-
-    # ---- B3. 下个周期再来一次：必须能正常推（去重不能把功能去没了） ----
+    # C2. 周期切换（日志里紧接着就有「正常」）：必须仍能推，且只推一次
+    printf '2026-12-15\n' > "$CASE/.last_period_reset"
     echo "2026-12-15 00:00:00 新的流量周期开始，重置限制" >> "$LOG_FILE"
+    echo "2026-12-15 00:00:01 流量正常，清除所有限制" >> "$LOG_FILE"
+    for _ in $(seq 1 10); do check_and_notify >/dev/null 2>&1; done
+    n=$(grep -c "new_cycle" "$COUNT" 2>/dev/null || true)
+    [ "$n" = "1" ] && ok "$label C2 新周期后紧跟「流量正常」也能推，且 10 轮只推 1 条" \
+        || no "$label C2 新周期推送数 $n（期望 1）"
+
+    # C3. 发送失败：不记标记，下一轮必须重试成功
+    printf '2026-01-15\n' > "$CASE/.last_period_reset"
+    echo 1 > "$SEND_RC"
+    check_and_notify >/dev/null 2>&1
+    m=$(grep -c "new_cycle" "$FAILCOUNT" 2>/dev/null || true)
+    [ "$m" = "1" ] && ok "$label C3 发送失败时记录失败（未记为已通知）" \
+        || no "$label C3 发送失败未走失败分支: $m"
+    echo 0 > "$SEND_RC"
     check_and_notify >/dev/null 2>&1
     n=$(grep -c "new_cycle" "$COUNT" 2>/dev/null || true)
-    [ "$n" = "2" ] && ok "$label 下一个周期仍会正常推送一次" \
-        || no "$label 新周期推送未恢复: $n"
+    [ "$n" = "2" ] && ok "$label C3 失败后下一轮自动重试并成功" \
+        || no "$label C3 失败后未重试（成功数 $n，期望 2）"
 
-    # ---- B4. 限速/解限分支不受影响 ----
-    : > "$COUNT"
-    echo "2026-12-16 10:00:00 流量超出限制" >> "$LOG_FILE"
+    # C4. 两个周期之间没有任何「正常」日志（vnstat 整周期失败）也要能推
+    printf '2026-02-15\n' > "$CASE/.last_period_reset"
+    echo "2026-02-15 00:00:00 新的流量周期开始，重置限制" >> "$LOG_FILE"
     check_and_notify >/dev/null 2>&1
-    echo "2026-12-16 11:00:00 流量正常，清除所有限制" >> "$LOG_FILE"
+    n=$(grep -c "new_cycle" "$COUNT" 2>/dev/null || true)
+    [ "$n" = "3" ] && ok "$label C4 中间没有「正常」日志时下个周期照常推送" \
+        || no "$label C4 跨周期推送丢失（$n，期望 3）"
+
+    # C5. 刚推过「新周期」时不要再重复推「限速解除」
+    : > "$COUNT"
+    printf '2026-02-15 10:00:00 限速\n' > "$LAST_NOTIFICATION_FILE"
+    printf '2026-03-15\n' > "$CASE/.last_period_reset"
+    echo "2026-03-15 00:00:00 新的流量周期开始，重置限制" >> "$LOG_FILE"
+    echo "2026-03-15 00:00:01 流量正常，清除所有限制" >> "$LOG_FILE"
+    check_and_notify >/dev/null 2>&1
+    n=$(grep -c "new_cycle" "$COUNT" 2>/dev/null || true)
+    m=$(grep -c "lifted"    "$COUNT" 2>/dev/null || true)
+    [ "$n" = "1" ] && [ "$m" = "0" ] && ok "$label C5 新周期只推一条，不重复推解除限速" \
+        || no "$label C5 新周期=$n 解限=$m（期望 1 / 0）"
+
+    # C6. 限速 / 解限分支本身不受影响
+    : > "$COUNT"
+    printf '2026-03-16 10:00:00 正常\n' > "$LAST_NOTIFICATION_FILE"
+    echo "2026-03-16 11:00:00 流量超出限制" >> "$LOG_FILE"
+    check_and_notify >/dev/null 2>&1
+    echo "2026-03-16 12:00:00 流量正常，清除所有限制" >> "$LOG_FILE"
     check_and_notify >/dev/null 2>&1
     n=$(grep -c "throttle" "$COUNT" 2>/dev/null || true)
-    m=$(grep -c "lifted" "$COUNT" 2>/dev/null || true)
-    [ "$n" = "1" ] && [ "$m" = "1" ] && ok "$label 限速/解限推送逻辑未受影响" \
-        || no "$label 限速=$n 解限=$m（期望各 1）"
+    m=$(grep -c "lifted"   "$COUNT" 2>/dev/null || true)
+    [ "$n" = "1" ] && [ "$m" = "1" ] && ok "$label C6 限速/解限推送逻辑未受影响" \
+        || no "$label C6 限速=$n 解限=$m（期望各 1）"
 done
 
 # ============================================================
-# C. 语法检查
+# D. 语法检查
 # ============================================================
 echo ""
-echo "===== C. 语法检查 ====="
-for s in trafficcop.sh tg_notifier.sh serverchan_notifier.sh pushplus_notifier.sh; do
+echo "===== D. 语法检查 ====="
+for s in trafficcop.sh tg_notifier.sh serverchan_notifier.sh pushplus_notifier.sh log_helper.sh; do
     if [ -f "$ROOT/$s" ]; then
         bash -n "$ROOT/$s" 2>/dev/null && ok "$s 语法通过" || no "$s 语法错误"
     else

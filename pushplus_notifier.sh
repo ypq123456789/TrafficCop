@@ -364,21 +364,32 @@ check_and_notify() {
     
     echo "$(date '+%Y-%m-%d %H:%M:%S') : 上次记录的状态: $last_status"| tee -a "$CRON_LOG"
     
+    # ------------------------------------------------------------
+    # 新周期按「事件」处理（issue #25），不走下面的状态分支
+    # ------------------------------------------------------------
+    # 主脚本重置时会连着写「新周期开始」和「流量正常」两行，而本脚本每分钟
+    # 才轮询一次，靠「最新一条日志」判断几乎总是读到后者（详见 log_helper.sh）。
+    # 这里直接比对主脚本落盘的周期标识，与日志时序无关。
+    local new_cycle_sent=0
+    if new_cycle_notify_pending; then
+        if send_new_cycle_notification; then
+            new_cycle_notify_mark
+            new_cycle_sent=1
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : 已调用 send_new_cycle_notification"| tee -a "$CRON_LOG"
+        else
+            # 不记标记 → 下一分钟继续重试，避免一次临时失败把通知永久丢掉
+            echo "$(date '+%Y-%m-%d %H:%M:%S') : 新周期通知发送失败，下次运行重试"| tee -a "$CRON_LOG"
+        fi
+    fi
+
     # 根据状态调用相应的通知函数
     if [ "$current_status" = "限速" ] && [ "$last_status" != "限速" ]; then
         send_throttle_warning
         echo "$(date '+%Y-%m-%d %H:%M:%S') : 已调用 send_throttle_warning"| tee -a "$CRON_LOG"
-    elif [ "$current_status" = "正常" ] && [ "$last_status" = "限速" ]; then
+    elif [ "$current_status" = "正常" ] && [ "$last_status" = "限速" ] && [ "$new_cycle_sent" != "1" ]; then
+        # 刚推过「新周期」，这条消息本身已说明限速已自动解除，不再重复推解限
         send_throttle_lifted
         echo "$(date '+%Y-%m-%d %H:%M:%S') : 已调用 send_throttle_lifted"| tee -a "$CRON_LOG"
-    # 「新周期」这一支必须去重（issue #25）。
-    # 上面两支都带了 last_status 判据，只有这一支原来是无条件发送：
-    # 只要日志最新一条是「新周期开始」就发一次，而主脚本在重置日当天
-    # 每分钟都会写这行日志，于是变成每分钟一条推送。
-    # 现在与「限速」分支保持一致：状态没变就不再重复发。
-    elif [ "$current_status" = "新周期" ] && [ "$last_status" != "新周期" ]; then
-        send_new_cycle_notification
-        echo "$(date '+%Y-%m-%d %H:%M:%S') : 已调用 send_new_cycle_notification"| tee -a "$CRON_LOG"
     elif [ "$current_status" = "关机" ]; then
         send_shutdown_warning
         echo "$(date '+%Y-%m-%d %H:%M:%S') : 已调用 send_shutdown_warning"| tee -a "$CRON_LOG"
