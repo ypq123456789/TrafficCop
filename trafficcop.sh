@@ -738,8 +738,14 @@ month_shift() {
 }
 
 # 某年某月的周期起始日；日号超过该月天数时夹到月末（31 号→2 月 28/29 日）。
+#
+# ⚠️ 年月必须先转十进制再交给 printf：bash 的 printf %d 按 C 常量解析实参，
+#    "08" / "09" 会被当成八进制而报 invalid octal number，输出变成 00 ——
+#    默认的月度周期在 8 月、9 月会直接算成「2026-00-01」。
 period_anchor_at() {
     local y=$1 m=$2 d=$3 last
+    y=$((10#${y:-2000}))
+    m=$((10#${m:-1}))
     d=$((10#${d:-1}))
     last=$(bj_date -d "$(printf '%04d-%02d-01' "$y" "$m") +1 month -1 day" +%d 2>/dev/null)
     last=$((10#${last:-1}))

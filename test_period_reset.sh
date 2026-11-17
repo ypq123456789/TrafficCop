@@ -211,6 +211,37 @@ while IFS='|' read -r p day y m d exp_s exp_e; do
     fi
 done <<< "$B_CASES"
 
+# B2. 全月扫描：3 种周期 × 12 个月，任何一个月都不许出现空窗口或不含今天。
+#     这条是专门为「printf 把 08/09 当八进制」那个坑加的 —— 手写用例很容易
+#     漏掉 8、9 月，而默认月度周期恰好在那里全线算成 2026-00-01。
+bad=0
+for p in monthly quarterly yearly; do
+    for m in 01 02 03 04 05 06 07 08 09 10 11 12; do
+        TRAFFIC_PERIOD="$p"; PERIOD_START_DAY=1
+        FAKE_Y=2026; FAKE_M="$m"; FAKE_D=15
+        s=$(get_period_start_date)
+        e=$(get_period_end_date)
+        today="2026-$m-15"
+        if [ -z "$s" ] || [ -z "$e" ] || [ "$today" \< "$s" ] || [ "$today" \> "$e" ]; then
+            bad=$((bad + 1))
+            [ "$bad" -le 3 ] && echo "    异常: $p 2026-$m-15 → [$s] ~ [$e]"
+        fi
+    done
+done
+[ "$bad" -eq 0 ] && ok "B2 全月扫描 36 种组合全部有效（含 8/9 月八进制坑）" \
+    || no "B2 全月扫描有 $bad 种组合窗口无效"
+
+# B3. 7 月底 → 8 月初的衔接（月初边界最容易错）
+TRAFFIC_PERIOD=monthly; PERIOD_START_DAY=1
+FAKE_Y=2026; FAKE_M=07; FAKE_D=31
+s=$(get_period_start_date); e=$(get_period_end_date)
+[ "$s" = "2026-07-01" ] && [ "$e" = "2026-07-31" ] && ok "B3 7-31 → 2026-07-01 ~ 2026-07-31" \
+    || no "B3 7-31 → $s ~ $e"
+FAKE_M=08; FAKE_D=01
+s=$(get_period_start_date); e=$(get_period_end_date)
+[ "$s" = "2026-08-01" ] && [ "$e" = "2026-08-31" ] && ok "B3 8-01 → 2026-08-01 ~ 2026-08-31" \
+    || no "B3 8-01 → $s ~ $e"
+
 # 不变量②：窗口长度等于一个周期（月 28~31 / 季 89~92 / 年 365~366）
 TRAFFIC_PERIOD=quarterly; PERIOD_START_DAY=1; FAKE_Y=2026; FAKE_M=01; FAKE_D=05
 len=$(( ( $(date -d "$(get_period_end_date)" +%s) - $(date -d "$(get_period_start_date)" +%s) ) / 86400 + 1 ))
