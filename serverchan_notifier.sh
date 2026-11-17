@@ -274,7 +274,12 @@ check_and_notify() {
     elif [ "$current_status" = "正常" ] && [ "$last_status" = "限速" ]; then
         send_throttle_lifted
         echo "$(date '+%Y-%m-%d %H:%M:%S') : 已调用 send_throttle_lifted"| tee -a "$CRON_LOG"
-    elif [ "$current_status" = "新周期" ]; then
+    # 「新周期」这一支必须去重（issue #25）。
+    # 上面两支都带了 last_status 判据，只有这一支原来是无条件发送：
+    # 只要日志最新一条是「新周期开始」就发一次，而主脚本在重置日当天
+    # 每分钟都会写这行日志，于是变成每分钟一条推送。
+    # 现在与「限速」分支保持一致：状态没变就不再重复发。
+    elif [ "$current_status" = "新周期" ] && [ "$last_status" != "新周期" ]; then
         send_new_cycle_notification
         echo "$(date '+%Y-%m-%d %H:%M:%S') : 已调用 send_new_cycle_notification"| tee -a "$CRON_LOG"
     elif [ "$current_status" = "关机" ]; then

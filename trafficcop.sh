@@ -96,7 +96,7 @@ get_byte_divisor() {
 }
 
 # 脚本版本号。上报模块与日志里都用它，请与下面 echo 的版本保持单一来源。
-SCRIPT_VERSION="1.0.93"
+SCRIPT_VERSION="1.0.94"
 
 echo "-----------------------------------------------------"| tee -a "$LOG_FILE"
 echo "$(date '+%Y-%m-%d %H:%M:%S') 当前版本：$SCRIPT_VERSION"| tee -a "$LOG_FILE"
@@ -984,15 +984,29 @@ get_traffic_usage() {
     # 「求和 = 0」有两种可能：本周期确实没用流量，或 vnstat 已停止更新、只剩
     # 上个周期的旧记录（粒度选择接受它，但按本周期日期筛选一条都匹配不到）。
     # 后者若标记为取数成功，下游会按 0 用量解除限速，所以必须先确认周期内有记录。
+    #
+    # 「周期内一条记录都没有」同样有两种可能，必须再分一次：
+    #   a) 周期刚开始、机器还没产生流量 —— vnstat 不会为 0 字节的小时建条目，
+    #      所以周期起点当天「查不到记录」是正常现象，用量就是 0；
+    #   b) vnstat 已停止更新，库里只剩上个周期的旧记录。
+    # 旧实现一律按 (b) 处理（标记取数失败）。issue #25 里那台机器正好在重置日
+    # 空闲了一整夜（0 点到 8 点没有任何流量），于是每分钟都被判成取数失败，
+    # 「新周期开始」那行日志始终是最新一条，下游就每分钟推一次通知；
+    # 8 点机器开始有流量、条目才出现，重复推送随之停止。
+    # 现在用「周期起点是不是今天（北京时间）」区分：是今天 → 按 0 用量处理；
+    # 不是今天 → 仍按取数失败处理，绝不拿 0 去解除限速。
     if [ -z "$usage_bytes" ] || [ "$usage_bytes" = "null" ] || [ "$usage_bytes" = "0" ]; then
         local matched
         matched=$(printf '%s' "$json" | jq --argjson s "$s_arg" --argjson e "$e_arg" \
             "$(vnstat_sum_filter "$arr" count "$key_expr")" 2>/dev/null)
         if [ "$matched" = "0" ]; then
-            printf '0\n' > "$flag_file" 2>/dev/null
-            echo "$(date '+%Y-%m-%d %H:%M:%S') 警告: 本周期 $start_date ~ $end_date 内没有任何 vnstat 记录（vnstat 可能已停止更新），不按 0 用量处理" >&2
-            echo "0.000"
-            return 1
+            if [ "$(bj_date +%Y-%m-%d)" != "$start_date" ]; then
+                printf '0\n' > "$flag_file" 2>/dev/null
+                echo "$(date '+%Y-%m-%d %H:%M:%S') 警告: 本周期 $start_date ~ $end_date 内没有任何 vnstat 记录（vnstat 可能已停止更新），不按 0 用量处理" >&2
+                echo "0.000"
+                return 1
+            fi
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 提示: 本周期 $start_date 刚开始且尚无流量记录（vnstat 不为 0 字节的小时建条目），按 0 用量处理" >&2
         fi
     fi
 
@@ -1061,7 +1075,7 @@ write_state_snapshot() {
   "period_start": "$period_start",
   "traffic_mode": "${TRAFFIC_MODE:-total}",
   "main_interface": "${MAIN_INTERFACE:-}",
-  "script_version": "${SCRIPT_VERSION:-1.0.93}",
+  "script_version": "${SCRIPT_VERSION:-1.0.94}",
   "hostname": "$(hostname 2>/dev/null || echo unknown)"
 }
 EOF
@@ -1225,15 +1239,57 @@ check_and_limit_traffic() {
 }
 
 
-# 检查是否需要重置限制
+# 检查是否需要重置限制（新周期开始时清除限速）
+# ------------------------------------------------------------
+# issue #25：客户收到 485 条一模一样的「新周期开始」推送，0 点到 8 点每分钟一条。
+#
+# 原实现的判据是「今天是不是本周期起点那一天」：
+#     [ "$current_date" == "$period_start" ] && { 写日志; tc del }
+# 这个条件在重置日【一整天】内都成立，而本脚本由 cron 每分钟执行一次，
+# 于是当天会写下 1440 条「新的流量周期开始，重置限制」。
+# 下游通知脚本把这个日志当成「当前状态」，只要最新一条是它就发一次推送，
+# 结果就是每分钟一条。
+#
+# 现在的判据是「本周期是否还没重置过」：把上次重置所属的周期起点记到文件里，
+# 只有周期标识真的变化时才动作一次。
+#   · 天然幂等：同一天跑 1440 次也只动作 1 次、只写 1 条日志；
+#   · 顺带修掉一个隐性缺陷：旧判据要求「当天正好是周期起点」，
+#     机器若在重置日关机、几天后才开机，条件永远不成立，
+#     上个周期加的 tc 限速会一直挂着解不掉。新判据只要发现
+#     「周期标识与上次重置时不同」就会清一次。
+#   · 周期起点由 get_period_start_date 按北京时间算，与 CDT 额度刷新对齐。
+# ------------------------------------------------------------
 check_reset_limit() {
-    # 使用北京时间判断是否进入新周期（与 CDT 免费额度刷新时间对齐）
-    local current_date=$(bj_date +%Y-%m-%d)
-    local period_start=$(get_period_start_date)
-    
-    if [[ "$current_date" == "$period_start" ]]; then
+    local period_start
+    period_start=$(get_period_start_date 2>/dev/null)
+    # 周期算不出来（配置非法 / date 失败）时不动手，避免误清限速
+    [ -n "$period_start" ] || return 0
+
+    local state_file="${PERIOD_RESET_FILE:-$WORK_DIR/.last_period_reset}"
+    local last_reset=""
+    if [ -f "$state_file" ]; then
+        last_reset=$(head -n 1 "$state_file" 2>/dev/null | tr -d '[:space:]')
+    fi
+
+    # 本周期已经重置过：直接返回。
+    # 这里绝不能顺手写日志 —— 那行日志就是下游的通知源，重复写=重复推送。
+    if [ "$last_reset" = "$period_start" ]; then
+        return 0
+    fi
+
+    tc qdisc del dev "$MAIN_INTERFACE" root 2>/dev/null
+
+    # 顺序很关键：先落盘「已重置」标记，日志最后写。
+    #   · 标记先写 → 后面即使被打断，下一分钟也不会重复通知；
+    #   · 日志后写 → 通知只会在真正重置之后才发得出去。
+    printf '%s\n' "$period_start" > "$state_file" 2>/dev/null
+
+    if [ -z "$last_reset" ]; then
+        # 首次运行 / 升级后第一次跑：只初始化标记，不写「新周期开始」。
+        # 否则每台机器升级完都会凭空多推一条「新周期」。
+        echo "$(date '+%Y-%m-%d %H:%M:%S') 已记录当前周期起点 $period_start，之后周期切换时只通知一次"| tee -a "$LOG_FILE"
+    else
         echo "$(date '+%Y-%m-%d %H:%M:%S') 新的流量周期开始，重置限制"| tee -a "$LOG_FILE"
-        tc qdisc del dev $MAIN_INTERFACE root 2>/dev/null
     fi
 }
 
