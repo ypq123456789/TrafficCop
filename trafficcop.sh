@@ -677,6 +677,20 @@ bj_date() {
 }
 
 # 获取当前周期的起始日期
+#
+# 这两个日期函数必须成对满足下面的不变量，否则「本周期用量」会被多算一个周期：
+#     get_period_start_date() <= 今天 <= get_period_end_date()
+#     且 结束日 - 起始日 + 1 == 一个周期的长度（月 28~31 / 季 89~92 / 年 365~366）
+#
+# ⚠️ quarterly / yearly 原先在判据里多挂了一个月份子条件：
+#     if [ 今天 < 起始日 ] || [ 当前月 == 季度首月 ]
+#   效果是「只要落在季度/年度的首月，就无条件退到上一个周期」。实测：
+#     2026-01-20、D=15 → 返回 2025-10-15 ~ 2026-03-14（整整错了一个季度）
+#     2026-01-05、D=1  → 季度窗口 151 天；年度窗口 730 天（两年）
+#   后果有两个：① 季度/年度用户的本周期用量把上个周期的流量也算了进来；
+#   ② 周期起点一季/一年都不等于「今天」，新周期重置与推送实际上永不触发。
+#   「今天 < 起始日」这一半已经完整覆盖了「还没到本周期起始日」的情况，
+#   月份子条件是多余的，已去掉。
 get_period_start_date() {
     local current_year=$(bj_date +%Y)
     local current_month=$(bj_date +%m)
@@ -692,14 +706,16 @@ get_period_start_date() {
             ;;
         quarterly)
             local quarter_month=$((((10#$current_month - 1) / 3) * 3 + 1))
-            if [ "$current_day" -lt $PERIOD_START_DAY ] || [ "$((10#$current_month))" -eq "$quarter_month" ]; then
+            # 只认「有没有到本季度起始日」，不再看月份 ——
+            # 多挂一个「当前月 == 季度首月」会让首月整月都退到上一季度（见函数上方说明）
+            if [ "$current_day" -lt "$PERIOD_START_DAY" ]; then
                 bj_date -d "${current_year}-$(printf '%02d' $quarter_month)-${PERIOD_START_DAY} -3 month" +'%Y-%m-%d'
             else
                 bj_date -d "${current_year}-$(printf '%02d' $quarter_month)-${PERIOD_START_DAY}" +'%Y-%m-%d' 2>/dev/null || bj_date -d "${current_year}-$(printf '%02d' $quarter_month)-01" +%Y-%m-%d
             fi
             ;;
         yearly)
-            if [ "$current_day" -lt $PERIOD_START_DAY ] || [ "$((10#$current_month))" -eq 1 ]; then
+            if [ "$current_day" -lt "$PERIOD_START_DAY" ]; then
                 bj_date -d "${current_year}-01-${PERIOD_START_DAY} -1 year" +'%Y-%m-%d'
             else
                 bj_date -d "${current_year}-01-${PERIOD_START_DAY}" +'%Y-%m-%d' 2>/dev/null || bj_date -d "${current_year}-01-01" +%Y-%m-%d
@@ -724,17 +740,21 @@ get_period_end_date() {
             ;;
         quarterly)
             local quarter_month=$((((10#$current_month - 1) / 3) * 3 + 1))
-            if [ "$current_day" -lt $PERIOD_START_DAY ] || [ "$((10#$current_month))" -eq "$quarter_month" ]; then
-                bj_date -d "${current_year}-$(printf '%02d' $quarter_month)-${PERIOD_START_DAY} +2 month -1 day" +'%Y-%m-%d'
+            if [ "$current_day" -lt "$PERIOD_START_DAY" ]; then
+                # 周期在上一季度：结束日 = 本季度起始日 - 1 天
+                bj_date -d "${current_year}-$(printf '%02d' $quarter_month)-${PERIOD_START_DAY} -1 day" +'%Y-%m-%d'
             else
-                bj_date -d "${current_year}-$(printf '%02d' $quarter_month)-${PERIOD_START_DAY} +5 month -1 day" +'%Y-%m-%d'
+                # 周期从本季度起始日开始，长度正好一个季度
+                bj_date -d "${current_year}-$(printf '%02d' $quarter_month)-${PERIOD_START_DAY} +3 month -1 day" +'%Y-%m-%d'
             fi
             ;;
         yearly)
-            if [ "$current_day" -lt $PERIOD_START_DAY ] || [ "$((10#$current_month))" -eq 1 ]; then
-                bj_date -d "${current_year}-12-31" +'%Y-%m-%d'
+            if [ "$current_day" -lt "$PERIOD_START_DAY" ]; then
+                # 周期在上一年：结束日 = 今年起始日 - 1 天
+                bj_date -d "${current_year}-01-${PERIOD_START_DAY} -1 day" +'%Y-%m-%d'
             else
-                bj_date -d "$((current_year + 1))-12-31" +'%Y-%m-%d'
+                # 周期从今年起始日开始，长度正好一年
+                bj_date -d "$((current_year + 1))-01-${PERIOD_START_DAY} -1 day" +'%Y-%m-%d'
             fi
             ;;
     esac

@@ -18,6 +18,10 @@
 #
 # 本脚本覆盖 ①③ 的回归。② 属取数逻辑，需要 vnstat 环境，见 test_usage_window.sh。
 #
+# 另外覆盖一个连带发现的缺陷（A2 段）：get_period_start_date / get_period_end_date
+# 的 quarterly / yearly 分支多挂了一个「当前月 == 季度首月」的判据，导致
+# 季度/年度窗口整体错位（实测 151 天 / 730 天），并且「新周期」永不触发。
+#
 # 用法: bash test_period_reset.sh
 # 依赖: bash / awk / date(GNU)
 # ============================================================
@@ -69,7 +73,7 @@ echo ""
 echo "===== A. 周期重置幂等 ====="
 
 : > "$TMP/funcs.sh"
-for fn in bj_date get_period_start_date check_reset_limit; do
+for fn in bj_date get_period_start_date get_period_end_date check_reset_limit; do
     extract_func "$SRC" "$fn" >> "$TMP/funcs.sh"
     grep -q "^${fn}() {" "$TMP/funcs.sh" || { echo "抽取失败: $fn"; exit 1; }
 done
@@ -137,6 +141,77 @@ PERIOD_RESET_FILE="$CASE/.last_period_reset"; TC_CALLS="$CASE/tc.calls"
 check_reset_limit >/dev/null 2>&1
 [ "$(cat "$PERIOD_RESET_FILE" 2>/dev/null)" = "$CUR_PERIOD" ] \
     && ok "A4 空标记文件被正常覆盖" || no "A4 空标记文件未被修复"
+
+# ============================================================
+# A2. 周期日期计算：窗口必须正好一个周期，且必须包含今天
+# ------------------------------------------------------------
+# quarterly / yearly 原先多挂了一个「当前月 == 季度首月」的判据，效果是
+# 首月整月都退到上一个周期。旧代码实测：
+#   2026-01-20 D=15 → 2025-10-15 ~ 2026-03-14（错一个季度）
+#   2026-01-05 D=1  → 季度 151 天、年度 730 天
+# 于是季度/年度用户的用量把上个周期算了进来，且「新周期」永不触发。
+# ============================================================
+echo ""
+echo "===== A2. 季度/年度周期窗口 ====="
+
+# 用可控的「今天」驱动日期函数（非 +%Y/+%m/+%d 的调用仍交给真实 date）
+FAKE_Y=2026; FAKE_M=01; FAKE_D=05
+bj_date() {
+    case "$1" in
+        +%Y) echo "$FAKE_Y" ;;
+        +%m) echo "$FAKE_M" ;;
+        +%d) echo "$FAKE_D" ;;
+        *)   date "$@" ;;
+    esac
+}
+
+D_CASES="
+quarterly|1|2026|01|05|2026-01-01|2026-03-31
+quarterly|1|2026|02|10|2026-01-01|2026-03-31
+quarterly|1|2026|03|31|2026-01-01|2026-03-31
+quarterly|15|2026|01|03|2025-10-15|2026-01-14
+quarterly|15|2026|01|20|2026-01-15|2026-04-14
+quarterly|15|2026|04|10|2026-01-15|2026-04-14
+quarterly|15|2026|04|15|2026-04-15|2026-07-14
+yearly|1|2026|01|05|2026-01-01|2026-12-31
+yearly|1|2026|06|01|2026-01-01|2026-12-31
+yearly|15|2026|01|03|2025-01-15|2026-01-14
+yearly|15|2026|01|15|2026-01-15|2027-01-14
+monthly|15|2026|11|10|2026-10-15|2026-11-14
+monthly|1|2026|11|17|2026-11-01|2026-11-30
+"
+
+while IFS='|' read -r p day y m d exp_s exp_e; do
+    [ -n "$p" ] || continue
+    TRAFFIC_PERIOD="$p"; PERIOD_START_DAY="$day"
+    FAKE_Y="$y"; FAKE_M="$m"; FAKE_D="$d"
+    got_s=$(get_period_start_date)
+    got_e=$(get_period_end_date)
+    today="$y-$m-$d"
+    if [ "$got_s" = "$exp_s" ] && [ "$got_e" = "$exp_e" ]; then
+        ok "A2 $p 起始日=$day 今天=$today → $got_s ~ $got_e"
+    else
+        no "A2 $p 起始日=$day 今天=$today → $got_s ~ $got_e（期望 $exp_s ~ $exp_e）"
+    fi
+    # 不变量：今天必须落在 [起始日, 结束日] 内
+    if [ ! "$today" \< "$got_s" ] && [ ! "$today" \> "$got_e" ]; then
+        :
+    else
+        no "A2 $p 起始日=$day 今天 $today 不在窗口 $got_s ~ $got_e 内"
+    fi
+done <<< "$D_CASES"
+
+# 窗口长度必须是一个周期（月 28~31 / 季 89~92 / 年 365~366）
+TRAFFIC_PERIOD=quarterly; PERIOD_START_DAY=1
+FAKE_Y=2026; FAKE_M=01; FAKE_D=05
+len=$(( ( $(date -d "$(get_period_end_date)" +%s) - $(date -d "$(get_period_start_date)" +%s) ) / 86400 + 1 ))
+[ "$len" -ge 89 ] && [ "$len" -le 92 ] && ok "A2 季度窗口长度 $len 天（旧代码是 151 天）" \
+    || no "A2 季度窗口长度异常: $len 天"
+
+TRAFFIC_PERIOD=yearly
+len=$(( ( $(date -d "$(get_period_end_date)" +%s) - $(date -d "$(get_period_start_date)" +%s) ) / 86400 + 1 ))
+[ "$len" -ge 365 ] && [ "$len" -le 366 ] && ok "A2 年度窗口长度 $len 天（旧代码是 730 天）" \
+    || no "A2 年度窗口长度异常: $len 天"
 
 # ============================================================
 # B. 三个通知脚本：「新周期」状态变化才推送
