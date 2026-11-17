@@ -68,7 +68,8 @@ extract_func() {
 }
 
 : > "$TMP/funcs.sh"
-for fn in bj_date period_length_expr period_anchor_date period_start_ymd \
+for fn in bj_date period_length_months period_anchor_month month_shift \
+          period_anchor_at period_start_ymd \
           get_period_start_date get_period_end_date check_reset_limit; do
     extract_func "$SRC" "$fn" >> "$TMP/funcs.sh"
     grep -q "^${fn}() {" "$TMP/funcs.sh" || { echo "抽取失败: $fn"; exit 1; }
@@ -182,6 +183,12 @@ yearly|15|2026|06|05|2026-01-15|2027-01-14
 monthly|15|2026|11|10|2026-10-15|2026-11-14
 monthly|1|2026|11|17|2026-11-01|2026-11-30
 monthly|8|2026|11|03|2026-10-08|2026-11-07
+quarterly|31|2026|04|15|2026-01-31|2026-04-29
+quarterly|31|2026|05|05|2026-04-30|2026-07-30
+quarterly|30|2026|04|15|2026-01-30|2026-04-29
+monthly|31|2026|02|10|2026-01-31|2026-02-27
+monthly|31|2026|03|05|2026-02-28|2026-03-30
+monthly|30|2026|02|10|2026-01-30|2026-02-27
 "
 
 while IFS='|' read -r p day y m d exp_s exp_e; do
@@ -328,6 +335,22 @@ for notifier in tg_notifier.sh pushplus_notifier.sh serverchan_notifier.sh; do
     [ "$n" = "1" ] && [ "$m" = "1" ] && ok "$label C6 限速/解限推送逻辑未受影响" \
         || no "$label C6 限速=$n 解限=$m（期望各 1）"
 done
+
+
+# C7. 两个渠道共用同一个 WORK_DIR、各自一份标记 → 谁都不该被对方「吃掉」
+CASE="$TMP/c7"; mkdir -p "$CASE"
+WORK_DIR="$CASE"
+printf '2026-04-15\n' > "$CASE/.last_period_reset"
+NEW_CYCLE_MARK_FILE="$CASE/.mark_a"; new_cycle_notify_pending >/dev/null 2>&1
+NEW_CYCLE_MARK_FILE="$CASE/.mark_b"; new_cycle_notify_pending >/dev/null 2>&1
+printf '2026-07-15\n' > "$CASE/.last_period_reset"
+NEW_CYCLE_MARK_FILE="$CASE/.mark_a"; pa=$(new_cycle_notify_pending)
+NEW_CYCLE_MARK_FILE="$CASE/.mark_b"; pb=$(new_cycle_notify_pending)
+if [ "$pa" = "2026-07-15" ] && [ "$pb" = "2026-07-15" ]; then
+    ok "C7 各渠道独立标记文件，互不影响"
+else
+    no "C7 渠道标记互相干扰（a=$pa b=$pb）"
+fi
 
 # ============================================================
 # D. 语法检查

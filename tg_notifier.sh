@@ -24,6 +24,9 @@ fi
 CONFIG_FILE="$WORK_DIR/tg_notifier_config.txt"
 LOG_FILE="$WORK_DIR/traffic_monitor.log"
 LAST_NOTIFICATION_FILE="$WORK_DIR/last_traffic_notification"
+# 每个通知渠道各自一份「已推送过的周期」标记：共用一份的话，
+# 先发成功的那一个会把周期记成已通知，另一个渠道就静默漏推了。
+NEW_CYCLE_MARK_FILE="$WORK_DIR/.last_new_cycle_notified_tg"
 SCRIPT_PATH="$WORK_DIR/tg_notifier.sh"
 CRON_LOG="$WORK_DIR/tg_notifier_cron.log"
 
@@ -515,10 +518,10 @@ check_and_notify() {
     # 主脚本重置时会连着写「新周期开始」和「流量正常」两行，而本脚本每分钟
     # 才轮询一次，靠「最新一条日志」判断几乎总是读到后者（详见 log_helper.sh）。
     # 这里直接比对主脚本落盘的周期标识，与日志时序无关。
-    local new_cycle_sent=0
-    if new_cycle_notify_pending; then
+    local new_cycle_sent=0 pending_period
+    if pending_period=$(new_cycle_notify_pending); then
         if send_new_cycle_notification; then
-            new_cycle_notify_mark
+            new_cycle_notify_mark "$pending_period"
             new_cycle_sent=1
             echo "$(date '+%Y-%m-%d %H:%M:%S') : 已调用 send_new_cycle_notification"| tee -a "$CRON_LOG"
         else

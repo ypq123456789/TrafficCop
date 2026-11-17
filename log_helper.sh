@@ -117,7 +117,11 @@ new_cycle_mark_path() {
     printf '%s\n' "${NEW_CYCLE_MARK_FILE:-${WORK_DIR:-.}/.last_new_cycle_notified}"
 }
 
-# 返回 0 = 本周期还没推送过（该推）；1 = 无需推送。
+# 返回 0 = 本周期还没推送过（该推），并把「待通知的周期」打到 stdout；
+# 返回 1 = 无需推送（stdout 为空）。
+# 调用方必须把 stdout 原样交给 new_cycle_notify_mark：
+# 发送期间主脚本可能又推进了周期，重新读一次会把新周期记成「已通知」却没发。
+#
 # 首次运行（没有标记文件）只静默登记当前周期、不补推 ——
 # 否则每台机器升级完都会凭空多一条「新周期」。
 new_cycle_notify_pending() {
@@ -134,16 +138,16 @@ new_cycle_notify_pending() {
         return 1
     fi
 
-    [ "$cur" != "$last" ]
+    [ "$cur" != "$last" ] || return 1
+    printf '%s\n' "$cur"
 }
 
-# 记录「本周期已通知」。只在【发送成功】后调用：
-# 发送失败就把标记留着不改，下一分钟自然会重试，不会把通知永久丢掉。
+# 记录「本周期已通知」。只在【发送成功】后调用，参数就是 pending 打出来的周期。
+# 发送失败就别调，标记留着不改，下一分钟自然会重试，不会把通知永久丢掉。
 new_cycle_notify_mark() {
-    local cur sf mf
-    sf=$(new_cycle_state_path)
+    local period="$1" mf
+    [ -n "$period" ] || return 1
     mf=$(new_cycle_mark_path)
-    cur=$(head -n 1 "$sf" 2>/dev/null | tr -d '[:space:]')
-    [ -n "$cur" ] && printf '%s\n' "$cur" > "$mf" 2>/dev/null
+    printf '%s\n' "$period" > "$mf" 2>/dev/null
     return 0
 }

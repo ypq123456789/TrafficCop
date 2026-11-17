@@ -683,70 +683,86 @@ bj_date() {
 #     get_period_start_date() <= 今天 <= get_period_end_date()
 #     结束日 - 起始日 + 1 == 一个周期的长度（月 28~31 / 季 89~92 / 年 365~366）
 #
-# ⚠️ 这段代码在同一个坑上踩过两次，两次都是判据写错，不是算式写错：
+# ⚠️ 这段代码在同一个坑上踩过三次，每次都是判据/边界写错，不是算式写错：
 #
 #   1) 原实现把「还没到本周期起始日」判成 `今天日号 < 起始日号`。这在
 #      quarterly / yearly 上是错的：2026-02-05、起始日 15，2 月 5 日 < 15
 #      会让整个 2 月都退回上一季度，但本季度其实 1 月 15 日就开始了。
 #      后果：窗口不含今天，用量少算，且周期起点漂移会误触发限速解除。
 #   2) 为绕开 1) 曾在判据里加过 `|| 当前月 == 季度首月`，结果首月整月无条件
-#      退回上一周期：季度窗口变 151 天、年度窗口变 730 天（两年），
-#      用量把上一个周期也算进来，且「新周期」永不触发。
+#      退回上一周期：季度窗口变 151 天、年度窗口变 730 天（两年）。
+#   3) 起始日号允许填 31，但短月没有 31 号：GNU date 对 `2026-04-31` 是
+#      直接报错（不是顺延），一旦候选起始日撞上短月，整段窗口都算不出来。
+#      月度在 2/4/6/9/11 月、季度在 4 月、年度不会中招。
 #
-# 唯一正确的判据：先构造「本期起始日」这个完整日期 —— 季度/年度的起始日
-# 落在季度首月/1 月，而不是「今天所在月的第 D 天」—— 再拿今天和它比大小。
-# 判据只写在 period_start_ymd 一处，起始日与结束日共用，避免两处各写一遍。
+# 所以：判据要拿「完整日期」比大小，起始日号要夹到目标月的月末，
+# 结束日要用「下一个起点 - 1 天」推出来（不能用 start + N month，
+# date 对「1 月 31 日 + 1 个月」会顺延到 3 月 3 日，周期之间就断层了）。
 # ============================================================
 
-# 一个周期的长度（date 的相对表达式）
-period_length_expr() {
+# 一个周期的长度（月）
+period_length_months() {
     case "${TRAFFIC_PERIOD:-monthly}" in
-        quarterly) echo "3 month" ;;
-        yearly)    echo "12 month" ;;
-        *)         echo "1 month" ;;
+        quarterly) echo 3 ;;
+        yearly)    echo 12 ;;
+        *)         echo 1 ;;
     esac
 }
 
-# 本期「候选起始日」：季度用所在季度的首月，年度用 1 月，月度用本月。
-# 注意 PERIOD_START_DAY 必须先转十进制，否则 "08" 会被 printf %d 当八进制。
-period_anchor_date() {
-    local y m day qm
+# 本期「候选起始月」：季度 → 所在季度首月；年度 → 1 月；月度 → 本月。
+# 起始日是「季度首月/1 月的第 D 天」，而不是「今天所在月的第 D 天」。
+period_anchor_month() {
+    local y m qm
     y=$(bj_date +%Y)
     m=$((10#$(bj_date +%m)))
-    day=$((10#${PERIOD_START_DAY:-1}))
 
     case "${TRAFFIC_PERIOD:-monthly}" in
         quarterly)
             qm=$(( ((m - 1) / 3) * 3 + 1 ))
-            printf '%04d-%02d-%02d\n' "$y" "$qm" "$day"
+            printf '%04d %02d\n' "$y" "$qm"
             ;;
         yearly)
-            printf '%04d-01-%02d\n' "$y" "$day"
+            printf '%04d 01\n' "$y"
             ;;
         *)
-            printf '%04d-%02d-%02d\n' "$y" "$m" "$day"
+            printf '%04d %02d\n' "$y" "$m"
             ;;
     esac
 }
 
-# 今天所属周期的起始日（YYYY-MM-DD）。算不出来时返回 1，不输出。
-#
-# 「候选起始日」在今天之后 → 今天还属于上一个周期，回退一个周期长度；
-# 否则今天就在本周期内，直接用它。
-# 起始日号大于当月天数时（如 2 月配 31 日）date 会顺延到下月初，这里沿用
-# 顺延结果 —— 至少保证「起始日 <= 今天 <= 结束日」这条不变量不被破坏。
-period_start_ymd() {
-    local anchor len today_num anchor_num
-    anchor=$(period_anchor_date) || return 1
-    [ -n "$anchor" ] || return 1
+# 年月偏移 n 个月（n 可为负），输出 "YYYY MM"
+month_shift() {
+    local total
+    total=$(( (10#$1 * 12) + (10#$2 - 1) + $3 ))
+    printf '%04d %02d\n' $((total / 12)) $((total % 12 + 1))
+}
 
+# 某年某月的周期起始日；日号超过该月天数时夹到月末（31 号→2 月 28/29 日）。
+period_anchor_at() {
+    local y=$1 m=$2 d=$3 last
+    d=$((10#${d:-1}))
+    last=$(bj_date -d "$(printf '%04d-%02d-01' "$y" "$m") +1 month -1 day" +%d 2>/dev/null)
+    last=$((10#${last:-1}))
+    [ "$d" -gt "$last" ] && d=$last
+    printf '%04d-%02d-%02d\n' "$y" "$m" "$d"
+}
+
+# 今天所属周期的起始日（YYYY-MM-DD）。算不出来时返回 1，不输出。
+period_start_ymd() {
+    local ay am lm anchor today_num anchor_num
+    set -- $(period_anchor_month)
+    ay=$1; am=$2
+    lm=$(period_length_months)
+
+    anchor=$(period_anchor_at "$ay" "$am" "${PERIOD_START_DAY:-1}")
     today_num=$(bj_date +%Y%m%d)
-    anchor_num=$(bj_date -d "$anchor" +%Y%m%d 2>/dev/null)
+    anchor_num=$(printf '%s' "$anchor" | tr -d '-')
     [ -n "$anchor_num" ] || return 1
 
     if [ "$today_num" -lt "$anchor_num" ]; then
-        len=$(period_length_expr)
-        bj_date -d "$anchor -$len" +'%Y-%m-%d'
+        # 还没到本周期起始日 → 回退一个周期长度
+        set -- $(month_shift "$ay" "$am" "-$lm")
+        period_anchor_at "$1" "$2" "${PERIOD_START_DAY:-1}"
     else
         printf '%s\n' "$anchor"
     fi
@@ -757,14 +773,19 @@ get_period_start_date() {
     period_start_ymd
 }
 
-# 获取周期结束日期 = 起始日 + 一个周期 - 1 天。
-# 与起始日共用同一个判据，因此天然满足「起始日 <= 今天 <= 结束日」。
+# 获取周期结束日期 = 下一个周期起始日 - 1 天（首尾相接，不留空档）
 get_period_end_date() {
-    local s len
+    local s sy sm lm next
     s=$(period_start_ymd) || return 1
     [ -n "$s" ] || return 1
-    len=$(period_length_expr)
-    bj_date -d "$s +$len -1 day" +'%Y-%m-%d'
+
+    sy=${s%%-*}
+    sm=${s#*-}; sm=${sm%%-*}
+    lm=$(period_length_months)
+
+    set -- $(month_shift "$sy" "$sm" "$lm")
+    next=$(period_anchor_at "$1" "$2" "${PERIOD_START_DAY:-1}")
+    bj_date -d "$next -1 day" +'%Y-%m-%d'
 }
 
 # ============================================================
