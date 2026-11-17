@@ -384,6 +384,44 @@ else
 fi
 
 # ============================================================
+# E. vnstat updated 日期：防止停更数据被当成 0 用量
+# ============================================================
+echo ""
+echo "===== E. vnstat 最后更新时间解析 ====="
+
+: > "$TMP/updated_func.sh"
+extract_func "$SRC" vnstat_last_updated_date >> "$TMP/updated_func.sh"
+grep -q "^vnstat_last_updated_date() {" "$TMP/updated_func.sh" \
+    || no "E 抽取 vnstat_last_updated_date 失败"
+# shellcheck disable=SC1090
+source "$TMP/updated_func.sh"
+
+# jq 桩：按 filter 里的字段名返回对应年月日（本机无 jq，这里只测 bash 侧解析）
+UPD_Y=2026; UPD_M=08; UPD_D=15
+jq() {
+    case "$*" in
+        *".year"*)  echo "$UPD_Y" ;;
+        *".month"*) echo "$UPD_M" ;;
+        *".day"*)   echo "$UPD_D" ;;
+        *)          echo 0 ;;
+    esac
+}
+
+got=$(vnstat_last_updated_date '{}')
+[ "$got" = "2026-08-15" ] && ok "E updated=2026-08-15 解析正确（08 不做八进制）" \
+    || no "E 08 月解析结果 [$got]"
+
+UPD_M=09; UPD_D=03
+got=$(vnstat_last_updated_date '{}')
+[ "$got" = "2026-09-03" ] && ok "E updated=2026-09-03 解析正确（09 不做八进制）" \
+    || no "E 09 月解析结果 [$got]"
+
+UPD_Y=0
+got=$(vnstat_last_updated_date '{}')
+[ -z "$got" ] && ok "E 无有效 updated 时返回空（走取数失败，绝不按 0 用量解除限速）" \
+    || no "E 非法 updated 未拦截: [$got]"
+
+# ============================================================
 # D. 语法检查
 # ============================================================
 echo ""

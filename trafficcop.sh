@@ -813,6 +813,23 @@ get_period_end_date() {
 # 并在日志里明确告警「数据不完整」，绝不做猜测性补数。
 # ============================================================
 
+# 取 vnstat JSON 里 interfaces[0].updated 的日期（YYYY-MM-DD），取不到回显空。
+# 用途：本周期一条记录都没有时，判断 vnstat 库是否还在更新。
+#   CodeRabbit 第四轮意见：vnstat 若在新周期开始前就停更，库里全是上周期的旧数据，
+#   此时「本周期无记录」不能再当成 0 用量 —— 否则会误解除限速、并把 0 写进状态快照。
+vnstat_last_updated_date() {
+    local json="$1" y m d
+    y=$(printf '%s' "$json" | jq -r '.interfaces[0].updated.date.year // 0' 2>/dev/null)
+    m=$(printf '%s' "$json" | jq -r '.interfaces[0].updated.date.month // 0' 2>/dev/null)
+    d=$(printf '%s' "$json" | jq -r '.interfaces[0].updated.date.day // 0' 2>/dev/null)
+    case "$y$m$d" in ''|*[!0-9]*) return 1 ;; esac
+    # bash printf %d 会把 "08" 当八进制，这里先统一转十进制
+    y=$((10#$y)); m=$((10#$m)); d=$((10#$d))
+    [ "$y" -ge 2000 ] && [ "$m" -ge 1 ] && [ "$m" -le 12 ] \
+        && [ "$d" -ge 1 ] && [ "$d" -le 31 ] || return 1
+    printf '%04d-%02d-%02d\n' "$y" "$m" "$d"
+}
+
 # 取 vnstat 数据库的创建日期（YYYYMMDD）；取不到回显 0，表示「未知」。
 # 为什么要它：月级聚合只带「年-月」，看不出该月的数据是从哪天开始记的。
 # 若数据库建于周期中途（例如本月 20 号才装），光看「有没有 10 月这条」
@@ -1047,10 +1064,14 @@ get_traffic_usage() {
     # 空闲了一整夜（0 点到 8 点没有任何流量），于是每分钟都被判成取数失败，
     # 「新周期开始」那行日志始终是最新一条，下游就每分钟推一次通知；
     # 8 点机器开始有流量、条目才出现，重复推送随之停止。
-    # 现在用「周期起点是不是今天（北京时间）」区分：是今天 → 按 0 用量处理；
-    # 不是今天 → 仍按取数失败处理，绝不拿 0 去解除限速。
+    #
+    # 判据分两层（都是为了防止把陈旧数据当成 0 用量）：
+    #   ① 周期起点必须是今天（北京时间）；
+    #   ② vnstat 的 updated 日期必须已经落在本周期内 —— 若它还停在上个周期，
+    #      说明 vnstat 是【在新周期开始前】就停更了，「本周期无记录」是假象，
+    #      按 0 处理会误解除限速、还会把 0 写进状态快照（CodeRabbit 第四轮意见）。
     if [ -z "$usage_bytes" ] || [ "$usage_bytes" = "null" ] || [ "$usage_bytes" = "0" ]; then
-        local matched
+        local matched last_updated
         matched=$(printf '%s' "$json" | jq --argjson s "$s_arg" --argjson e "$e_arg" \
             "$(vnstat_sum_filter "$arr" count "$key_expr")" 2>/dev/null)
         if [ "$matched" = "0" ]; then
@@ -1060,7 +1081,14 @@ get_traffic_usage() {
                 echo "0.000"
                 return 1
             fi
-            echo "$(date '+%Y-%m-%d %H:%M:%S') 提示: 本周期 $start_date 刚开始且尚无流量记录（vnstat 不为 0 字节的小时建条目），按 0 用量处理" >&2
+            last_updated=$(vnstat_last_updated_date "$json" 2>/dev/null)
+            if [ -z "$last_updated" ] || [ "$last_updated" \< "$start_date" ]; then
+                printf '0\n' > "$flag_file" 2>/dev/null
+                echo "$(date '+%Y-%m-%d %H:%M:%S') 警告: vnstat 最后更新 ${last_updated:-未知} 早于本周期起点 $start_date（vnstat 在周期切换前就停更），不按 0 用量处理" >&2
+                echo "0.000"
+                return 1
+            fi
+            echo "$(date '+%Y-%m-%d %H:%M:%S') 提示: 本周期 $start_date 刚开始且尚无流量记录（vnstat 不为 0 字节的小时建条目），但库最后更新于 $last_updated，按 0 用量处理" >&2
         fi
     fi
 
